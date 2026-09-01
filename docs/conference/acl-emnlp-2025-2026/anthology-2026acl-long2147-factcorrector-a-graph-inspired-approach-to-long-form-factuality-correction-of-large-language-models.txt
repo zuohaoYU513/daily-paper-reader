@@ -1,0 +1,904 @@
+Title: 2026.acl-long.2147.pdf
+
+URL Source: https://aclanthology.org/2026.acl-long.2147.pdf
+
+Published Time: Thu, 11 Jun 2026 01:29:08 GMT
+
+Number of Pages: 30
+
+Markdown Content:
+> Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 46278–46307 July 2-7, 2026 ©2026 Association for Computational Linguistics
+
+# FACT CORRECTOR : A Graph-Inspired Approach to Long-Form Factuality Correction of Large Language Models 
+
+Javier Carnerero-Cano 1, Massimiliano Pronesti 1, Radu Marinescu 1, Tigran Tchrakian 1,James Barry 1, Jasmina Gajcin 1, Yufang Hou 1,2 , Alessandra Pascale 1, Elizabeth Daly 1
+
+> 1
+
+IBM Research Europe - Ireland 
+
+> 2
+
+IT:U - Interdisciplinary Transformation University Austria 
+
+> {javier.cano,massimiliano.pronesti,james.barry,jasmina.gajcin2,yufang.hou1}@ibm.com {radu.marinescu,tigran,apascale,elizabeth.daly}@ie.ibm.com
+
+Abstract 
+
+Large language models (LLMs) are widely used in knowledge-intensive applications but often generate factually incorrect responses. A promising approach to rectify these flaws is correcting LLMs using feedback. Therefore, in this paper, we introduce F ACT CORRECTOR ,a new post-hoc correction method that adapts across domains without retraining and lever-ages structured feedback about the factuality of the original response to generate a correction. To support rigorous evaluations of factuality correction methods, we also develop the V ELI 5benchmark, a novel dataset containing system-atically injected factual errors and ground-truth corrections. Experiments on V ELI 5 and several popular long-form factuality datasets show that the F ACT CORRECTOR approach significantly improves factual precision while preserving rel-evance, outperforming strong baselines. We re-lease our code at https://ibm.biz/factcorrector. 
+
+1 Introduction 
+
+Large Language Models (LLMs) have demon-strated remarkable capabilities in generating co-herent and contextually relevant text across diverse domains (Brown et al., 2020; Chowdhery et al., 2023). However, their tendency to produce factu-ally incorrect or hallucinated content remains a sig-nificant barrier to safe and reliable deployment in real-world applications (Zhang et al., 2023; Sahoo et al., 2024; Huang et al., 2025), where knowledge conflicts (Xu et al., 2024; Hou et al., 2024) are also common. Factuality is critical in high-stakes do-mains such as healthcare or finance, where even minor inaccuracies can lead to harmful decisions or financial loss (Tonmoy et al., 2024). Prior research has explored several strategies to mitigate factual errors in LLM outputs. Specifi-cally, training-time correction methods optimize the model behavior to avoid factual errors dur-ing learning by incorporating human or automated feedback. Approaches include direct optimiza-tion with human feedback (Glaese et al., 2022), reward modeling and RLHF (Ouyang et al., 2022; Zhong et al., 2025), and self-training with auto-mated signals (Dubois et al., 2024). However, these strategies are often infeasible for closed-source or large scale models (Pan et al., 2024). Generation-time correction methods refine LLM outputs dur-ing decoding by leveraging critic models for guid-ance. Approaches such as generate-then-rank sam-ple multiple candidate responses and select the best using a ranking model (Weng et al., 2023), while feedback-guided decoding integrates step-level feedback to steer generation in real time (Yao et al., 2023). The effectiveness of these methods hinges on the critic’s ability to provide high-quality intermediate feedback. In contrast, post-hoc cor-rection methods evaluate the final LLM response to construct the feedback that is subsequently used to refine and correct the response. The feedback can be provided through self-critique (Shinn et al., 2023), external critics (e.g., RAC (Li and Flani-gan, 2025), CRITIC (Gou et al., 2024)) or agentic debate (Cohen et al., 2023). However, current ap-proaches are limited in that they accept feedback in a simple text format, which may miss the com-plex structure of relationships between statements to verify and their related evidence. 
+
+Contribution. In this paper, we present F ACT -CORRECTOR , a novel post-hoc method for long-form factuality correction that leverages structured feedback to produce factually accurate responses. The approach begins by applying a critic model to the generated output to assess its factuality. 1
+
+46278 This critic, built upon F ACT REASONER —a recent long-form factuality assessor (Marinescu et al., 2025)—decomposes the response into atomic units, each representing a single fact or claim. For each atom, it retrieves supporting or contradicting evi-dence from external sources and estimates its truth-fulness using a graphical model that captures en-tailment and contradiction relationships between atoms and contexts. The resulting feedback iden-tifies the false atoms along with the evidence that refutes them. Subsequently, a refinement model integrates this feedback with the original response into a structured prompt to generate a corrected version of the initial response, ensuring that the model focuses on the parts of the response that were flagged as incorrect by the critic. The ap-proach can be applied in a single pass or iteratively until the desired factuality accuracy is achieved. We also introduce the V ELI 5 benchmark, a dataset specifically designed to enable rigorous, large-scale evaluation of long-form factuality correction methods and to support the training of specialized models for correcting LLM-generated responses. VELI 5 builds upon the widely used ELI5 dataset (Fan et al., 2019), comprising curated pairs of human-authored questions and answers that have been explicitly verified and corrected for factual inaccuracies using F ACT CORRECTOR .Finally, we present an extensive empirical evalu-ation with our V ELI 5 and several popular long-form factuality datasets using a wide range of open-source LLMs. The results show clearly that F ACT -CORRECTOR consistently delivers the most reliable improvements in factuality across all datasets thus outperforming strong baselines and demonstrating strong generalization across models. 
+
+2 Related Work 
+
+Although LLMs have achieved remarkable perfor-mance across a wide range of tasks, they still strug-gle with hallucinations, unfaithful reasoning, or the propagation of bias and toxicity. In recent years, several techniques have been developed to address these issues by leveraging automated feedback – ei-ther generated by the LLM itself or provided by ex-ternal systems – to refine and correct model outputs (Pan et al., 2024). These correction strategies can be broadly categorized into three types: training-time, generation-time, and post-hoc approaches. 
+
+Training-time correction strategies aim to improve model behavior during the training phase by in-corporating human feedback, reward models, or automated feedback. Common approaches in-clude direct optimization using human feedback e.g., (Glaese et al., 2022; Scheurer et al., 2024; Chen et al., 2024; Liu et al., 2023; Gao et al., 2023), reward modeling and reinforcement learn-ing from human feedback (RLHF) e.g., (Ouyang et al., 2022; Bai et al., 2022; Ganguli et al., 2023), and self-training with automated feedback e.g., (Ze-likman et al., 2022; Bai et al., 2022; Dubois et al., 2024). However, these methods are often imprac-tical for closed-source models or extremely large-scale models with billions of parameters. 
+
+Generation-time correction methods, such as generate-then-rank and feedback-guided decoding, aim to refine the output of large language models (LLMs) during the generation process itself. In generate-then-rank approaches, a large pool of can-didate outputs is first sampled, and then ranked using a secondary critic model to select the most appropriate response (Weng et al., 2023; He et al., 2022; Ni et al., 2023; Chen et al., 2022). In contrast, feedback-guided decoding incorporates a step-level critic model that provides real-time feedback dur-ing generation, enabling more fine-grained con-trol. This strategy underpins methods like Tree-of-Thought (Yao et al., 2023), GRACE (Khalifa et al., 2023), and RAP (Hao et al., 2023). These ap-proaches primarily differ in the type of critic model employed—ranging from reward models trained with human feedback, to verifiers, external metrics or external knowledge sources. The effectiveness of generation-time correction de-pends on the critic model’s ability to deliver high-quality feedback on intermediate outputs. In con-trast, post-hoc correction methods apply both the critic and refinement models after the full output is generated, enabling richer and more varied feed-back—from targeted diagnostics to general writing suggestions. These strategies are typically cate-gorized into: self-correction, correction with ex-ternal feedback and multi-agent debate. More specifically, in self-correction methods such as Self-Refine (Madaan et al., 2023), Self-Verification (Gero et al., 2023), or Reflexion (Shinn et al., 2023) a single LLM both generates and refines its output iteratively until an acceptable quality of the output is obtained. Additionally, multiple external tools can be leveraged to provide improved feedback, thus leading to methods such as RAC (Li and Flani-246279 gan, 2025), CRITIC (Gou et al., 2024), FACTOOL (Chern et al., 2023), REFINER (Paul et al., 2024) and others (Pan et al., 2024). Our F ACT CORRECTOR is a post-hoc factuality cor-rection method, placing it in the same category as approaches like RAC and CRITIC. However, it distinguishes itself through its integration with FACT REASONER , a recently introduced pipeline designed for long-form factuality assessment (Mari-nescu et al., 2025) which serves as the critic model. Furthermore, the refinement process in F ACT COR - 
+
+> RECTOR
+
+is guided by the probabilistic graphical model derived from F ACT REASONER .
+
+3 Preliminaries 
+
+We begin by providing background on long-form factuality assessment for LLMs. 
+
+3.1 Long-Form Factuality Assessment 
+
+Let y be the long-form response generated by an LLM to a query x. We assume that y can be decomposed into a set of n atomic units (or 
+
+atoms ) that can be either true or false, denoted by 
+
+Ay = {a1, a 2, . . . a n} (Min et al., 2023; Song et al., 2024; Wei et al., 2024). An atomic unit ai ∈ A y is defined as a short sentence conveying one piece of information (e.g., a claim or a fact). Furthermore, given an external knowledge source K1, we say that an atomic unit ai ∈ A y is supported by K if there exists at least one piece of information in K (e.g., a passage) called a context that undebatably supports 
+
+ai. Otherwise, the atomic unit is not supported .The factual precision denoted by P r (y) of the response y with respect to a knowledge source 
+
+K is defined as: P r (y) = S(y)  
+
+> |A y|
+
+, where S(y) = 
+
+∑ni=1 I[ai is supported by K] is the number of sup-ported atomic units. The factual recall RK (y)
+
+up to the K-th supported atomic unit is given by: 
+
+RK (y) = min( S(y) 
+
+> K
+
+, 1) . Finally, an F1 measure for long-form factuality denoted by F 1@ K can be de-fined as: F1@K(y) = 2·P r (y)·RK (y)  
+
+> P r (y)+ RK(y)
+
+if S(y) > 0,and 0 otherwise (Wei et al., 2024). 
+
+3.2 The F ACT REASONER Factuality Assessor 
+
+FACT REASONER (Marinescu et al., 2025) is a recent factuality assessor that, unlike previous prompt-based approaches (Min et al., 2023; Song   
+
+> 1For example, Kcould be Wikipedia, Google Search, or a collection of documents embedded into a vector database.
+
+et al., 2024; Wei et al., 2024), leverages proba-bilistic reasoning to assess the factuality of the LLM generated response with respect to an exter-nal knowledge source K.Specifically, the F ACT REASONER pipeline shown in Figure 4 (top) consists of four stages called Atom-izer , Reviser , Retriever and Evaluator , respectively. The Atomizer decomposes the input response y
+
+into a set of n atomic units Ay by applying any of the decomposition strategies proposed recently (Min et al., 2023; Bayat et al., 2025). The Re-viser post-processes the atoms such that the pro-nouns, unknown entities, or incomplete names are replaced with their corresponding named entities in the response (Wei et al., 2024). Next, the Re-triever is responsible for querying the external knowledge source K to retrieve the contexts rel-evant to the response’s atoms (Song et al., 2024). Finally, the Evaluator constructs a graphical model representing a joint probability distribution over the atomic units in the response and their corre-sponding contexts in K. For each atom ai, it then computes the posterior marginal probability P (ai)
+
+which quantifies the likelihood that ai is true (or supported) given the information available in K.Finally, the factuality metrics defined previously, such as P r (y), can be readily calculated using the supported atoms. Note that both the Atomizer and 
+
+Reviser stages use LLMs for their specific tasks, as previously shown in (Marinescu et al., 2025). For more details on the graphical model, see Ap-pendix B.1. 
+
+4 The F ACT CORRECTOR Pipeline 
+
+In this section, we present F ACT CORRECTOR , a novel post-hoc method for correcting factual in-accuracies in long-form responses generated by LLMs. As a post-hoc correction strategy, F ACT -CORRECTOR employs a refinement model R to re-vise an initial response y to a user query x, guided by structured feedback from a critic model C that evaluates the factual quality of the response. Specif-ically, the critic model in F ACT CORRECTOR builds on the F ACT REASONER factuality assessor, which systematically identifies the incorrect parts within the response, while the refinement model can be any instruction-following LLM. Algorithm 1 describes the main steps of the pro-posed method which operate iteratively, starting from the initial response y. At each iteration, the 346280 Figure 1: Illustration of the F ACT CORRECTOR pipeline for long-form factuality correction of LLMs. 
+
+Algorithm 1: FACT CORRECTOR                                                                                           
+
+> Input: response y, refinement model R, threshold θ
+> Output: corrected response y
+> Evaluate factual precision P r (y)of y
+> while P r (y)< θ do
+> Decompose yinto atoms Ay={a1, ..., a n}
+> Revise the atoms Ay={a1, ..., a n}
+> Retrieve contexts Cy={c1, ..., c m}from K
+> Use Ayand Cyto build G=⟨X,D,F⟩
+> for atom ai∈ A ido
+> Evaluate posterior probability P(ai)in G
+> if P(ai)>0.5then Label aias True
+> else if P(ai)<0.5then Label aias False
+> else Label aias Unverified
+> f eedback ←{ai|aiis False or Unverified } ∪ { cj|∃ ai∈Gs.t. cjconnects to aiin Gand aiis False }
+> y′← R (y, f eedback )
+> Evaluate factual precision P r (y′)of y′
+> if P r (y′)> P r (y)then
+> Let y←y′and P r (y)←P r (y′)
+> else break return y
+
+critic decomposes the response into atomic units and retrieves relevant evidence from an external knowledge source K. These atoms and contexts are subsequently used to build a graphical model G
+
+that captures entailment and contradiction relation-ships between atoms and retrieved contexts. Then, each atom ai is labeled as True, False, or Unverified if the posterior probability P (ai) is greater than, less than or equal to 0.5, respectively. The feedback includes all atoms labeled as False or Unverified, along with any contexts connected to them in G and the corresponding relationship types, ensuring that corrections are grounded in explicit factual signals. The refinement model then integrates this feedback with the original response in a structured prompt to produce a revised output. The process repeats until the corrected response meets a predefined factual precision threshold θ or there is no improvement. 
+
+Example 1. Figure 1 illustrates the FACT CORREC - 
+
+> TOR
+
+workflow on a simple question–response pair. In this example, the initial response has a factual precision of 0.42 and is decomposed into five atoms such that a2 and a3 are labeled as True, a1 and a5
+
+as False, and a4 as Unverified, respectively. The corresponding graphical model is shown in Fig-ure 4 (bottom). The feedback includes the False atoms {a1, a 5} along with their contradicting and entailing contexts {c1, c 2, ..., c 7}. Atom a4 is also flagged for removal. The refinement model (Cor-rector) uses this feedback to generate a corrected response that omits unverified claims and aims to correct the False atoms. The resulting output con-tains only one incorrect claim (highlighted in red) and achieves a factual precision of 0.93. 
+
+FACT CORRECTOR is closely related to the recent RAC method (Li and Flanigan, 2025), but with a key difference: while RAC corrects each atom using only its retrieved documents, our approach uses the graphical model representing the atom-context relationships and aggregates all contexts connected to an incorrect atom into its feedback. This holistic view enables the refinement model to make more accurate corrections, reflected in the superior performance observed in our experiments. Although F ACT CORRECTOR is instantiated with FACT REASONER , it is modular and not tied to a specific assessor. FACT REASONER pro-vides atom-level grounding and structured entail-ment/contradiction relations, which F ACT CORREC - 
+
+> TOR
+
+leverages during correction. Assessors such as FACT SCORE (Min et al., 2023) and V ERI SCORE 
+
+446281 (Song et al., 2024) provide atomic claims and veri-fication labels but not explicit relational structure. 
+
+5 The V ELI 5 Benchmark Dataset 
+
+In this section, we introduce the V ELI 5 benchmark, a dataset specifically constructed to enable rigor-ous evaluation of long-form factuality correction methods and to facilitate the training of specialized models for correcting LLM generated responses. The starting point for the V ELI 5 benchmark dataset is the ELI5-Category dataset 2, a curated subset of ELI5 (Fan et al., 2019) that augments long-form ex-planatory question–answer threads scrapped from the r/explainlikeimfive reddit forum with ex-plicit topical annotations. This resource contains questions in which users request intuitive explana-tions of complex topics, each assigned by commu-nity moderators to one of 12 high-level categories (11 topical domains plus a Repost category) and paired with multiple candidate answers and their corresponding upvote scores. For each question, we deterministically select the answer with the highest number of upvotes as the 
+
+canonical response . While these answers are gener-ally high quality and well articulated, they are not guaranteed to be factually correct and may include inaccuracies, outdated claims, or speculative state-ments. Addressing this gap between explanatory quality and factual reliability is the primary motiva-tion behind V ELI 5. We therefore apply F ACT COR - 
+
+> RECTOR
+
+to each canonical response. To further diversify the dataset, we intentionally introduce factually incorrect responses to user ques-tions. These synthetic responses are generated by prompting a reasonably strong LLM, such as the 
+
+mixtral-8x22b-instruct-v0.1 model. The ra-tio of synthetic to human-authored responses is maintained at 50%, ensuring a balanced mix of realistic and adversarial content. The final V ELI 5dataset comprises 17,522 instances, uniformly dis-tributed across 12 categories. We further partition the dataset into training (14,017 samples), vali-dation (1,752 samples), and test (1,753 samples) splits. Illustrative examples and additional details are provided in Appendix E. 
+
+> 2https://huggingface.co/datasets/rexarski/eli5_category
+
+6 Experiments 
+
+We empirically evaluate the F ACT CORRECTOR 
+
+(FC) pipeline for long-form factuality correction and compare it against state-of-the-art approaches on several popular long-form factuality datasets. 
+
+6.1 Baseline Correctors 
+
+We consider two recent state-of-the-art post-hoc correction methods with feedback: CRITIC (Gou et al., 2024) and RAC (Li and Flanigan, 2025). CRITIC is a prompt-based iterative approach that leverages LLMs and retrieved knowledge. At each step, the model generates a query to retrieve rele-vant information, revises its output based on revi-sion history, and selects the most plausible answer. RAC, in contrast, decomposes the generated re-sponse into atomic facts, retrieves evidence from trusted sources (e.g., Google), verifies each fact, and corrects inaccuracies using reliable content. In addition, we also evaluate two prompting strate-gies: LLM1, which performs corrections using only the model’s internal knowledge, and LLM2, which uses contexts retrieved for the question only and ignores its internal knowledge. LLM2 repre-sents a non-relational correction setting: it uses contexts but it does not leverage structured entail-ment/contradiction relationships (see Appendix D). All methods produce corrections after the full out-put is generated, and are assessed under the same independent factuality assessment protocol. This ensures a fair comparison across approaches and avoids circularity in evaluation. We instantiated the competing correctors with open-source LLMs from the IBM Granite (Re-search, 2024), Meta LLaMA (Touvron et al., 2023), MistralAI Mixtral (Jiang et al., 2024) and Ope-nAI (OpenAI et al., 2025) families, spanning a broad range of architectures and scales. All models run remotely on A100 80GB GPUs and are ac-cessed via litellm APIs (1,500 prompts per sec). 
+
+6.2 Datasets 
+
+We use three datasets in our experiments: a reduced version of V ELI 5 (200 instances uniformly sam-pled from the test split), Biographies (B IO ) (Min et al., 2023), and AskHistorians (A SK HIST ) (Xu et al., 2023). The B IO dataset includes 183 bio-graphical passages generated by ChatGPT for enti-ties with Wikipedia pages. A SK HIST contains 200 questions from the r/AskHistorians reddit forum paired with long-form answers produced by the 546282 llama-3.3-70b-instruct model. We also use the C ONFLICTS dataset from (Mari-nescu et al., 2025), which comprises 100 atomic claims (or responses) sampled from Conflict-Bank (Su et al., 2024). Each claim, originally from Wikidata, is assumed true and is associated with both supporting and conflicting contexts. Since all claims are correct, they require no corrections, offering a controlled setting for our evaluation. Our evaluation therefore includes both naturally oc-curring and systematically injected errors. Injected errors enable controlled stress-testing of specific failure modes that may not be captured by aggre-gate metrics (Ribeiro et al., 2020), while naturally occurring errors reflect more realistic distributions. 
+
+6.3 Measures of Performance 
+
+For each dataset D and each competing corrector, we computed three factuality metrics: precision (P r ), recall at K (R@K), and F1@K, averaged over all prompts in D, where K is set to the me-dian number of atoms. These metrics are evalu-ated using the F ACT REASONER (FR) assessor with Google search results as external knowledge source (Marinescu et al., 2025). In addition, we computed two complementary metrics: verifiability ( V ) and comprehensiveness ( C). Verifiability V is defined as the number of atoms in the response (or correc-tion) that can be verified—i.e., atoms connected to either supporting or contradicting evidence in FR’s graph. Comprehensiveness C quantifies cov-erage and is given by C = |A in ||A in |+|A out | , where 
+
+Ain denotes the atoms covered by the response (or correction), and Aout denotes atoms that are 
+
+uncovered or missing (Dejl et al., 2025). For each factuality metric S (e.g., precision), we re-port its relative gain , denoted as G(S) and defined by: G(S) = 2·(Sc−Sr ) 
+
+> Sc+Sr
+
+, where Sr and Sc are the metrics corresponding to the original response and the correction, respectively. A positive G(S) indi-cates that the correction outperforms the response, while a negative value means that the correction performs worse. By construction, G(S) ranges from −2 to 2 and remains well defined even when either Sr or Sc equals zero. 
+
+6.4 Results for Post-hoc Correction 
+
+We next present the results obtained on our datasets using a range of LLMs. For consistency, the same LLM employed by F ACT REASONER to evaluate corrector ROUGE ↑ BLEU ↑ BLEURT ↑ JUDGE ↑                                   
+
+> mixtral-8x22b-instruct-v0.1
+> CRITIC 0.14 ±0.07 0.02 ±0.03 -0.69 ±0.25 0.41 RAC 0.54 ±0.23 0.23 ±0.27 0.29 ±0.43 0.87
+> LLM1 0.15 ±0.05 0.02 ±0.02 -0.63 ±0.21 0.30 LLM2 0.20 ±0.10 0.05 ±0.05 -0.48 ±0.22 0.10 FC (ours) 0.89 ±0.26 0.87 ±0.32 0.73 ±0.47 0.87
+> llama-3.3-70b-instruct
+> CRITIC 0.32 ±0.27 0.15 ±0.28 -0.36 ±0.56 0.31 RAC 0.87 ±0.20 0.77 ±0.32 0.65 ±0.43 0.77
+> LLM1 0.19 ±0.11 0.03 ±0.05 -0.62 ±0.33 0.17 LLM2 0.21 ±0.10 0.04 ±0.04 -0.46 ±0.22 0.06 FC (ours) 0.73 ±0.33 0.62 ±0.45 0.46 ±0.56 0.60
+> granite-4.0-h-small
+> CRITIC 0.15 ±0.11 0.03 ±0.10 -0.69 ±0.26 0.20 RAC 0.74 ±0.23 0.48 ±0.37 0.49 ±0.46 0.73 LLM1 0.15 ±0.07 0.02 ±0.02 -0.68 ±0.23 0.17 LLM2 0.42 ±0.24 0.15 ±0.17 -0.10 ±0.44 0.13 FC (ours) 0.83 ±0.30 0.76 ±0.39 0.58 ±0.57 0.78
+
+Table 1: Results obtained on the C ONFLICTS dataset. 
+
+the metrics reported in the tables was also used to instantiate the components of F ACT CORRECTOR .
+
+CONFLICTS . Table 1 summarizes the results ob-tained on our controlled experiment with the C ON - 
+
+> FLICTS
+
+dataset. In this case, we assess the simi-larity between correction and response using the ROUGE, BLEU, and BLEURT metrics (Lin, 2004; Papineni et al., 2002; Sellam et al., 2020) because the response is known to be true and does not need correction. Thus, the C ONFLICTS dataset serves as a stability test: it contains claims that are already correct, allowing us to measure whether F ACT COR - 
+
+> RECTOR
+
+unnecessarily edits correct content. We also report JUDGE, which counts the number of instances where an LLM-as-a-Judge model (in our case DeepSeek-3.2), prompted appropriately, in-fers that the correction is equivalent to the original response. The table shows the mean and standard deviation for all metrics. The results indicate that FACT CORRECTOR achieves superior performance with the Mixtral and Granite models, while ranking second when using LLaMA, where RAC attains the best scores. In contrast, the LLM1 and LLM2 baselines perform rather poorly almost always pro-ducing corrections significantly different from the response, while CRITIC often struggles to follow its instructions also leading to poor results. 
+
+VELI 5. In Table 2 we report the mean relative gains obtained for the factuality metrics on the VELI 5 dataset. The results demonstrate that F ACT -CORRECTOR consistently delivers strong and reli-able improvements in factuality across all evaluated 646283 corrector Pr ↑ R@K ↑ F1@K ↑ V ↑ C ↑                                                                                                   
+
+> mixtral-8x22b-instruct-v0.1
+> CRITIC 0.26 0.08 0.19 0.09 0.06 RAC 0.24 0.08 0.18 0.08 0.06 LLM1 0.32 0.10 0.23 0.12 0.07
+> LLM2 0.32 0.10 0.23 0.13 0.07
+> FC (ours) 0.34 0.09 0.24 0.14 0.07
+> llama-3.3-70b-instruct
+> CRITIC 0.19 0.06 0.13 0.03 0.05 RAC 0.13 0.02 0.09 0.02 0.05 LLM1 0.25 0.06 0.18 0.05 0.08
+> LLM2 0.26 0.07 0.18 0.05 0.08
+> FC (ours) 0.27 0.07 0.18 0.05 0.08
+> granite-4.0-h-small
+> CRITIC 0.17 0.04 0.12 0.05 0.06 RAC 0.20 0.09 0.16 0.06 0.07 LLM1 0.31 0.11 0.23 0.11 0.08
+> LLM2 0.20 0.10 0.16 0.09 0.05 FC (ours) 0.29 0.10 0.21 0.11 0.07
+> gpt-oss-120b
+> CRITIC -0.04 0.01 -0.02 -0.01 -0.03 RAC 0.34 0.15 0.27 0.06 0.13 LLM1 0.21 0.16 0.19 -0.01 0.13 LLM2 0.33 0.20 0.28 0.05 0.13 FC (ours) 0.36 0.19 0.30 0.07 0.14
+
+Table 2: Mean relative gains for the factuality metrics obtained on the VELI5 dataset. 
+
+Figure 2: Mean relative gains for factuality metrics across models on the V ELI 5 dataset. 
+
+metrics and models. For example, when consider-ing relative gains on precision, FC outperforms all baselines, achieving macro-averaged gains of 0.315 — substantially higher than the next-best corrector (see also Figure 2). Importantly, FC is often best or tied-best in many metric–model combinations, showing strong generalization across diverse LLM architectures. LLM1 and LLM2 show strong per-formance in this case, likely due to the provenance of the V ELI 5 questions which were originally de-rived from a public Reddit forum. Therefore, it is plausible that similar content was included in these models’ pre-training corpora which may confer a significant advantage on this dataset. Table 3 reinforces these findings by examining factual precision before and after correction. FC achieves the highest post-correction precision on two out of four models (LLaMa, Mixtral) and ranks corrector llama-3.3-70b mixtral-8x22b granite-4.0-small gpt-oss-120b                                                
+
+> before after before after before after before after CRITIC 0.78 0.90 0.70 0.88 0.74 0.86 0.62 0.58 RAC 0.78 0.91 0.70 0.86 0.74 0.88 0.62 0.85
+> LLM1 0.78 0.95 0.70 0.91 0.74 0.94 0.62 0.72 LLM2 0.78 0.96 0.70 0.91 0.74 0.86 0.62 0.79 FC (ours) 0.78 0.97 0.70 0.93 0.74 0.93 0.62 0.84
+
+Table 3: Mean factual precision before and after correc-tion on the VELI5 dataset. 
+
+corrector Pr ↑ R@K ↑ F1@K ↑ V ↑ C ↑
+
+mixtral-8x22b-instruct-v0.1 
+
+CRITIC 0.27 0.22 0.25 0.05 0.05 RAC 0.39 0.29 0.34 0.05 0.13 LLM1 0.27 0.25 0.27 0.02 0.07 LLM2 0.42 0.30 0.37 0.11 0.07 FC (ours) 0.46 0.33 0.41 0.12 0.11 
+
+llama-3.3-70b-instruct 
+
+CRITIC 0.37 0.18 0.29 0.08 0.13 RAC 0.42 0.21 0.33 0.12 0.16 LLM1 0.23 0.14 0.19 0.07 0.11 LLM2 0.45 0.21 0.36 0.12 0.18 
+
+FC (ours) 0.44 0.22 0.35 0.12 0.17 
+
+granite-4.0-h-small 
+
+CRITIC 0.12 0.02 0.08 0.04 0.02 RAC 0.22 0.08 0.16 0.10 0.04 LLM1 -0.03 -0.01 -0.02 0.02 0.00 LLM2 0.19 0.13 0.16 0.13 0.03 
+
+FC (ours) 0.26 0.10 0.20 0.14 0.03 
+
+gpt-oss-120b 
+
+CRITIC 0.00 0.00 0.00 0.00 0.01 RAC 0.51 0.28 0.42 0.11 0.28 
+
+LLM1 -0.28 -0.10 -0.22 -0.24 0.06 LLM2 0.48 0.31 0.41 0.10 0.27 FC (ours) 0.40 0.29 0.36 0.10 0.24 
+
+Table 4: Mean relative gains for the factuality metrics obtained on the B IO dataset. 
+
+second on Granite and GPT-OSS, where it still de-livers large relative gains. On average, FC improves precision by +0.21, outperforming all baselines, in-cluding LLM1 (+0.17) and RAC (+0.16). While RAC slightly surpasses FC on GPT-OSS in final precision, FC dominates in overall gains, suggest-ing a more robust correction strategy. In contrast, CRITIC exhibits inconsistent behavior, even reduc-ing precision for GPT-OSS. 
+
+BIO . Table 4 presents the mean relative gains on the B IO dataset. FC exhibits robust performance across models, achieving its highest gains with Mixtral and Granite, and ranking second for Llama. In contrast, LLM1 performs poorly, particularly on Granite and GPT-OSS. Both RAC and LLM2 remain highly competitive on this dataset, while CRITIC, as observed previously, struggles to fol-low instructions, leading to inconsistent results. 746284 corrector Pr ↑ R@K ↑ F1@K ↑ V ↑ C ↑                                                                                             
+
+> mixtral-8x22b-instruct-v0.1
+> CRITIC -0.12 -0.04 -0.09 -0.06 -0.01 RAC -0.01 -0.01 -0.01 -0.01 0.00 LLM1 -0.02 0.00 -0.01 0.00 0.00 LLM2 -0.03 0.00 -0.02 0.00 0.00 FC (ours) 0.02 0.00 0.00 0.02 0.00
+> llama-3.3-70b-instruct
+> CRITIC -0.03 0.00 -0.01 -0.01 -0.01 RAC 0.03 0.01 0.02 0.02 0.00 LLM1 0.00 0.00 0.00 0.00 0.00 LLM2 0.01 0.00 0.01 0.00 0.00 FC (ours) 0.04 0.01 0.02 0.01 0.01
+> granite-4.0-h-small
+> CRITIC -0.13 -0.09 -0.11 -0.05 -0.04 RAC -0.06 -0.01 -0.04 -0.01 -0.02 LLM1 -0.08 -0.03 -0.05 -0.03 -0.02 LLM2 -0.07 -0.01 -0.04 -0.03 -0.01 FC (ours) 0.00 0.00 0.00 0.01 0.00
+> gpt-oss-120b
+> CRITIC -0.03 -0.01 -0.02 0.01 -0.01 RAC 0.12 0.03 0.08 0.06 0.02
+> LLM1 -0.49 -0.26 -0.41 -0.19 -0.08 LLM2 -0.03 -0.01 -0.03 0.03 -0.04 FC (ours) 0.00 0.00 0.00 0.01 0.00
+
+Table 5: Mean relative gains for the factuality metrics obtained on the A SK HIST dataset.                                            
+
+> corrector Pr ↑R@K ↑F1@K ↑V↑C↑
+> mixtral-8x22b-instruct-v0.1
+> FC (ours) 0.34 0.09 0.24 0.14 0.07 SFT (ours) 0.19 0.10 0.16 0.05 0.08
+> llama-3.3-70b-instruct
+> FC (ours) 0.27 0.07 0.18 0.05 0.08
+> SFT (ours) 0.25 0.11 0.19 0.10 0.08
+> granite-4.0-h-small
+> FC (ours) 0.29 0.10 0.21 0.11 0.07
+> SFT (ours) 0.22 0.11 0.18 0.09 0.07
+> gpt-oss-120b
+> FC (ours) 0.36 0.19 0.30 0.07 0.14
+> SFT (ours) 0.08 0.08 0.08 0.07 0.02
+
+Table 6: Mean relative gains for the factuality metrics on the VELI5 dataset using the SFT corrector. 
+
+ASK HIST . Table 5 shows the mean relative gains on the A SK HIST dataset. Unlike previous cases, the gains here are smaller. This is primarily because the factual precision of the original responses is al-ready high (typically exceeding 89% on average) leaving limited room for improvement through cor-rection. Interestingly, all other baselines exhibit negative gains, indicating that their corrections are less factual than the original responses. In contrast, FC maintains robust performance across all mod-els, almost always producing corrections that are at least as factual as the original responses and, in many cases, slightly better. As a remark, the F ACT CORRECTOR pipeline sep-arates factuality assessment from correction, and operates on this structured feedback to guide re-vision. This separation allows distinguishing the contribution of structured correction from that of evidence retrieval. In particular, the LLM2 base-line performs correction using retrieved contexts but without relational structure. The consistent performance gap between LLM2 and F ACT COR -
+
+RECTOR indicates that explicit relational grounding contributes beyond simple evidence exposure. 
+
+6.5 Results for SFT Correction 
+
+We used the larger V ELI 5 dataset to train a LoRA adapter on the Granite-Guardian-5B model for gen-erating corrections 3. Table 6 reports the mean relative gains on the V ELI 5 dataset when using the F ACT CORRECTOR pipeline versus the LoRA-based correction approach (denoted as SFT). Over-all, the SFT method produces substantially better corrections than the original responses, which is expected given that the evaluation instances orig-inate from the same distribution as the training data. In contrast, on the out-of-distribution B IO and ASK HIST datasets the gains achieved by SFT are smaller than before; however, most gains remain non-negative, indicating that the SFT approach gen-eralizes reasonably well (see Appendix C). 
+
+6.6 Human Evaluation of V ELI 5
+
+We conducted a user study to evaluate the quality of corrections in the V ELI 5 dataset (see Appendix C.7). Table 9 summarizes results for 30 filtered tasks, each averaging 2.30 incorrect and 4.40 cor-rect atoms. At the task level, original responses were highly relevant to the user question (90% fully, 10% partially), while corrections achieved even greater relevance (96.7% fully). For incorrect atoms, 67.4% were successfully corrected by F ACT -CORRECTOR , with 26.4% undercorrected and only minor proportions overcorrected (3.3%) or invalid (2.9%). Correct atoms were preserved in 60.9% of cases, with 27.7% not preserved and small frac-tions partially preserved or invalid. Relevance anal-ysis showed both incorrect and correct atoms were predominantly relevant (75.0% and 72.4%), under-scoring the effectiveness of the correction process. 
+
+> 3
+
+LoRA adapter available at https://ibm.biz/granite-guardian-3-2-5b-lora-factuality-correction. 
+
+846285 7 Conclusion 
+
+The contributions of this paper are threefold. (1) We introduce F ACT CORRECTOR , a novel post-hoc method for improving long-form factuality by lever-aging feedback on incorrect response segments and retrieved contradicting evidence to generate refined answers. (2) We develop V ELI 5, a benchmark dataset of curated question–answer pairs explic-itly verified and corrected using F ACT CORREC -
+
+> TOR
+
+, enabling rigorous evaluation. (3) We conduct extensive empirical studies across a wide range of open-source LLMs and datasets, demonstrating that F ACT CORRECTOR consistently achieves the most reliable factuality improvements compared with strong state-of-the-art baselines. 
+
+Limitations 
+
+We acknowledge further limitations of the proposed FACT CORRECTOR framework. The Atomizer and Reviser components are sensi-tive to the quality of the prompt and few shot exam-ples used as well as the LLM employed to perform the atomic unit decomposition and decontextualiza-tion of the response (and correction). In our work we only considered open-source models from the Mixtral, LLaMa, Granite and GPT-OSS families. Furthermore, decomposing a given response can be done at different granularities such as sentence level, paragraph level or the entire response level. Our implementation is limited to decomposing the response in one shot. The quality of the contexts retrieved by the Re-triever component for each atomic unit depends on both the implementation details of the component and the formulation of the query string it receives. In our approach, we leverage an LLM to gener-ate a well-structured Google search query for each atomic unit, which is then used to retrieve the top 
+
+k search results via the Serper API (serper.dev). Each search result typically includes a short snip-pet and a hyperlink; to enrich the retrieved context, we additionally extract up to 4,000 characters of text from the linked page. The Evaluator component relies on the logical re-lationships between atoms and contexts. It also depends on the quality of the prompt and the under-lying LLM. As before, we only used open-source models such as mixtral-8x22b-instruct-v0.1 ,llama-3.3-70b-instruct, granite-4.0-h-small, and 
+
+gpt-oss-120b with a fairly straightforward prompt. It is possible to craft better prompts that could lead to a better extraction of the relationships. Fine-tuning is another option to obtain a stronger relation model. The Corrector component (i.e., refinement model) is also sensitive to the quality of the prompt used. The version presented in Table 14 in Appendix D is the current version that works fairly well across different models. Clearly, improved prompts could lead to much better corrections and this is currently one direction of future research. Finally, since the F ACT CORRECTOR pipeline is tightly integrated with the F ACT REASONER factu-ality assessor (Marinescu et al., 2025), it inherits the computational overhead of the latter. Specifi-cally, the Evaluator component requires O(n · m)
+
+LLM calls to extract the logical relationships be-tween atoms and contexts, where n is the number of atomic units in the reponse (or correction), m
+
+is the total number of non-duplicated contexts re-trieved for the atoms. In contrast, the SFT approach for correction requires only a single LLM call per correction. 
+
+Ethical Statement 
+
+We recognize the positive and negative societal impacts of LLMs in general, including potential misuse of our work around factuality correction of LLM generated output. We note that the datasets considered are public and peer reviewed, there are no human subjects involved, and as far as we know, there are no obvious harmful consequences from our work. All creators and original owners of as-sets have been properly credited and licenses and terms of use have been respected. We have not conducted crowd-sourcing experiments or research with human subjects. 
+
+References      
+
+> Yuntao Bai, Saurav Kadavath, Sandipan Kundu, Amanda Askell, Jackson Kernion, Andy Jones, Anna Chen, Anna Goldie, Azalia Mirhoseini, Cameron McK-innon, Carol Chen, Catherine Olsson, Christopher Olah, Danny Hernandez, Dawn Drain, Deep Ganguli, Dustin Li, Eli Tran-Johnson, Ethan Perez, Jamie Kerr, Jared Mueller, Jeffrey Ladish, Joshua Landau, Kamal Ndousse, Kamile Lukosuite, Liane Lovitt, Michael Sellitto, Nelson Elhage, Nicholas Schiefer, Noemi Mercado, Nova DasSarma, Robert Lasenby, Robin Larson, Sam Ringer, Scott Johnston, Shauna Kravec,
+
+946286 Sheer El Showk, Stanislav Fort, Tamera Lanham, Timo-thy Telleen-Lawton, Tom Conerly, Tom Henighan, Tris-tan Hume, Samuel R. Bowman, Zac Hatfield-Dodds, Ben Mann, Dario Amodei, Nicholas Joseph, Sam Mc-Candlish, Tom Brown, and Jared Kaplan. 2022. Consti-tutional ai: Harmlessness from ai feedback. Preprint ,arXiv:2212.08073. Farima Fatahi Bayat, Lechen Zhang, Sheza Munir, and Lu Wang. 2025. Factbench: A dynamic benchmark for in-the-wild language model factuality evaluation. 
+
+Preprint , arXiv:2410.22257. Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh, Daniel Ziegler, Jeffrey Wu, Clemens Winter, Chris Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Ilya Sutskever, and Dario Amodei. 2020. Language models are few-shot learners. In Advances in Neural Information Processing Systems , volume 33, pages 1877–1901. Curran Asso-ciates, Inc. Angelica Chen, Jérémy Scheurer, Tomasz Korbak, Jon Ander Campos, Jun Shern Chan, Samuel R. Bow-man, Kyunghyun Cho, and Ethan Perez. 2024. Improv-ing code generation by training with natural language feedback. Preprint , arXiv:2303.16749. Bei Chen, Fengji Zhang, Anh Nguyen, Daoguang Zan, Zeqi Lin, Jian-Guang Lou, and Weizhu Chen. 2022. Codet: Code generation with generated tests. Preprint ,arXiv:2207.10397. I-Chun Chern, Steffi Chern, Shiqi Chen, Weizhe Yuan, Kehua Feng, Chunting Zhou, Junxian He, Graham Neu-big, and Pengfei Liu. 2023. Factool: Factuality de-tection in generative ai – a tool augmented framework for multi-task and multi-domain scenarios. Preprint ,arXiv:2307.13528. Aakanksha Chowdhery, Sharan Narang, and Jacob De-vlin. 2023. Palm: Scaling language modeling with path-ways. Journal of Machine Learning Research , 4(1):1– 113. Roi Cohen, May Hamri, Mor Geva, and Amir Glober-son. 2023. Lm vs lm: Detecting factual errors via cross examination. arXiv preprint arXiv:2305.13281 .Rina Dechter. 2003. Constraint Processing . Morgan Kaufmann Publishers. Adam Dejl, James Barry, Alessandra Pascale, and Javier Carnerero Cano. 2025. Comprehensiveness met-rics for automatic evaluation of factual recall in text generation. Preprint , arXiv:2510.07926. Yann Dubois, Xuechen Li, Rohan Taori, Tianyi Zhang, Ishaan Gulrajani, Jimmy Ba, Carlos Guestrin, Percy Liang, and Tatsunori B. Hashimoto. 2024. Alpacafarm: A simulation framework for methods that learn from human feedback. In NeurIPS .Angela Fan, Yacine Jernite, Ethan Perez, David Grang-ier, Jason Weston, and Michael Auli. 2019. ELI5: Long form question answering. In Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics , pages 3558–3567, Florence, Italy. Associa-tion for Computational Linguistics. Deep Ganguli, Amanda Askell, Nicholas Schiefer, Thomas I. Liao, Kamil˙ e Lukoši¯ ut˙ e, Anna Chen, Anna Goldie, Azalia Mirhoseini, Catherine Olsson, Danny Hernandez, Dawn Drain, Dustin Li, Eli Tran-Johnson, Ethan Perez, Jackson Kernion, Jamie Kerr, Jared Mueller, Joshua Landau, Kamal Ndousse, Karina Nguyen, Liane Lovitt, Michael Sellitto, Nelson El-hage, Noemi Mercado, Nova DasSarma, Oliver Rausch, Robert Lasenby, Robin Larson, Sam Ringer, Sandi-pan Kundu, Saurav Kadavath, Scott Johnston, Shauna Kravec, Sheer El Showk, Tamera Lanham, Timo-thy Telleen-Lawton, Tom Henighan, Tristan Hume, Yuntao Bai, Zac Hatfield-Dodds, Ben Mann, Dario Amodei, Nicholas Joseph, Sam McCandlish, Tom Brown, Christopher Olah, Jack Clark, Samuel R. Bow-man, and Jared Kaplan. 2023. The capacity for moral self-correction in large language models. Preprint ,arXiv:2302.07459. Ge Gao, Hung-Ting Chen, Yoav Artzi, and Eunsol Choi. 2023. Continually improving extractive qa via human feedback. In EMNLP , pages 406–417. Zelalem Gero, Chandan Singh, Hao Cheng, Tristan Nau-mann, Michel Galley, Jianfeng Gao, and Hoifung Poon. 2023. Self-verification improves few-shot clinical infor-mation extraction. Preprint , arXiv:2306.00024. Amelia Glaese, Nat McAleese, Maja Tr˛ ebacz, John Aslanides, Vlad Firoiu, Timo Ewalds, Maribeth Rauh, Laura Weidinger, Martin Chadwick, Phoebe Thacker, Lucy Campbell-Gillingham, Jonathan Uesato, Po-Sen Huang, Ramona Comanescu, Fan Yang, Abigail See, Sumanth Dathathri, Rory Greig, Charlie Chen, Doug Fritz, Jaume Sanchez Elias, Richard Green, Soˇ na Mokrá, Nicholas Fernando, Boxi Wu, Rachel Foley, Susan-nah Young, Iason Gabriel, William Isaac, John Mel-lor, Demis Hassabis, Koray Kavukcuoglu, Lisa Anne Hendricks, and Geoffrey Irving. 2022. Improving align-ment of dialogue agents via targeted human judgements. 
+
+Preprint , arXiv:2209.14375. Zhibin Gou, Zhihong Shao, Yeyun Gong, Yelong Shen, Yujiu Yang, Nan Duan, and Weizhu Chen. 2024. Critic: Large language models can self-correct with tool-interactive critiquing. In ICLR .Shibo Hao, Yi Gu, Haodi Ma, Joshua Jiahua Hong, Zhen Wang, Daisy Zhe Wang, and Zhiting Hu. 2023. Reasoning with language model is planning with world model. In EMNLP .Hangfeng He, Hongming Zhang, and Dan Roth. 2022. Rethinking with retrieval: Faithful large language model inference. Preprint , arXiv:2301.00303. Yufang Hou, Alessandra Pascale, Javier Carnerero-Cano, Tigran Tchrakian, Radu Marinescu, Elizabeth Daly, Inkit Padhi, and Prasanna Sattigeri. 2024. Wiki-contradict: A benchmark for evaluating llms on real-
+
+10 46287 world knowledge conflicts from wikipedia. In Advances in Neural Information Processing Systems , volume 37, pages 109701–109747. Curran Associates, Inc. Lei Huang, Weijiang Yu, Weitao Ma, Weihong Zhong, Zhangyin Feng, Haotian Wang, Qianglong Chen, Wei-hua Peng, Xiaocheng Feng, Bing Qin, and Ting Liu. 2025. A survey on hallucination in large language mod-els: Principles, taxonomy, challenges, and open ques-tions. ACM Trans. Inf. Syst. , 43(2). Albert Q. Jiang, Alexandre Sablayrolles, Antoine Roux, Arthur Mensch, Blanche Savary, Chris Bam-ford, Devendra Singh Chaplot, Diego de las Casas, Emma Bou Hanna, Florian Bressand, Gianna Lengyel, Guillaume Bour, Guillaume Lample, Lélio Renard Lavaud, Lucile Saulnier, Marie-Anne Lachaux, Pierre Stock, Sandeep Subramanian, Sophia Yang, Szy-mon Antoniak, Teven Le Scao, Théophile Gervet, Thibaut Lavril, Thomas Wang, Timothée Lacroix, and William El Sayed. 2024. Mixtral of experts. Preprint ,arXiv:2401.04088. Muhammad Khalifa, Lajanugen Logeswaran, Moon-tae Lee, Honglak Lee, and Lu Wang. 2023. Grace: Discriminator-guided chain-of-thought reasoning. In 
+
+EMNLP .Daphne Koller and Nir Friedman. 2009. Probabilistic Graphical Models: Principles and Techniques . MIT Press. Changmao Li and Jeffrey Flanigan. 2025. Rac: Efficient llm factuality correction with retrieval augmentation. 
+
+Preprint , arXiv:2410.15667. Chin-Yew Lin. 2004. ROUGE: A package for auto-matic evaluation of summaries. In Text Summarization Branches Out , pages 74–81, Barcelona, Spain. Associa-tion for Computational Linguistics. Hao Liu, Carmelo Sferrazza, and Pieter Abbeel. 2023. Chain of hindsight aligns language models with feed-back. Preprint , arXiv:2302.02676. Qiang Liu and Alexander Ihler. 2011. Bounding the partition function using Holder’s inequality. In Interna-tional Conference on Machine Learning (ICML) , pages 849–856. Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, Shashank Gupta, Bodhisattwa Prasad Majumder, Katherine Her-mann, Sean Welleck, Amir Yazdanbakhsh, and Peter Clark. 2023. Self-refine: Iterative refinement with self-feedback. Preprint , arXiv:2303.17651. Radu Marinescu, Debarun Bhattacharjya, Junkyu Lee, Tigran Tchrakian, Javier Carnerero Cano, Yufang Hou, Elizabeth Daly, and Alessandra Pascale. 2025. Factrea-soner: A probabilistic approach to long-form factuality assessment for large language models. In EMNLP .Sewon Min, Kalpesh Krishna, Xinxi Lyu, Mike Lewis, Wen-tau Yih, Pang Koh, Mohit Iyyer, Luke Zettle-moyer, and Hannaneh Hajishirzi. 2023. FActScore: Fine-grained atomic evaluation of factual precision in long form text generation. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 12076–12100. Ansong Ni, Srini Iyer, Dragomir Radev, Ves Stoyanov, Wen tau Yih, Sida I. Wang, and Xi Victoria Lin. 2023. Lever: Learning to verify language-to-code generation with execution. In ICML .OpenAI, :, Sandhini Agarwal, Lama Ahmad, Jason Ai, Sam Altman, Andy Applebaum, Edwin Arbus, Rahul K. Arora, Yu Bai, Bowen Baker, Haiming Bao, Boaz Barak, Ally Bennett, Tyler Bertao, Nivedita Brett, Eugene Brevdo, Greg Brockman, Sebastien Bubeck, Che Chang, Kai Chen, Mark Chen, Enoch Cheung, Aidan Clark, Dan Cook, Marat Dukhan, Casey Dvorak, Kevin Fives, Vlad Fomenko, Timur Garipov, Kristian Georgiev, Mia Glaese, Tarun Gogineni, Adam Goucher, Lukas Gross, Katia Gil Guzman, John Hallman, Jackie Hehir, Johannes Heidecke, Alec Helyar, Haitang Hu, Romain Huet, Jacob Huh, Saachi Jain, Zach Johnson, Chris Koch, Irina Kofman, Dominik Kundel, Jason Kwon, Volodymyr Kyrylov, Elaine Ya Le, Guillaume Leclerc, James Park Lennon, Scott Lessans, Mario Lezcano-Casado, Yuanzhi Li, Zhuohan Li, Ji Lin, Jor-dan Liss, Lily, Liu, Jiancheng Liu, Kevin Lu, Chris Lu, Zoran Martinovic, Lindsay McCallum, Josh Mc-Grath, Scott McKinney, Aidan McLaughlin, Song Mei, Steve Mostovoy, Tong Mu, Gideon Myles, Alexander Neitz, Alex Nichol, Jakub Pachocki, Alex Paino, Dana Palmie, Ashley Pantuliano, Giambattista Parascandolo, Jongsoo Park, Leher Pathak, Carolina Paz, Ludovic Peran, Dmitry Pimenov, Michelle Pokrass, Elizabeth Proehl, Huida Qiu, Gaby Raila, Filippo Raso, Hongyu Ren, Kimmy Richardson, David Robinson, Bob Rot-sted, Hadi Salman, Suvansh Sanjeev, Max Schwarzer, D. Sculley, Harshit Sikchi, Kendal Simon, Karan Sing-hal, Yang Song, Dane Stuckey, Zhiqing Sun, Philippe Tillet, Sam Toizer, Foivos Tsimpourlas, Nikhil Vyas, Eric Wallace, Xin Wang, Miles Wang, Olivia Watkins, Kevin Weil, Amy Wendling, Kevin Whinnery, Cedric Whitney, Hannah Wong, Lin Yang, Yu Yang, Michi-hiro Yasunaga, Kristen Ying, Wojciech Zaremba, Went-ing Zhan, Cyril Zhang, Brian Zhang, Eddie Zhang, and Shengjia Zhao. 2025. gpt-oss-120b & gpt-oss-20b model card. Preprint , arXiv:2508.10925. Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Car-roll L. Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul Christiano, Jan Leike, and Ryan Lowe. 2022. Train-ing language models to follow instructions with human feedback. In NeurIPS .Liangming Pan, Michael Saxon, Wenda Xu, Deepak Nathani, Xinyi Wang, and William Yang Wang. 2024. Automatically correcting large language models: Sur-veying the landscape of diverse automated correction strategies. Transactions of the Association for Compu-tational Linguistics , 12:484–506. Kishore Papineni, Salim Roukos, Todd Ward, and Wei-Jing Zhu. 2002. Bleu: a method for automatic evalua-
+
+11 46288 tion of machine translation. In Proceedings of the 40th Annual Meeting of the Association for Computational Linguistics , pages 311–318, Philadelphia, Pennsylvania, USA. Association for Computational Linguistics. Debjit Paul, Mete Ismayilzada, Maxime Peyrard, Beat-riz Borges, Antoine Bosselut, Robert West, and Boi Faltings. 2024. Refiner: Reasoning feedback on inter-mediate representations. In EACL .Judea Pearl. 1988. Probabilistic Reasoning in Intelli-gent Systems . Morgan Kaufmann. IBM Research. 2024. Granite foundation models. Marco Tulio Ribeiro, Tongshuang Wu, Carlos Guestrin, and Sameer Singh. 2020. Beyond accuracy: Behavioral testing of nlp models with checklist. In Proceedings of the 58th annual meeting of the association for computa-tional linguistics , pages 4902–4912. Pranab Sahoo, Prabhash Meharia, Akash Ghosh, Sri-parna Saha, Vinija Jain, and Aman Chadha. 2024. A comprehensive survey of hallucination in large lan-guage, image, video and audio foundation models. 
+
+Preprint , arXiv:2405.09589. Jérémy Scheurer, Jon Ander Campos, Tomasz Korbak, Jun Shern Chan, Angelica Chen, Kyunghyun Cho, and Ethan Perez. 2024. Training language models with lan-guage feedback at scale. Preprint , arXiv:2303.16755. Thibault Sellam, Dipanjan Das, and Ankur P. Parikh. 2020. BLEURT: learning robust metrics for text genera-tion. CoRR , abs/2004.04696. Noah Shinn, Federico Cassano, Edward Berman, Ash-win Gopinath, Karthik Narasimhan, and Shunyu Yao. 2023. Reflexion: Language agents with verbal rein-forcement learning. Preprint , arXiv:2303.11366. Yixiao Song, Yekyung Kim, and Mohit Iyyer. 2024. VeriScore: Evaluating the factuality of verifiable claims in long-form text generation. In Findings of the Asso-ciation for Computational Linguistics: EMNLP 2024 ,pages 9447–9474, Miami, Florida, USA. Association for Computational Linguistics. Zhaochen Su, Jun Zhang, Xiaoye Qu, Tong Zhu, Yanshu Li, Jiashuo Sun, Juntao Li, Min Zhang, and Yu Cheng. 2024. Conflictbank: A benchmark for evaluating the influence of knowledge conflicts in llm. arXiv preprint arXiv:2408.12076 .S. M Towhidul Islam Tonmoy, S M Mehedi Zaman, Vinija Jain, Anku Rani, Vipula Rawte, Aman Chadha, and Amitava Das. 2024. A comprehensive survey of hallucination mitigation techniques in large language models. Preprint , arXiv:2401.01313. Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothée Lacroix, Baptiste Rozière, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lample. 2023. Llama: Open and efficient foundation language models. Preprint ,arXiv:2302.13971. Jerry Wei, Chengrun Yang, Xinying Song, Yifeng Lu, Nathan Zixia Hu, Jie Huang, Dustin Tran, Daiyi Peng, Ruibo Liu, Da Huang, Cosmo Du, and Quoc V Le. 2024. Long-form factuality in large language models. In The Thirty-eighth Annual Conference on Neural Information Processing Systems .Yixuan Weng, Minjun Zhu, Fei Xia, Bin Li, Shizhu He, Shengping Liu, Bin Sun, Kang Liu, and Jun Zhao. 2023. Large language models are better reasoners with self-verification. In EMNLP , pages 2550–2575. Fangyuan Xu, Yixiao Song, Mohit Iyyer, , and Eunsol Choi. 2023. A critical evaluation of evaluations for long-form question answering. In In Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 3225–3245. Rongwu Xu, Zehan Qi, Zhijiang Guo, Cunxiang Wang, Hongru Wang, Yue Zhang, and Wei Xu. 2024. Knowl-edge conflicts for llms: A survey. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , pages 8541–8565. Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Thomas L. Griffiths, Yuan Cao, and Karthik Narasimhan. 2023. Tree of thoughts: Deliberate prob-lem solving with large language models. In NeurIPS .Eric Zelikman, Yuhuai Wu, Jesse Mu, and Noah D. Goodman. 2022. Star: Bootstrapping reasoning with reasoning. In NeurIPS .Yue Zhang, Yafu Li, Leyang Cui, Deng Cai, Lemao Liu, Tingchen Fu, Xinting Huang, Enbo Zhao, Yu Zhang, Yulong Chen, Longyue Wang, Anh Tuan Luu, Wei Bi, Freda Shi, and Shuming Shi. 2023. Siren’s song in the ai ocean: A survey on hallucination in large language models. Preprint , arXiv:2309.01219. Jialun Zhong, Wei Shen, Yanzeng Li, Songyang Gao, Hua Lu, Yicheng Chen, Yang Zhang, Wei Zhou, Jinjie Gu, and Lei Zou. 2025. A comprehensive survey of reward models: Taxonomy, applications, challenges, and future. Preprint , arXiv:2504.12328. 
+
+12 46289 A Background on Graphical Models 
+
+Graphical models such as Bayesian or Markov net-works provide a powerful framework for reasoning about conditional dependency structures over many variables (Pearl, 1988; Koller and Friedman, 2009). A graphical model is a tuple M = ⟨X, D, F⟩,where X = {X1, . . . , X n} is a set of variables, 
+
+D = {D1, . . . , D n} is the set of their finite do-mains of values and F = {f1, . . . , f m} is a set of discrete positive real-valued functions. Each func-tion fi (also called factor ) is defined on a subset of variables Si ⊆ X called its scope and denoted by vars (fi). The model M defines a factorized probability distribution on X:
+
+P (x) = 1
+
+Z
+
+> m
+
+∏
+
+> j=1
+
+fj (x) s.t. Z = ∑
+
+> x∈Ω( X)
+> m
+
+∏
+
+> j=1
+
+fj (x)
+
+(1) where the normalization constant Z is known as the 
+
+partition function and Ω( X) denotes the Cartesian product of the variables domains. The function scopes of a model M define a primal graph whose vertices are the variables and its edges connect any two variables that appear in the scope of the same function. A common inference task over graphical models is to compute the posterior marginal distributions over all variables. Namely, for each variable Xi ∈ X
+
+and domain value xi ∈ Di, compute: 
+
+P (xi) = ∑
+
+> x∈Ω( X)
+
+δxi (x) · P (x) (2) where δxi (x) is 1 if Xi is assigned xi in x and 0
+
+otherwise (Koller and Friedman, 2009). 
+
+Example 2. Figure 3 shows a graphical model with 3 bi-valued variables X1, X2 and X3 and 3 binary functions f1(X1, X 2), f2(X1, X 3) and 
+
+f3(X2, X 3). The joint probability distribution is given by P (X1, X 2, X 3) = 1 
+
+> Z
+
+· f1(X1, X 2) ·
+
+f2(X1, X 3)·f3(X2, X 3). In this case, the posterior marginal distribution of X1 is: P (X1 = 0) = 0 .46 
+
+and P (X1 = 1) = 0 .54 , respectively. 
+
+Equation 2 can be solved using any probabilistic inference algorithm for graphical models, such as     
+
+> Figure 3: A graphical model with three bi-valued vari-ables X1,X2and X3, and three binary functions.
+
+variable elimination (Dechter, 2003), belief propa-gation (Pearl, 1988), or variational inference (Liu and Ihler, 2011). In our implementation, we em-ployed the Weighted Mini-Buckets (WMB) algo-rithm (Liu and Ihler, 2011). WMB is parameterized by an i-bound, which controls the trade-off between computational complexity and inference accuracy. For our experiments, we selected an i-bound of 6, which enabled us to solve all inference problems ef-ficiently. Notably, WMB proved highly effective in practice, solving each inference instance in under 0.05 seconds across our benchmark datasets. 
+
+B Background on Factuality Assessment and Correction with Feedback 
+
+B.1 The F ACT REASONER Factuality Assessor 
+
+Existing long-form factuality assessors such as FactScore (Min et al., 2023), VeriScore (Song et al., 2024) and others (Wei et al., 2024; Bayat et al., 2025) are prompt-based approaches that essentially prompt an LLM to determine if each atomic unit of the response is supported (factually correct) or not by the retrieved evidence. F ACT REASONER 
+
+(Marinescu et al., 2025) is a recent factuality as-sessor that, unlike the prompt-based approaches, leverages probabilistic reasoning to assess the fac-tuality of the generated response with respect to an external knowledge source K.Specifically, the F ACT REASONER pipeline for fac-tuality assessment shown in Figure 4 (top) consists of four main stages called Atomizer , Reviser , Re-triever and Evaluator , respectively. The Atomizer 
+
+prompts an LLM to decompose the response y into a set of n atomic units Ay by applying any of the decomposition strategies proposed recently (Min et al., 2023; Bayat et al., 2025). Subsequently, the 
+
+Reviser also uses an LLM to revise the atoms such that the pronouns, unknown entities, or incomplete names are replaced with their corresponding named 13 46290 Figure 4: F ACT REASONER pipeline and an example graphical model with 5 atoms and 8 context variables. 
+
+entities in the response (Wei et al., 2024). Next, the 
+
+Retriever is responsible for querying an external knowledge source K to retrieve the contexts rele-vant to the response’s atoms (Song et al., 2024). Finally, the Evaluator constructs a graphical model representing a joint probability distribution over the atomic units in the response and their corre-sponding contexts in C. For each atom ai, it then computes the posterior marginal probability P (ai)
+
+which quantifies the likelihood the ai is true (or supported) given the information available in K.Finally, the factuality measures, such as P r (y) or 
+
+F1@K(y), can be readily calculated using the sup-ported atoms (Marinescu et al., 2025). 
+
+Graphical Model. FACT REASONER ’s graphical model is defined by a tuple ⟨X, D, F⟩ where X
+
+is a set of Boolean variables Ai or Cj associated with each atom ai ∈ A y or context cj ∈ C y, re-spectively. The domains D are {true , false } for all variables (e.g., we denote ai and ¬ai for Ai = true and Ai = false, respectively). Each variable has a unary factor f (·) in F encoding prior belief. Atoms have uniform priors: f (ai) = f (¬ai) = 0.5.Contexts from reliable sources have high prior (e.g., f (cj ) = 0 .99 ), while less reliable sources use smaller values. Binary factors f (Ai, C j ) and 
+
+f (Cj , C k) capture probabilistic logical relations between utterances. A relation model pθ(·| t, t ′)
+
+(either a specialized BERT model or an LLM) pre-dicts the most likely relation from {neutral, entail, contradict} together with its probability. Therefore, each factor f (Ai, C j ) or f (Cj , C k) represents a probabilistic encoding of an entailment relationship (i.e., context Cj entails or supports atom Ai) or a contradiction relationship (i.e., context Cj contra-dicts atom Ai), respectively. Note that the neutral relationships are ignored. 
+
+Example 3. Figure 4 (bottom) shows an exam-ple graphical model with 5 atoms ( A1, ..., A5), 8 contexts ( C1, ..., C8) and 19 binary relations be-tween atoms and contexts. Each edge in the graph  
+
+> Figure 5: F ACT REASONER pipeline and an example graphical model with 3 atom and 6 context variables.
+> Figure 6: Post-hoc correction with feedback.
+
+is labeled by the probability of the corresponding entailment (green) or contradiction (red) relation. 
+
+Example 4. Figure 5 (bottom) shows an example graphical model with 3 atoms ( A1, A2, A3), 6 con-texts ( C1, ..., C6) and 8 binary relations between atoms and contexts. Note that each edge in the graph is labeled by the probability of the corre-sponding entailment or contradiction relationship. 
+
+B.2 Post-hoc Correction with Feedback 
+
+In general, a post-hoc correction strategy leverages a Refine Model R to correct the response ˆy gen-erated by a Language Model M to a user query x
+
+using the feedback provided by a Critic Model C
+
+regarding the quality of the response. Formally, let M : X → Y be a language model that performs a specific task by mapping the user input x ∈ X to an output text ˆy ∈ Y . A wide range of NLP tasks adhere to this formulation, such as QA, summarization, translation, and more. The initial generation ˆy may have problems such as hallucinations, factual errors, or incorrect reason-ing. The critic model C : X × Y → F learns to generate feedback x, ˆy → c where ˆy ∼ M (x)
+
+is the output of the language model, and c is the 14 46291 feedback of some format such as a scalar value or natural language. A simple example is binary feed-back of whether the output is good or bad given the input C : X × Y → { 0, 1}. The refine model 
+
+R : X × Y × F → Y learns to repair/correct an output x, ˆy, c → ynew based on the feedback c,where ynew is the revised output (Pan et al., 2024). Figure 6 shows how the components of a post-hoc correction pipeline interact to repair the output of a language model. 
+
+C Additional Details on Experiments 
+
+In this section, we report additional details on our experiments. 
+
+C.1 Baseline Correctors 
+
+For our purpose, we consider two recent state-of-the-art post-hoc correction with feedback ap-proaches, namely CRITIC (Gou et al., 2024) and RAC (Li and Flanigan, 2025). Specifically, CRITC is a prompt-based iterative correction method that uses LLMs with retrieved knowledge. At each iter-ation, CRITIC prompts an LLM to generate a query to retrieve relevant information from a knowledge base and subsequently revise the output based on the history of revising and decide the most possi-ble answer. RAC is a post-hoc factuality correc-tion method designed to improve the accuracy of LLMs responses without additional fine-tuning. Its key steps are: the model’s generated text is bro-ken down into individual factual statements, rel-evant information is fetched from trusted sources (e.g., Wikipedia or document collections), and each atomic fact is checked against retrieved evidence using a verification model. Incorrect statements are then corrected based on reliable content. In addition, we consider two prompting strategies, denoted LLM1 and LLM2. The first, LLM1, per-forms response correction using only the model’s internal knowledge, without incorporating any re-trieved context. In contrast, LLM2 uses the con-texts retrieved for the question only and instructs the model to ignore its internal knowledge to re-fine the response (see Appendix D for the actual prompts). In our experiments, we instantiated the com-peting correctors with open-source LLMs belonging to the IBM Granite 4, Meta LLaMA 5,
+
+> 4https://huggingface.co/ibm-granite
+> 5https://huggingface.co/meta-llama
+
+MistralAI Mixtral 6 and OpenAI 7 families, namely: granite-4.0-h-small, llama-3.3-70b-instruct, mixtral-8x22b-instruct-v0.1 , and 
+
+gpt-oss-120b , respectively. All our LLMs are hosted remotely on compute nodes with A100 80GB GPUs and accessed via litellm APIs capable of serving 1500 prompts per second. 
+
+External Knowledge Source. We consider Google Search results as our external knowledge source K. For a given atom, the top k results are re-trieved as contexts from google.com using the Ser-per API 8. In this case, a context is a tuple (t, l, s, d ),where t is the title of the web-page, l is the link, 
+
+s is a short text snippet or summary and d is the content retrieved from l (but capped at max 4000 characters). We used k = 3 for the Google Search results (Min et al., 2023; Wei et al., 2024). 
+
+C.2 Datasets 
+
+We experimented with the following datasets: a reduced version of the V ELI 5 dataset presented in the previous section and consisting of 200 in-stances sampled uniformly at random across all categories, Biographies (B IO ) (Min et al., 2023), and AskHistorians (A SK HIST ) (Xu et al., 2023). These datasets have been widely adopted in prior work and are considered representative benchmarks for long-form factuality assessment, as they encom-pass a diverse range of topics and tasks, including creative writing, history, astronomy, chemistry, and more. The B IO dataset contains 183 biographic passages spanning up to two paragraphs that were generated by ChatGPT for various person entities that have a Wikipedia page (Min et al., 2023). The A SK HIST 
+
+datasets contains 200 questions sourced from the r/AskHistorians Reddit forum together with a long-form response of up to two paragraphs in length generated using the llama-3.3-70b-instruct model (Marinescu et al., 2025). Additionally, we include results on the C ONFLICTS 
+
+dataset introduced in (Marinescu et al., 2025). This dataset comprises 100 claims (atomic units) ran-domly drawn from the ConflictBank benchmark (Su et al., 2024). Each claim, originally sourced from Wikidata, is assumed to be true (i.e., sup-ported). For our purpose, we treat each claim as 
+
+> 6https://huggingface.co/mistralai
+> 7https://openai.com
+> 8https://serper.dev
+
+15 46292 a response and provide both a supporting context (as in ConflictBank) and a conflicting context (rep-resenting misinformation). Importantly, since all responses are true, they require no corrections, of-fering a controlled setting for our evaluation. 
+
+C.3 Measures of Performance 
+
+For each dataset D and each competing correc-tor, we compute three factuality metrics: precision (P r ), recall at K (R@K), and F1@K, averaged over all prompts in D, where K is set to the median number of atoms. These metrics are assessed using the F ACT REASONER framework (Marinescu et al., 2025). In addition, we report two complementary measures: verifiability ( V ) and comprehensiveness (C). The verifiability score V is defined as the number of atoms in the response (or correction) that can be verified—i.e., atoms connected to either supporting or contradicting evidence in FR’s graph. Comprehensiveness C quantifies coverage and is given by C = |A in ||A in |+|A out | , where Ain denotes the atoms covered by the response (or correction), and 
+
+Aout denotes atoms that are uncovered or missing (Dejl et al., 2025). For each score S (e.g., precision), we also report its relative gain , denoted as G(S) and defined by: 
+
+G(S) = 2 · (Sc − Sr)
+
+Sc + Sr
+
+where Sr and Sc are the scores of the original re-sponse and the correction, respectively. A positive 
+
+G(S) indicates that the correction outperforms the response, while a negative value means that the correction performs worse. By construction, G(S)
+
+ranges from −2 to 2 and remains well defined even when either Sr or Sc equals zero. 
+
+C.4 Detailed Results Number of Atoms. Table 17 presents the mean number of atoms and their standard deviations for both initial responses and subsequent corrections generated by the different correctors across datasets and base models. Notably, in some cases, the cor-rections contain substantially more atoms than the original responses. This increase may contribute to the observed decline in relative gains for factuality metrics, including the negative gains reported in Tables 11, 13, and 15. 
+
+CONFLICTS . Table 10 summarizes the results obtained on our controlled experiment with the CONFLICTS dataset. In this setting, since the original is known to be true and does not require correction, we assess the similarity between cor-rection and response using the ROUGE, BLEU, and BLEURT metrics (Lin, 2004; Papineni et al., 2002; Sellam et al., 2020). Additionally, we re-port JUDGE, which counts the number of instances where an LLM-as-a-Judge model (in our case DeepSeek-3.2), prompted appropriately, infers that the correction is equivalent to the original response. The table shows the mean and standard deviation for all metrics. The results indicate that F ACT COR - 
+
+> RECTOR
+
+achieves superior performance with the Mixtral and Granite models, while ranking second when using LLaMA and GPT-OSS models, where RAC attains the best scores. Therefore, both F ACT -CORRECTOR and RAC correctly identify that no correction is needed. In contrast, the LLM1 and LLM2 baselines perform rather poorly almost al-ways producing corrections significantly different from the response, while CRITIC often struggles to follow its instructions also leading to poor results. 
+
+VELI 5. In Table 11 we report the mean rela-tive gains and standard deviations obtained for the factuality metrics on the V ELI 5 dataset using the 
+
+mixtral-8x22b-instruct-v0.1 , llama-3.3-70b-instruct, granite-4.0-h-small and gpt-oss-120b 
+
+models. The results demonstrate that F ACT COR - 
+
+> RECTOR
+
+consistently delivers strong and reliable improvements in factuality across all evaluated met-rics and models. For example, when considering relative gains on precision and F1@K, FC out-performs all baselines, achieving macro-averaged gains of 0.315 for precision, and 0.2325 for F1@K — substantially higher than the next-best corrector (see also Figure 2). Importantly, FC is often best or tied-best in many metric–model combinations, showing strong generalization across diverse LLM architectures. LLM1 and LLM2 show strong per-formance in this case, likely due to the provenance of the V ELI 5 questions which were originally de-rived from public Reddit forums. Therefore, it is plausible that similar content was included in these models’ pre-training corpora which may confer a significant advantage on this dataset. Table 12 reinforces these findings by examining factual precision before and after correction. FC achieves the highest post-correction precision on two out of four models (LLaMa, Mixtral) and ranks second on Granite and GPT-OSS, where it still de-livers large relative gains. On average, FC improves precision by +0.21, outperforming all baselines, in-16 46293 cluding LLM1 (+0.17) and RAC (+0.16). While RAC slightly surpasses FC on GPT-OSS in final precision, FC dominates in overall gains, suggest-ing a more robust correction strategy. In contrast, CRITIC exhibits inconsistent behavior, even reduc-ing precision for GPT-OSS. Finally, Figure 7 plots the factual precision of both the original response and its correction generated by F ACT CORRECTOR 
+
+highlighting the substantial positive gains achieved by the corrector. 
+
+BIO . Table 13 presents the mean relative gains and standard deviations obtained on the B IO 
+
+dataset. FC exhibits robust performance across models, achieving its highest gains with Mixtral and Granite, and ranking second for Llama. In con-trast, LLM1 performs poorly, particularly on Gran-ite and GPT-OSS. Both RAC and LLM2 remain highly competitive on this dataset, while CRITIC, as observed previously, struggles to follow instruc-tions, leading to inconsistent results. Figure 8 further illustrates the macro-gains across models, showing that FC slightly outperforms RAC and LLM2. Notably, the B IO dataset is sourced from Wikipedia (Min et al., 2023) — a common com-ponent of the pre-training corpora for most mod-ern LLMs, including those evaluated in our exper-iments. This explains the strong performance of RAC and LLM2 which rely heavily on their inter-nal knowledge. Looking at Table 14 which reports the mean factual precision before and after cor-rection we can see that FC is the best performing corrector on two models (Mixtral, Granite) and sec-ond best on Llama. In contrast, GPT-OSS seems to be better suited for RAC and LLM2. 
+
+ASK HIST . Table 15 summarizes the mean rela-tive gains and standard deviations obtained on the ASK HIST dataset. Unlike previous experiments, the gains here are considerably smaller. This is primarily because the factual precision of the orig-inal responses is already high—typically exceed-ing 89% on average—leaving limited room for im-provement through correction. Interestingly, all other baselines exhibit negative gains, indicating that their corrections are less factual than the orig-inal responses. In contrast, FC maintains robust performance across all models, almost always pro-ducing corrections that are at least as factual as the original responses and, in many cases, substantially better. The results in Table 16 corroborate this ob-servation and further validate the effectiveness of our proposed FC corrector. In summary, F ACT CORRECTOR (FC) consistently delivers the most reliable improvements in factu-ality, across all datasets. Specifically, on V ELI 5, FC achieves substantial gains across precision, re-call@K, and F1@K, outperforming all baselines and demonstrating strong generalization across models. For B IO , FC remains robust, slightly sur-passing RAC and LLM2 despite their advantage from Wikipedia-based pre-training, and achieves top or near-top factual precision on most models. On A SK HIST , where original responses are already highly factual, FC still maintains positive gains, unlike other baselines that often degrade perfor-mance. These results highlight FC’s effectiveness and adaptability across diverse datasets and model architectures. 
+
+Statistical Significance Tests. We performed one-sided t-tests on the mean relative gain in preci-sion achieved by FC compared to competing meth-ods. The corresponding ppp-values are reported in Table 18. The near-zero ppp-values for the pre-cision metric provide strong statistical evidence that FC consistently and significantly outperforms all baselines across datasets and underlying model configurations. These results underscore the robust-ness of FC and its ability to deliver substantially more accurate factual corrections than existing ap-proaches. 
+
+C.5 Additional Analysis on Efficiency, Modularity, and Robustness 
+
+In this section, we provide additional analysis of computational cost of F ACT CORRECTOR , the role of the different components, and the robustness of the proposed method. 
+
+Computational cost and scalability. A key ob-servation is that the dominant cost of the overall pipeline arises from factuality assessment rather than from the correction module itself. To isolate the overhead introduced by F ACT CORRECTOR , we measure runtime on 10 V ELI 5 samples with con-texts retrieved in advance, thereby decoupling the correction step from retrieval and assessment.             
+
+> Component Avg (s) Min (s) Max (s) FactReasoner (assessment) 22.37 1.61 71.93 FactCorrector (correction) 2.30 0.00 5.20 Total pipeline 24.67 ––
+> Table 7: Runtime decomposition with pre-retrieved con-texts.
+
+17 46294 In this controlled setting, F ACT CORRECTOR ac-counts for only 2.30 /24 .67 ≈ 9.3% of total run-time, while the remaining cost is attributable to factuality assessment. This shows that the primary computational bottleneck lies in the assessor, while the correction step introduces only a bounded over-head. We also compare end-to-end latency on 30 VELI 5 samples by instantiating 
+
+llama-3.3-70b-instruct :               
+
+> Setting Factuality Latency (s) LLM Calls Original prediction 78.41% 24.0 3,913 LLM2 95.58% 128.2 8,300 FactCorrector 97.50% 177.7 13,731 CRITIC 89.32% 196.3 8,183
+> Table 8: Latency comparison on V ELI 5.
+
+For the original prediction, F ACT REASONER was run only to obtain the factuality score of the original response, and the contexts were already available in the V ELI 5 dataset. In contrast, for all correc-tion methods, new contexts were retrieved and a full assessment pass was performed on the cor-rected outputs, which increases runtime. Notably, the CRITIC results correspond to three critique-regenerate iterations to approach performance com-parable to F ACT CORRECTOR . F ACT CORRECTOR 
+
+incurs moderate overhead relative to LLM2 due to atom-level grounding and graph construction, but remains competitive with iterative correction strategies while requiring only a single bounded refinement pass. Overall, verification dominates the computational cost. 
+
+Robustness of corrections. We further analyze whether the correction process introduces new unsupported claims. We identify newly gen-erated atoms in the corrected outputs that are not present in the original answers and evalu-ate whether they are unsupported by the pro-vided contexts using an independent LLM judge (llama-3.3-70b-instruct ). Across 194 V ELI 5samples, newly introduced unsupported atoms are very rare (0.24% of 2,876 atoms), indicating that the method produces conservative and reliable re-visions. 
+
+C.6 Results for SFT Correction 
+
+We used the larger V ELI 5 dataset to train a LoRA adapter on the Granite-Guardian-5B model for gen-erating corrections. The hyperparameters of the LoRA adapter were the following: r = 64, α = 128, bias = none, lr = 1e-5, schedule = cosine, batch size = 16 and we used all linear layers. Table 6 reports the mean relative gains on the VELI 5 dataset when using the F ACT CORRECTOR 
+
+pipeline versus the LoRA-based correction ap-proach (denoted as SFT). Overall, the SFT method produces substantially better corrections than the original responses, which is expected given that the evaluation instances originate from the same distribution as the training data. Tables 19 and 20 present results on the B IO and ASK HIST datasets, which are out-of-distribution relative to the SFT training data. As expected, the gains achieved by SFT are smaller than be-fore; however, most gains remain non-negative, indicating that the SFT approach generalizes rea-sonably well. This is noteworthy because SFT is significantly more cost-efficient, requiring only a single LLM call per correction, compared to the more complex F ACT CORRECTOR pipeline, which involves multiple LLM calls for each instance. 
+
+C.7 Human Evaluation of V ELI 5
+
+We conducted a human evaluation to assess the quality and correctness of V ELI 5 corrections. An-notators were presented with the original question, the LLM response, a highlighted atom text ex-tracted from the response, relevant contextual in-formation, and the correction. For each instance, annotators made three judgments: (1) whether the incorrect atom had been appropriately corrected given the provided context (labeled as corrected, undercorrected (which also includes not corrected and wrongly corrected), rightly overcorrected, or invalid); (2) whether the factual content of a cor-rect atom was preserved in the correction (labeled as preserved, partially preserved, not preserved, or invalid), and separately rate each atom’s relevance to the question as Relevant, Partially relevant, Ir-relevant, Invalid (hallucinated atom), or Invalid (other reasons). Clear annotation guidelines and ex-amples were provided to ensure consistency. This evaluation setup allowed us to measure both factual alignment with external context and faithfulness to the original atomic information, providing a fine-grained assessment of correction quality beyond overall response accuracy. We design a Label Studio interface to evaluate revi-sions at multiple granularities. For incorrect or un-18 46295 Metric %Dataset Summary                                                        
+
+> Tasks (filtered) 30 Incorrect atoms / task 2.30 ±1.39 Correct atoms / task 4.40 ±2.66
+> Task-level relevance
+> Response relevant 90.0% Response partially relevant 10.0% Response irrelevant 0.0% Correction relevant 96.7% Correction partially relevant 3.3% Correction irrelevant 0.0%
+> Incorrect atoms — correction
+> Corrected 67.4 ±38.5 Undercorrected 26.4 ±36.8 Overcorrected 3.3 ±18.3 Invalid 2.9 ±12.6
+> Incorrect atoms — relevance
+> Relevant 75.0 ±43.1 Partially relevant 3.3 ±18.3 Irrelevant 5.0 ±20.1
+> Correct atoms — preservation
+> Preserved 60.9 ±34.9 Partially preserved 9.2 ±14.8 Not preserved 27.7 ±29.5 Invalid 2.3 ±5.3
+> Correct atoms — relevance
+> Relevant 72.4 ±40.7 Partially relevant 7.9 ±17.1 Irrelevant 3.0 ±13.2
+
+Table 9: Atom-level evaluation and task-level relevance (percent mean ± std). 
+
+verified response atoms, annotators judge whether each atom is Corrected, Undercorrected, Over-corrected, Invalid (hallucinated atom), or Invalid (other reasons) (with a free-text rationale when “In-valid (other reasons)” is selected), and separately rate each atom’s relevance to the question as Rele-vant, Partially relevant, Irrelevant, Invalid (halluci-nated atom), or Invalid (other reasons) (again with an optional rationale for the latter). For correct re-sponse atoms, annotators assess information preser-vation in the correction as Preserved, Partially pre-served, Not preserved, Invalid (hallucinated atom), or Invalid (other reasons) (with rationale text for “Invalid (other reasons)”), and also label each cor-rect atom’s relevance to the question using the same five-way relevance scale. Finally, at the response level, annotators label model-response relevance and correction relevance to the question as Rele-vant, Partially Relevant, or Irrelevant, providing an end-to-end check that the revision remains on-topic while atom-level labels capture whether factual er-rors were fixed and correct content was retained. Table 9 summarizes the results of our human evalu-ation conducted on 30 filtered tasks (or instances) from our V ELI 5 dataset. Each task comprises on average 2.30 incorrect atoms and 4.40 correct atoms. At the task level, the original responses demonstrated high relevance with respect to the user question, with 90% classified as fully relevant and 10% as partially relevant, while corrections achieved even greater relevance to the question, with 96.7% fully relevant. For incorrect atoms, 67.4% were successfully corrected by F ACT COR -
+
+> RECTOR
+
+, though 26.4% remained undercorrected, and only minor proportions were overcorrected (3.3%) or invalid (2.9%). Correct atoms in the original response were preserved by the correction in 60.9% of cases, with 27.7% not preserved and small fractions partially preserved or invalid. Rele-vance analysis indicated that both incorrect and cor-rect atoms were predominantly relevant to the user question (75.0% and 72.4%, respectively), under-scoring the overall effectiveness of the correction process. 
+
+D Prompts 
+
+In this section, we present the prompts used in our experiments. Specifically, Figure 11 shows the prompt employed by the LLM-as-a-Judge model used in our experiments with the C ONFLICTS 
+
+dataset. Figures 12 and 13 show the prompts em-ployed by the LLM1 and LLM2 baselines. Fig-ure 14 shows the prompt used by F ACT CORREC -
+
+> TOR
+
+’s refinement model (i.e., Corrector) to gener-ate the corrected response based on the critic’s feed-back. The latter consists of the incorrect atoms, the contexts connected to them by an edge in the graph-ical model, together with the relationship types corresponding to those edges (i.e., entailment or contradiction). 
+
+E VELI 5 Benchmark Examples and Details 
+
+Figure 15 shows the prompt we used to generate factually incorrect responses for our V ELI 5 bench-mark dataset. Figures 16 illustrate the word count distributions for human responses versus corrections (top) and synthetic responses versus corrections (middle). Figure 16 (bottom) shows the overall distribution for responses compared to their corrections. Across all cases, corrections tend to be longer than the orig-inal responses. 19 46296 corrector ROUGE ↑ BLEU ↑ BLEURT ↑ JUDGE ↑
+
+mixtral-8x22b-instruct-v0.1 
+
+CRITIC 0.14 ±0.07 0.02 ±0.03 -0.69 ±0.25 0.41 RAC 0.54 ±0.23 0.23 ±0.27 0.29 ±0.43 0.87 
+
+LLM1 0.15 ±0.05 0.02 ±0.02 -0.63 ±0.21 0.30 LLM2 0.20 ±0.10 0.05 ±0.05 -0.48 ±0.22 0.10 FC (ours) 0.89 ±0.26 0.87 ±0.32 0.73 ±0.47 0.87 
+
+llama-3.3-70b-instruct 
+
+CRITIC 0.32 ±0.27 0.15 ±0.28 -0.36 ±0.56 0.31 RAC 0.87 ±0.20 0.77 ±0.32 0.65 ±0.43 0.77 
+
+LLM1 0.19 ±0.11 0.03 ±0.05 -0.62 ±0.33 0.17 LLM2 0.21 ±0.10 0.04 ±0.04 -0.46 ±0.22 0.06 FC (ours) 0.73 ±0.33 0.62 ±0.45 0.46 ±0.56 0.60 
+
+granite-4.0-h-small 
+
+CRITIC 0.15 ±0.11 0.03 ±0.10 -0.69 ±0.26 0.20 RAC 0.74 ±0.23 0.48 ±0.37 0.49 ±0.46 0.73 LLM1 0.15 ±0.07 0.02 ±0.02 -0.68 ±0.23 0.17 LLM2 0.42 ±0.24 0.15 ±0.17 -0.10 ±0.44 0.13 FC (ours) 0.83 ±0.30 0.76 ±0.39 0.58 ±0.57 0.78 
+
+gpt-oss-120b 
+
+CRITIC 0.12 ±0.07 0.01 ±0.01 -0.89 ±0.22 0.09 RAC 0.85 ±0.17 0.60 ±0.33 0.74 ±0.29 0.89 
+
+LLM1 0.08 ±0.03 0.00 ±0.01 -0.83 ±0.15 0.37 LLM2 0.16 ±0.06 0.02 ±0.02 -0.54 ±0.18 0.19 FC (ours) 0.72 ±0.37 0.66 ±0.46 0.44 ±0.67 0.66 
+
+granite-4.0-h-tiny 
+
+CRITIC 0.55 ±0.43 0.49 ±0.47 0.08 ±0.81 0.77 RAC 0.83 ±0.18 0.59 ±0.33 0.67 ±0.36 0.84 LLM1 0.22 ±0.19 0.08 ±0.19 -0.44 ±0.40 0.40 LLM2 0.38 ±0.29 0.15 ±0.21 -0.23 ±0.47 0.29 FC (ours) 0.97 ±0.15 0.95 ±0.19 0.86 ±0.28 0.97 
+
+Table 10: Results obtained on the C ONFLICTS dataset. 
+
+Tables 21 and 22 show two illustrative exam-ples from the V ELI 5 dataset comprising a human-authored as well as a synthetic response together with their corresponding corrections. 
+
+Figure 7: Factual precision: response vs correction by FACT CORRECTOR on the V ELI 5 dataset. 
+
+20 46297 corrector Pr ↑ R@K ↑ F1@K ↑ V ↑ C ↑
+
+mixtral-8x22b-instruct-v0.1 
+
+CRITIC 0.26 ±0.49 0.08 ±0.33 0.19 ±0.41 0.09 ±0.32 0.06 ±0.18 RAC 0.24 ±0.49 0.08 ±0.33 0.18 ±0.41 0.08 ±0.29 0.06 ±0.20 LLM1 0.32 ±0.45 0.10 ±0.30 0.23 ±0.37 0.12 ±0.30 0.07 ±0.17 LLM2 0.32 ±0.45 0.10 ±0.30 0.23 ±0.38 0.13 ±0.31 0.07 ±0.17 FC (ours) 0.34 ±0.46 0.09 ±0.34 0.24 ±0.40 0.14 ±0.29 0.07 ±0.16 
+
+SFT (ours) 0.19 ±0.51 0.10 ±0.41 0.16 ±0.45 0.05 ±0.33 0.08 ±0.23 
+
+llama-3.3-70b-instruct 
+
+CRITIC 0.19 ±0.41 0.06 ±0.29 0.13 ±0.34 0.03 ±0.17 0.05 ±0.25 RAC 0.13 ±0.37 0.02 ±0.22 0.09 ±0.29 0.02 ±0.08 0.05 ±0.20 LLM1 0.25 ±0.40 0.06 ±0.29 0.18 ±0.34 0.05 ±0.16 0.08 ±0.24 LLM2 0.26 ±0.40 0.07 ±0.29 0.18 ±0.34 0.05 ±0.16 0.08 ±0.24 FC (ours) 0.27 ±0.39 0.07 ±0.29 0.18 ±0.34 0.05 ±0.16 0.08 ±0.23 
+
+SFT (ours) 0.25 ±0.49 0.11 ±0.41 0.19 ±0.44 0.10 ±0.32 0.08 ±0.23 
+
+granite-4.0-h-small 
+
+CRITIC 0.17 ±0.55 0.04 ±0.43 0.12 ±0.49 0.05 ±0.38 0.06 ±0.23 RAC 0.20 ±0.49 0.09 ±0.35 0.16 ±0.41 0.06 ±0.26 0.07 ±0.23 LLM1 0.31 ±0.48 0.11 ±0.40 0.23 ±0.44 0.11 ±0.31 0.08 ±0.22 
+
+LLM2 0.20 ±0.53 0.10 ±0.42 0.16 ±0.47 0.09 ±0.32 0.05 ±0.25 FC (ours) 0.29 ±0.49 0.10 ±0.43 0.21 ±0.45 0.11 ±0.32 0.07 ±0.23 SFT (ours) 0.22 ±0.50 0.11 ±0.40 0.18 ±0.45 0.09 ±0.32 0.07 ±0.24 
+
+gpt-oss-120b 
+
+CRITIC -0.04 ±0.62 0.01 ±0.54 -0.02 ±0.57 -0.01 ±0.30 -0.03 ±0.33 RAC 0.34 ±0.60 0.15 ±0.48 0.27 ±0.53 0.06 ±0.31 0.13 ±0.34 LLM1 0.21 ±0.64 0.16 ±0.51 0.19 ±0.57 -0.01 ±0.30 0.13 ±0.34 LLM2 0.33 ±0.64 0.20 ±0.52 0.28 ±0.57 0.05 ±0.29 0.13 ±0.34 FC (ours) 0.36 ±0.58 0.19 ±0.51 0.30 ±0.54 0.07 ±0.26 0.14 ±0.33 SFT (ours) 0.08 ±0.57 0.08 ±0.45 0.08 ±0.51 0.07 ±0.34 0.02 ±0.26 
+
+Table 11: Relative Gains for the factuality metrics obtained on the VELI5 dataset. We show the mean and standard deviation as well as highlight the best performance. 
+
+Figure 8: Mean relative gains (macro) for factuality metrics across models on the B IO dataset. 
+
+21 46298 corrector llama-3.3-70b-instruct mixtral-8x22b-instruct-v0.1 granite-4.0-h-small gpt-oss-120b 
+
+before after before after before after before after CRITIC 0.78 ±0.24 0.90 ±0.15 0.70 ±0.25 0.88 ±0.18 0.74 ±0.26 0.86 ±0.24 0.62 ±0.28 0.58 ±0.26 RAC 0.78 ±0.24 0.91 ±0.14 0.70 ±0.25 0.86 ±0.18 0.74 ±0.26 0.88 ±0.17 0.62 ±0.28 0.85 ±0.20 
+
+LLM1 0.78 ±0.24 0.95 ±0.07 0.70 ±0.25 0.91 ±0.13 0.74 ±0.26 0.94 ±0.10 0.62 ±0.28 0.72 ±0.18 LLM2 0.78 ±0.24 0.96 ±0.07 0.70 ±0.25 0.91 ±0.11 0.74 ±0.26 0.86 ±0.17 0.62 ±0.28 0.79 ±0.18 FC (ours) 0.78 ±0.24 0.97 ±0.07 0.70 ±0.25 0.93 ±0.11 0.74 ±0.26 0.93 ±0.13 0.62 ±0.28 0.82 ±0.16 
+
+Table 12: Mean factual precision and standard deviation before and after correction on the VELI5 dataset. 
+
+corrector Pr ↑ R@K ↑ F1@K ↑ V ↑ C ↑
+
+mixtral-8x22b-instruct-v0.1 
+
+CRITIC 0.27 ±0.83 0.22 ±0.80 0.25 ±0.82 0.05 ±0.32 0.05 ±0.41 RAC 0.39 ±0.68 0.29 ±0.68 0.34 ±0.68 0.05 ±0.38 0.13 ±0.35 LLM1 0.27 ±0.66 0.25 ±0.64 0.27 ±0.65 0.02 ±0.33 0.07 ±0.33 LLM2 0.42 ±0.72 0.30 ±0.72 0.37 ±0.72 0.11 ±0.29 0.07 ±0.41 FC (ours) 0.46 ±0.70 0.33 ±0.72 0.41 ±0.70 0.12 ±0.27 0.11 ±0.36 
+
+SFT (ours) 0.05 ±0.42 0.00 ±0.34 0.02 ±0.38 0.05 ±0.27 0.02 ±0.11 
+
+llama-3.3-70b-instruct 
+
+CRITIC 0.37 ±0.61 0.18 ±0.59 0.29 ±0.59 0.08 ±0.31 0.13 ±0.50 RAC 0.42 ±0.58 0.21 ±0.58 0.33 ±0.57 0.12 ±0.29 0.17 ±0.44 LLM1 0.23 ±0.64 0.14 ±0.62 0.19 ±0.62 0.07 ±0.30 0.11 ±0.44 LLM2 0.45 ±0.57 0.21 ±0.57 0.36 ±0.56 0.12 ±0.28 0.18 ±0.44 
+
+FC (ours) 0.44 ±0.56 0.22 ±0.57 0.35 ±0.56 0.12 ±0.28 0.17 ±0.44 SFT (ours) 0.01 ±0.39 -0.02 ±0.29 -0.01 ±0.34 0.06 ±0.28 -0.03 ±0.18 
+
+granite-4.0-h-small 
+
+CRITIC 0.12 ±0.43 0.02 ±0.29 0.08 ±0.36 0.04 ±0.24 0.02 ±0.12 RAC 0.22 ±0.41 0.08 ±0.35 0.16 ±0.37 0.10 ±0.31 0.04 ±0.13 LLM1 -0.03 ±0.31 -0.01 ±0.25 -0.02 ±0.28 0.02 ±0.21 0.00 ±0.12 LLM2 0.19 ±0.58 0.13 ±0.44 0.16 ±0.50 0.13 ±0.39 0.03 ±0.15 FC (ours) 0.26 ±0.44 0.10 ±0.38 0.20 ±0.40 0.14 ±0.33 0.03 ±0.13 SFT (ours) 0.05 ±0.41 0.00 ±0.36 0.02 ±0.38 0.06 ±0.27 -0.02 ±0.26 
+
+gpt-oss-120b 
+
+CRITIC 0.00 ±0.38 0.00 ±0.34 0.00 ±0.36 0.00 ±0.28 0.01 ±0.35 RAC 0.51 ±0.66 0.28 ±0.69 0.42 ±0.66 0.11 ±0.24 0.28 ±0.60 
+
+LLM1 -0.28 ±0.92 -0.10 ±0.86 -0.22 ±0.89 -0.24 ±0.42 0.06 ±0.71 LLM2 0.48 ±0.67 0.31 ±0.68 0.41 ±0.67 0.10 ±0.30 0.27 ±0.60 FC (ours) 0.40 ±0.71 0.29 ±0.70 0.36 ±0.70 0.10 ±0.30 0.24 ±0.61 SFT (ours) -0.04 ±0.42 0.00 ±0.34 -0.02 ±0.37 0.0 ±0.31 -0.04 ±0.21 
+
+Table 13: Relative Gains for the factuality metrics obtained on the B IO dataset. We show the mean and standard deviation as well as highlight the best performance. 
+
+corrector llama-3.3-70b-instruct mixtral-8x22b-instruct-v0.1 granite-4.0-h-small gpt-oss-120b 
+
+before after before after before after before after CRITIC 0.65 ±0.28 0.86 ±0.19 0.64 ±0.32 0.75 ±0.25 0.72 ±0.23 0.80 ±0.21 0.56 ±0.28 0.56 ±0.28 RAC 0.65 ±0.28 0.91 ±0.10 0.64 ±0.32 0.84 ±0.19 0.72 ±0.23 0.86 ±0.14 0.56 ±0.28 0.86 ±0.16 
+
+LLM1 0.65 ±0.28 0.76 ±0.23 0.64 ±0.32 0.72 ±0.22 0.72 ±0.23 0.71 ±0.22 0.56 ±0.28 0.33 ±0.17 LLM2 0.65 ±0.28 0.93 ±0.07 0.64 ±0.32 0.86 ±0.18 0.72 ±0.23 0.79 ±0.18 0.56 ±0.28 0.79 ±0.11 FC (ours) 0.65 ±0.28 0.91 ±0.11 0.64 ±0.32 0.87 ±0.15 0.72 ±0.23 0.90 ±0.12 0.56 ±0.28 0.75 ±0.18 
+
+Table 14: Mean factual precision and standard deviation before and after correction on the B IO dataset. 
+
+22 46299 corrector Pr ↑ R@K ↑ F1@K ↑ V ↑ C ↑
+
+mixtral-8x22b-instruct-v0.1 
+
+CRITIC -0.12 ±0.36 -0.04 ±0.21 -0.09 ±0.29 -0.06 ±0.25 -0.01 ±0.09 RAC -0.01 ±0.23 -0.01 ±0.07 -0.01 ±0.15 -0.01 ±0.18 0.00 ±0.06 LLM1 -0.02 ±0.18 0.00 ±0.06 -0.01 ±0.12 0.00 ±0.13 0.00 ±0.06 LLM2 -0.03 ±0.21 0.00 ±0.08 -0.02 ±0.15 0.00 ±0.16 0.00 ±0.07 FC (ours) 0.02 ±0.19 0.00 ±0.10 0.00 ±0.14 0.02 ±0.14 0.00 ±0.06 
+
+SFT (ours) -0.09 ±0.21 0.00 ±0.07 -0.05 ±0.14 -0.08 ±0.16 0.01 ±0.08 
+
+llama-3.3-70b-instruct 
+
+CRITIC -0.03 ±0.20 0.00 ±0.05 -0.01 ±0.13 -0.01 ±0.13 -0.01 ±0.07 RAC 0.03 ±0.19 0.01 ±0.05 0.02 ±0.12 0.02 ±0.09 0.00 ±0.05 LLM1 0.00 ±0.16 0.00 ±0.05 0.00 ±0.10 0.00 ±0.07 0.00 ±0.06 LLM2 0.01 ±0.17 0.00 ±0.05 0.01 ±0.11 0.00 ±0.08 0.00 ±0.05 FC (ours) 0.04 ±0.15 0.01 ±0.04 0.02 ±0.10 0.01 ±0.07 0.01 ±0.05 
+
+SFT (ours) -0.01 ±0.20 0.00 ±0.05 0.00 ±0.13 0.02 ±0.11 0.00 ±0.08 
+
+granite-4.0-h-small (32b) CRITIC -0.13 ±0.45 -0.09 ±0.42 -0.11 ±0.42 -0.05 ±0.29 -0.04 ±0.19 RAC -0.06 ±0.27 -0.01 ±0.08 -0.04 ±0.18 -0.01 ±0.12 -0.02 ±0.10 LLM1 -0.08 ±0.30 -0.03 ±0.24 -0.05 ±0.27 -0.03 ±0.16 -0.02 ±0.15 LLM2 -0.07 ±0.20 -0.01 ±0.05 -0.04 ±0.13 -0.03 ±0.12 -0.01 ±0.07 FC (ours) 0.00 ±0.16 0.00 ±0.05 0.00 ±0.11 0.01 ±0.09 0.00 ±0.06 
+
+SFT (ours) 0.00 ±0.18 0.00 ±0.04 0.00 ±0.12 0.00 ±0.14 0.00 ±0.09 
+
+gpt-oss-120b 
+
+CRITIC -0.03 ±0.33 -0.01 ±0.24 -0.02 ±0.28 0.01 ±0.24 -0.01 ±0.18 RAC 0.12 ±0.37 0.03 ±0.24 0.08 ±0.30 0.06 ±0.26 0.02 ±0.13 
+
+LLM1 -0.49 ±0.54 -0.26 ±0.48 -0.41 ±0.52 -0.19 ±0.31 -0.08 ±0.20 LLM2 -0.03 ±0.48 -0.01 ±0.34 -0.03 ±0.42 0.03 ±0.25 -0.04 ±0.22 FC (ours) 0.00 ±0.16 0.00 ±0.05 0.00 ±0.11 0.01 ±0.09 0.00 ±0.06 SFT (ours) -0.28 ±0.34 -0.06 ±0.21 -0.19 ±0.28 -0.09 ±0.19 -0.05 ±0.10 
+
+Table 15: Relative Gains for the factuality metrics obtained on the A SK HIST dataset. We show the mean and standard deviation as well as highlight the best performance. 
+
+corrector llama-3.3-70b-instruct mixtral-8x22b-instruct-v0.1 granite-4.0-h-small gpt-oss-120b 
+
+before after before after before after before after CRITIC 0.89 ±0.12 0.87 ±0.14 0.84 ±0.13 0.77 ±0.23 0.89 ±0.13 0.82 ±0.22 0.69 ±0.20 0.67 ±0.21 RAC 0.89 ±0.12 0.92 ±0.11 0.84 ±0.13 0.84 ±0.15 0.89 ±0.13 0.85 ±0.16 0.69 ±0.20 0.77 ±0.20 LLM1 0.89 ±0.12 0.89 ±0.12 0.84 ±0.13 0.82 ±0.14 0.89 ±0.13 0.84 ±0.16 0.69 ±0.20 0.42 ±0.18 LLM2 0.89 ±0.12 0.89 ±0.09 0.84 ±0.13 0.82 ±0.15 0.89 ±0.13 0.83 ±0.13 0.69 ±0.20 0.67 ±0.20 FC (ours) 0.89 ±0.12 0.92 ±0.10 0.84 ±0.13 0.87 ±0.15 0.89 ±0.13 0.90 ±0.14 0.69 ±0.20 0.67 ±0.20 
+
+Table 16: Mean factual precision and standard deviation before and after correction on the A SK HIST dataset. 
+
+23 46300 dataset response correction CRITIC RAC LLM1 LLM2 FC (ours) SFT (ours) 
+
+mixtral-8x22b-instruct-v0.1 
+
+VELI 5 8±4 10 ±3 10 ±4 13 ±4 13 ±4 15 ±13 12 ±5BIO 14 ±7 15 ±7 15 ±6 16 ±5 18 ±8 18 ±7 17 ±6ASK HIST 17 ±4 11 ±4 14 ±5 16 ±4 17 ±5 18 ±15 15 ±4
+
+llama-3.3-70b-instruct 
+
+VELI 5 11 ±5 12 ±4 12 ±5 13 ±4 18 ±5 19 ±6 14 ±6BIO 18 ±7 17 ±9 17 ±6 22 ±8 28 ±8 21 ±7 20 ±8ASK HIST 21 ±5 15 ±6 16 ±6 23 ±6 21 ±6 20 ±8 18 ±5
+
+granite-4.0-h-small 
+
+VELI 5 8±5 8±5 8±5 15 ±7 11 ±5 10 ±6 11 ±6BIO 18 ±6 17 ±7 15 ±5 21 ±6 23 ±8 17 ±6 18 ±5ASK HIST 17 ±5 9±5 14 ±5 18 ±6 16 ±5 15 ±6 15 ±5
+
+gpt-oss-120b 
+
+VELI 5 8±4 8±5 10 ±8 27 ±12 16 ±6 15 ±7 11 ±6BIO 16 ±7 16 ±7 14 ±8 36 ±13 36 ±13 28 ±11 18 ±7ASK HIST 18 ±5 18 ±7 12 ±7 42 ±17 17 ±8 22 ±8 16 ±7
+
+Table 17: Mean number of atoms and standard deviation for the response and corrections from different correctors. 
+
+model FC vs. CRITIC FC vs. RAC FC vs. LLM1 FC vs. LLM2 VELI 5
+
+mixtral-8x22b-instruct-v0.1 0.0569 0.0277 0.3604 0.3851 llama-3.3-70b 0.0233 0.0005 0.3719 0.4219 
+
+granite-4-small 0.0134 0.0468 0.6798 0.0401 
+
+gpt-oss-120b 0.0000 0.3935 0.0098 0.3084 BIO 
+
+mixtral-8x22b-instruct-v0.1 0.0207 0.1933 0.0103 0.3397 llama-3.3-70b 0.1449 0.3867 0.0005 0.6094 
+
+granite-4-small 0.0016 0.1792 0.0000 0.1365 
+
+gpt-oss-120b 0.0000 0.9370 0.0000 0.8449 ASK HIST 
+
+mixtral-8x22b-instruct-v0.1 0.0000 0.1252 0.0202 0.0098 
+
+llama-3.3-70b 0.0002 0.3812 0.0181 0.0614 
+
+granite-4-small 0.0007 0.0093 0.0031 0.0005 
+
+gpt-oss-120b 0.3759 0.9998 0.0000 0.3468 
+
+Table 18: Statistical significance tests: p-values for G(P r ) on the datasets. 
+
+corrector Pr ↑ R@K ↑ F1@K ↑ V ↑ C ↑
+
+mixtral-8x22b-instruct-v0.1 
+
+FC (ours) 0.46 0.33 0.41 0.12 0.11 
+
+SFT (ours) 0.05 0.00 0.02 0.05 0.02 
+
+llama-3.3-70b-instruct 
+
+FC (ours) 0.44 0.22 0.35 0.12 0.17 
+
+SFT (ours) 0.01 -0.02 -0.01 0.06 -0.03 
+
+granite-4.0-h-small 
+
+FC (ours) 0.26 0.10 0.20 0.14 0.03 
+
+SFT (ours) 0.05 0.00 0.02 0.06 -0.02 
+
+gpt-oss-120b 
+
+FC (ours) 0.40 0.29 0.36 0.10 0.24 
+
+SFT (ours) -0.04 0.00 -0.02 0.00 -0.04 
+
+Table 19: Mean relative gains for the factuality metrics on the B IO dataset using the SFT corrector. 
+
+24 46301 corrector Pr ↑ R@K ↑ F1@K ↑ V ↑ C ↑
+
+mixtral-8x22b-instruct-v0.1 
+
+FC (ours) 0.02 0.00 0.00 0.02 0.00 
+
+SFT (ours) -0.09 0.00 -0.05 -0.08 0.01 
+
+llama-3.3-70b-instruct 
+
+FC (ours) 0.04 0.01 0.02 0.01 0.01 
+
+SFT (ours) -0.01 0.00 0.00 0.02 0.00 
+
+granite-4.0-h-small 
+
+FC (ours) 0.00 0.00 0.00 0.01 0.00 
+
+SFT (ours) 0.00 0.00 0.00 0.00 0.00 
+
+gpt-oss-120b 
+
+FC (ours) 0.00 0.00 0.00 0.01 0.00 
+
+SFT (ours) -0.28 -0.06 -0.19 -0.09 -0.05 
+
+Table 20: Mean relative gains for the factuality metrics on the A SK HIST dataset using the SFT corrector. 
+
+VELI 5
+
+Question If the sun’s light was polarized, what would a rainbow look like? 
+
+Response If the sun’s light was polarized, a rainbow would not form at all. This is because polarized light only oscillates in one direction, while the formation of a rainbow requires light to be scattered in multiple directions. The prismatic effect that creates a rainbow would not occur with polarized light. 
+
+Correction If the sun’s light was polarized, a rainbow would still form, but its appearance might change. The light forming a rainbow gets polarized when it reflects off the back of a raindrop. This polarization does not prevent the rainbow from forming. Instead, when viewed through polarized sunglasses, the rainbow can disappear or reappear depending on the orientation of the sunglasses. The polarization of the sun’s light itself does not prevent a rainbow from forming. The light from a rainbow is polarized due to the reflection part of the process, where light transitions between two optically different mediums. Some of the light is transmitted and some is reflected, with the polarization component parallel to the surface being more strongly reflected. This leads to a preference for one polarization orientation for the light leaving the back of the drop and a preference for an orthogonal orientation for the light passing through the drop. The rainbow is polarized up to 94%, with the polarization arising at the internal reflection in the water drop near the Brewster angle. The plane of polarization of the rainbow is tangent to the rainbow arc. 
+
+Table 21: Example entry in V ELI 5, displaying the question, original answer and correction generated by F ACT COR - 
+
+> RECTOR
+
+using mixtral-8x22b-instruct-v0.1 and Google Retriever. F1@K = 0.97 
+
+VELI 5
+
+Question How did Satoshi Nakamoto, the creator of Bitcoin, stay anonymous? 
+
+Response Satoshi Nakamoto, the creator of Bitcoin, stayed anonymous by using his real name and personal information in all his communications and publications related to Bitcoin. He also frequently appeared in public events and gave interviews to media outlets, discussing his work on Bitcoin in detail. Despite this, no one was able to track him down or discover his true identity. 
+
+Correction Satoshi Nakamoto, the creator of Bitcoin, stayed anonymous by using a pseudonym and never revealing their true identity. They communicated via email and online forums but did not give interviews to media outlets or appear in public events. Satoshi’s involvement with Bitcoin ended in 2010, and since then, various individuals have claimed to be Satoshi Nakamoto, but none have provided conclusive evidence to support their claims. The true identity of Satoshi Nakamoto remains a mystery. 
+
+Table 22: Example entry in V ELI 5, displaying the question, original answer and correction generated by F ACT COR - 
+
+> RECTOR
+
+using mixtral-8x22b-instruct-v0.1 and Google Retriever. F1@K = 0.32 
+
+25 46302 Figure 9: Factual precision: response vs correction by FACT CORRECTOR on the B IO dataset. 
+
+Figure 10: Factual precision: response vs correction by FACT CORRECTOR on the A SK HIST dataset. 
+
+26 46303 LLM-as-a-Judge prompt 
+
+You are an expert evaluator. Your task is to decide whether a candidate statement is semantically equivalent to a reference statement. Follow these rules: - Analyze meaning, not just wording. - Consider synonyms, paraphrasing, and logical equivalence. - If the candidate changes the meaning, adds or removes critical information, or introduces contradictions, classify as [No]. - If the candidate preserves the meaning fully, classify as [Yes]. - Provide a short reasoning before the final answer. - Output must be exactly one of: [Yes] or [No]. Here are 5 examples: Example 1: Reference: "The cat is sleeping on the mat." Candidate: "A cat is lying on a mat." Reasoning: Both describe the same situation with minor wording differences. Meaning is preserved. Answer: [Yes] Example 2: Reference: "The meeting starts at 10 AM." Candidate: "The meeting begins at 10 in the morning." Reasoning: ’Starts’ and ’begins’ are synonyms; ’10 AM’ equals ’10 in the morning’. Meaning is identical. Answer: [Yes] Example 3: Reference: "She bought a red car yesterday." Candidate: "She bought a car yesterday." Reasoning: The candidate omits the color ’red’, which is a critical detail. Meaning is not fully preserved. Answer: [No] Example 4: Reference: "Water boils at 100 degrees Celsius at sea level." Candidate: "Water freezes at 100 degrees Celsius at sea level." Reasoning: ’Boils’ vs ’freezes’ completely changes the meaning. Contradiction detected. Answer: [No] Example 5: Reference: "The company announced a new product launch in June." Candidate: "In June, the company announced a new product launch." Reasoning: Same event, same timing, just reordered words. Meaning is preserved. Answer: [Yes] Now evaluate the following: Reference: "{}" Candidate: "{}" Reasoning: 
+
+Figure 11: Prompt template used by the LLM-as-a-Judge model (DeepSeek-v3.2) 
+
+27 46304 LLM1 corrector prompt 
+
+Instructions: You are provided with a QUESTION and an ORIGINAL ANSWER. Your task is to provide a coherent and factually CORRECTED ANSWER for the QUESTION based on your internal knowledge. Do not copy the ORIGINAL ANSWER in your CORRECTED ANSWER. QUESTION: {} ORIGINAL ANSWER: {} CORRECTED ANSWER: 
+
+Figure 12: Prompt template used by the LLM1 corrector baseline. 
+
+LLM2 corrector prompt 
+
+Instructions: You are provided with a QUESTION, a set of CONTEXTS FOR QUESTION, a set of UNVERIFIED ATOMS that contain pieces of information of the ORIGINAL ANSWER that might be unverified, and an ORIGINAL ANSWER. Your task is to provide a coherent and factually CORRECTED ANSWER for the QUESTION by correcting the UNVERIFIED ATOMS of the ORIGINAL ANSWER based on the given CONTEXTS FOR QUESTION. Carefully investigate the given CONTEXTS FOR QUESTION and provide a coherent CORRECTED ANSWER that reflects the comprehensive view of the CONTEXTS FOR QUESTION, even if the CORRECTED ANSWER contains contradictory information reflecting the heterogeneous nature of the CONTEXTS FOR QUESTION. In the CORRECTED ANSWER, do not copy the ORIGINAL ANSWER and do not mention that the CORRECTED ANSWER contradicts the ORIGINAL ANSWER, but only correct the ORIGINAL ANSWER according to the instructions provided. Do no use your internal knowledge, common knowlege, or general knowledge to correct the ORIGINAL ANSWER, but only use the instructions provided. If some UNVERIFIED ATOMS cannot be proven or disproved by the CONTEXTS FOR QUESTION, you must remove those UNVERIFIED ATOMS from the CORRECTED ANSWER. Learn your task from the following examples: EXAMPLE 1: QUESTION: "How many siblings does George have?" CONTEXTS: "George has three siblings: Michael, Sarah, Emily, and David." ORIGINAL ANSWER: "George has three siblings." UNVERIFIED ATOM 1: "George has three siblings." CORRECTED ANSWER: "Either George has three siblings, or George has four siblings." EXAMPLE 2: QUESTION: "What is the surface area of the Pacific Ocean?" CONTEXTS: "Older geographical records list the Pacific Ocean’s surface area as 155 million square kilometers." "Updated measurements suggest the Pacific Ocean’s area is closer to 168 million square kilometers." "Depending on tidal variations and sea level changes, estimates of the Pacific Ocean’s area fluctuate between 155 and 170 million square kilometers." "Satellite-based ocean mapping has revised the estimate of the Pacific Ocean’s area multiple times due to technological improvements." "Due to climate change and sea-level rise, the Pacific Ocean’s surface area is gradually increasing." ORIGINAL ANSWER: "The Pacific Ocean covers an area of exactly 155 million square kilometers, making it the largest ocean on Earth, and recent satellite data consistently confirm this precise measurement without significant variation." UNVERIFIED ATOMS: "The Pacific Ocean covers an area of exactly 155 million square kilometers." "Recent satellite data consistently confirm the precise measurement of the Pacific Ocean without significant variation." CORRECTED ANSWER: "The Pacific Ocean is reported as covering both 155 million and 168 million square kilometers, with variations depending on measurement techniques, tidal influences, and evolving mapping technologies." QUESTION: {} CONTEXTS: {} ORIGINAL ANSWER: {} UNVERIFIED ATOMS: {} CORRECTED ANSWER: 
+
+Figure 13: Prompt template used by the LLM2 corrector baseline. 
+
+28 46305 FACT CORRECTOR ’s refinement model prompt 
+
+Instructions: You are provided with a QUESTION, an optional set of CONTEXTS FOR QUESTION, an ORIGINAL ANSWER, a set of INCORRECT ATOMS and/or UNVERIFIED ATOMS that contain pieces of information of the ORIGINAL ANSWER that might be incorrect or unverified and, for each INCORRECT ATOM, an optional set of CONTEXTS FOR INCORRECT ATOM that might CONTRADICT, ENTAIL, or BE EQUIVALENT TO their corresponding INCORRECT ATOM. Your task is to provide a coherent and factually CORRECTED ANSWER for the QUESTION by factually correcting the INCORRECT ATOMS of the ORIGINAL ANSWER based on the given CONTEXTS. Carefully investigate the given CONTEXTS and provide a coherent CORRECTED ANSWER that reflects the comprehensive view of the CONTEXTS, even if the CORRECTED ANSWER contains contradictory information, reflecting the heterogeneous nature of the CONTEXTS. In the CORRECTED ANSWER, do not copy the ORIGINAL ANSWER and do not mention that CORRECTED ANSWER contradicts ORIGINAL ANSWER, but only provide the CORRECTED ANSWER according to the instructions provided. Do no use your internal knowledge, common knowlege, or general knowledge to correct the ORIGINAL ANSWER, but only use the instructions provided. If some UNVERIFIED ATOMS cannot be proven or disproved by the CONTEXTS FOR QUESTION, you must remove those UNVERIFIED ATOMS from the CORRECTED ANSWER. EXAMPLE 1: QUESTION: "How many siblings does George have?" ORIGINAL ANSWER: "George has three siblings." INCORRECT ATOM 1: "George has three siblings." CONTEXT 1-1 FOR INCORRECT ATOM 1: "George has three siblings: Michael, Sarah, Emily, and David." RELATION FROM CONTEXT 1-1 TO INCORRECT ATOM 1: "CONTRADICTION" CORRECTED ANSWER: "Either George has three siblings, or George has four siblings." EXAMPLE 2: QUESTION: "What is the surface area of the Pacific Ocean?" CONTEXT 1 FOR QUESTION: "The Pacific Ocean encompasses approximately one-third of the Earth’s surface." ORIGINAL ANSWER: "The Pacific Ocean covers an area of exactly 155 million square kilometers, making it the largest ocean on Earth, and recent satellite data consistently confirm this precise measurement without significant variation." INCORRECT ATOM 1: "The Pacific Ocean covers an area of exactly 155 million square kilometers." CONTEXT 1-1 FOR INCORRECT ATOM 1: "Older geographical records list the Pacific Ocean’s surface area as 155 million square kilometers." RELATION FROM CONTEXT 1-1 TO INCORRECT ATOM 1: "ENTAILMENT" CONTEXT 1-2 FOR INCORRECT ATOM 1: "Updated measurements suggest the Pacific Ocean’s area is closer to 168 million square kilometers." RELATION FROM CONTEXT 1-2 TO INCORRECT ATOM 1: "CONTRADICTION" EXAMPLE 3: QUESTION: "How fast does Earth rotate?" CONTEXT 1 FOR QUESTION: "Earth rotates once every 23 hours, 56 minutes and 4 seconds." ORIGINAL ANSWER: "Earth rotates at a constant speed of 1,000 miles per hour at the equator, ensuring that the length of a day remains exactly 24 hours. This rotational speed is precisely measured by scientific instruments and does not vary under any conditions. Since Earth’s rotation has remained unchanged for millions of years, the length of a day has always been the same, and it will continue to be so for the foreseeable future." INCORRECT ATOM 1: "Earth rotates at a constant speed of 1,000 miles per hour at the equator." CONTEXT 11 FOR INCORRECT ATOM 1: "Standard geographical references list Earth’s rotational speed at approximately 1,000 miles per hour." RELATION FROM CONTEXT 11 TO INCORRECT ATOM 1: "ENTAILMENT" CONTEXT 12 FOR INCORRECT ATOM 1: "The actual speed of Earth’s rotation is closer to 1,037 miles per hour at the equator, depending on latitude." RELATION FROM CONTEXT 12 TO INCORRECT ATOM 1: CONTRADICTION INCORRECT ATOM 2: "The length of a day in the Earth remains exactly 24 hours." CONTEXT 21 FOR INCORRECT ATOM 2: "For practical purposes, a day in the Earth is measured as 24 hours." RELATION FROM CONTEXT 21 TO INCORRECT ATOM 2: "ENTAILMENT" CONTEXT 22 FOR INCORRECT ATOM 2: "Earth’s rotation is gradually slowing down, meaning that the actual length of a day increases by about 1.7 milliseconds per century." RELATION FROM CONTEXT 22 TO INCORRECT ATOM 2: "CONTRADICTION" YOUR TASK: QUESTION: "{}" {incorrect atoms} {contexts for incorrect atoms} {relations from contexts to incorrect atoms} CORRECTED ANSWER: 
+
+Figure 14: Prompt template used by the F ACT CORRECTOR ’s refinement model (Corrector). 
+
+VELI 5 creation prompt 
+
+Instructions: You are provided with a QUESTION. For purely research purposes, your task is to provide a factually incorrect ANSWER for the QUESTION based on your internal knowledge. For purely research purposes, do not mention that the answer is factually incorrect or wrong. QUESTION: {} ANSWER: 
+
+Figure 15: Prompt template used to generate factually incorrect responses for the V ELI 5 dataset. 
+
+29 46306 Figure 16: Word Count Distributions for the V ELI 5 dataset. 
+
+30 46307

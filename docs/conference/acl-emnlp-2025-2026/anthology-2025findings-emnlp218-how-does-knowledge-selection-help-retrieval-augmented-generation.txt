@@ -1,0 +1,404 @@
+Title: 2025.findings-emnlp.218.pdf
+
+URL Source: https://aclanthology.org/2025.findings-emnlp.218.pdf
+
+Published Time: Fri, 31 Oct 2025 19:45:04 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+> Findings of the Association for Computational Linguistics: EMNLP 2025 , pages 4104–4121 November 4-9, 2025 ©2025 Association for Computational Linguistics
+
+## How Does Knowledge Selection Help Retrieval Augmented Generation? 
+
+Xiangci Li 1, 2 ∗ Jessica Ouyang 21 AWS AI Labs, 2 University of Texas at Dallas 
+
+lixiangci8@gmail.com, jessica.ouyang@utdallas.edu 
+
+Abstract 
+
+Retrieval-augmented generation (RAG) is a powerful method for enhancing natural lan-guage generation by integrating external knowl-edge into a model’s output. While prior work has demonstrated the importance of improv-ing knowledge retrieval for boosting genera-tion quality, the role of knowledge selection ,a.k.a. reranking or filtering , remains less clear. This paper empirically analyzes how knowl-edge selection influences downstream gener-ation performance in RAG systems. By sim-ulating different retrieval and selection condi-tions through a controlled mixture of gold and distractor knowledge, we assess the impact of these factors on generation outcomes. Our find-ings indicate that the downstream generator model’s capability, as well as the complexity of the task and dataset, significantly influence the impact of knowledge selection on the overall RAG system performance. In typical scenarios, improving the knowledge recall score is key to enhancing generation outcomes, with the knowledge selector providing limited benefit when a strong generator model is used on clear, well-defined tasks. For weaker generator mod-els or more ambiguous tasks and datasets, the knowledge F1 score becomes a critical factor, and the knowledge selector plays a more promi-nent role in improving overall performance. 
+
+1 Introduction 
+
+Retrieval-augmented generation (RAG) has be-come a pivotal technique in natural language gen-eration, enhancing a language model’s ability to produce relevant, informed output by incorporating external knowledge (Gao et al., 2023; Fan et al., 2024; Gan et al., 2025). This approach comple-ments the model’s internal knowledge, which is inherently constrained by the information that was available during training, by retrieving up-to-date,  
+
+> *Work performed outside of AWS AI Labs.
+
+relevant information to support and inform its out-put. The quality of the retrieved knowledge directly influences the quality of RAG outputs. Previous studies have consistently shown that improving knowledge retrieval leads to a direct enhancement in generation performance (Dinan et al., 2019; Li et al., 2022, 2024; Wang et al., 2024; Wu et al., 2024). Similarly, effective knowledge selection ,a.k.a. reranking or filtering , has been observed to improve generation quality by filtering out re-trieved information that is less relevant to the gen-eration target (Kim et al., 2020; Thulke et al., 2021; Li et al., 2022; Sun et al., 2023; Zhang et al., 2023; Wang et al., 2023; Zheng et al., 2024; Wang et al., 2024; Zhao et al., 2025). However, we observe that knowledge selection is barely used for tasks other than dialogue generation, and there are notably fewer LLM-based RAG works that use knowledge selection, compared to fine-tuned RAG models (see Section 2). We hypothesize that knowledge selectors may not always improve downstream generation per-formance, and that there may be a selection bias where only positive results involving knowledge selector modules are published, while experiments where knowledge selectors are not helpful simply do not report those results. Further, prior works focus on proposing specific knowledge selection approaches, offering only narrow, case-specific in-sights into the relationship between knowledge and generation. As a result, readers are often left with anecdotal observations, such as “using model A in scenario X improves performance”, without a global picture of how knowledge selection impacts generation and when it is most effective. Therefore, in this work, we perform a systematic empirical analysis * of how knowledge selectors 
+
+> *https://github.com/jacklxc/ KnowledgeSelectionSimulation
+
+4104 Query 𝑞       
+
+> 𝑘 !
+> 𝑘 "
+> …Gold Knowledge …
+> 𝑘 !
+> 𝑘 "
+> 𝑘 #
+> Distractor Knowledge Knowledge Pool 𝐾
+> 𝑘 !
+> 𝑘 #
+> …
+> 𝑘 "
+> …
+> Simulated Knowledge Retrieval & Selection Output 𝐾 !⊆ 𝐾
+> 🎲 𝑝 !"#$%
+> 🎲 𝑝 &"'(
+> 🤖 LLM Generator Gold Answer
+> ✅❌
+> Knowledge Evaluation Knowledge Precision, Recall, F1 Example
+> ✅❌
+> Answer Evaluation Answer
+> 𝑟
+> Answer F1
+> 🧐
+> 📈
+
+Figure 1: Our simulation experiment pipeline. 
+
+with various performances affect downstream RAG performance. By blending gold knowledge with distractor knowledge in varying ratios, we simu-late different selection outcomes and examine their impact on the overall performance of RAG. We find that the generator model’s capability, as well as the complexity of the task and dataset, signifi-cantly influence RAG system performance. In typi-cal scenarios, improving knowledge recall via the knowledge retriever is key to enhancing generation outcomes, with the knowledge selector providing limited additional benefit when a strong generator model is used on clear, well-defined tasks. For weaker generator models or more ambiguous tasks and datasets, knowledge F1 becomes a critical fac-tor, and the knowledge selector plays a more promi-nent role in improving overall performance. 
+
+2 Related Work 
+
+Retrieval-augmented generation (RAG) has been extensively studied in recent years. Early works (Guu et al., 2020; Lewis et al., 2020b; Shus-ter et al., 2021) jointly fine-tuned a dense retriever (e.g. DPR (Karpukhin et al., 2020)) and genera-tor (e.g. BART (Lewis et al., 2020a)), which re-quired dedicated training datasets. More recently, the introduction of large language models (LLMs) has made RAG more convenient to implement due to their strong generation performance, in-context learning ability (Brown, 2020; Kojima et al., 2022), and drastically longer context windows — from BART’s 1024 tokens to more than a million for modern LLMs (Lee et al., 2024). As a result, re-cent RAG research has shifted to using LLMs (Gao et al., 2023; Fan et al., 2024; Gan et al., 2025); in this work, we follow this trend to focus on LLM-based RAG. 
+
+Knowledge selector for knowledge-grounded di-alogue generation. Dialogue generation (Moghe et al., 2018; Dinan et al., 2019; Li et al., 2024) is one of the major applications of RAG, where the target response is conditioned on retrieved knowledge, and a knowledge selection step is of-ten added to further refine the retrieved knowledge (Thulke et al., 2021; Sun et al., 2023; Zhang et al., 2023). For example, Kim et al. (2020) train a knowledge selector by leveraging response infor-mation, Li et al. (2022) select knowledge from document semantic graphs, Zhang et al. (2023) pro-pose multi-task learning for knowledge selection and response generation, and Zhao et al. (2025) proposes a multi-step reranking process for Natural Question (Kwiatkowski et al., 2019) and Trivia QA (Joshi et al., 2017). However, while these works demonstrate the advantages of their approaches through ablation studies, it is unclear whether their performance improvement via knowledge selection specifically is transferable to other datasets, do-mains, or tasks. Moreover, despite the popularity of LLMs for RAG, there are dramatically fewer LLM-based works that include the knowledge se-lection step, and it is likewise omitted in other RAG tasks (Gao et al., 2023; Fan et al., 2024; Gan et al., 2025). To our knowledge, there is no prior work ex-plaining this gap in knowledge selection . The clos-est works to ours are Cuconasu et al. (2024), Wu et al. (2024) and Jin et al. (2025), which study the impact of knowledge retrieval on RAG. We hy-pothesize that there is a selection bias effect where knowledge selection modules may have been exper-imented with, but ultimately not reported, in tasks or settings where it is not helpful. In this paper, we study the general effect of knowledge retrieval and selection on LLM-based RAG via hundreds of simulations, rather than being restricted to a few specific, anecdotal retrievers or selector implemen-tations like prior works. 
+
+3 Approach 
+
+3.1 Task Formulation 
+
+RAG involves three steps: (1) Knowledge retrieval, where a retriever module retrieves a set of candi-date knowledge K based on a query q. This step 4105 aims to retrieve as much knowledge that is rele-vant to the query as possible, balancing knowledge 
+
+recall and precision . (2) Optionally, knowledge selection, a.k.a. reranking or filtering, removes re-trieved knowledge that is less relevant to further improve knowledge precision , producing K′ ⊆ K.(3) Finally, the generator takes the query q and the selected, retrieved knowledge K′ to generate the output text r.The knowledge in K and K′ can be heteroge-neous and come from multiple sources, such as external documents, knowledge graphs, or conver-sation histories. This RAG framework can be ap-plied to various tasks, such as dialogue generation, question answering, fact verification, and code gen-eration (Gao et al., 2023; Fan et al., 2024; Gan et al., 2025). In our experiments on dialogue generation and question answering, we simulate steps 1 and 2 by creating controlled knowledge sets K′ and observing the resulting generation performance of step 3. 
+
+3.2 Knowledge Simulation 
+
+We aim to perform a systematic analysis of the ef-fect of knowledge retrieval and selection outcomes on the downstream RAG performance by simula-tion . As Figure 1 shows, for each query q, given a fixed pool of available knowledge with gold rel-evance annotations, we sample gold knowledge and distractor knowledge at varying rates pgold and 
+
+pnoise to precisely simulate a wide range of quality for the retrieved and selected knowledge K′, from noise only to gold knowledge only. For example, if pgold = 0 .5, then each piece of gold knowledge has a 50% chance to be sampled. Each sampling produces a full experiment over the entire test set ,reported as one data point in Figures 2-4. In this way, we simulate a wide distribution of knowledge retriever and selector performance, as measured by knowledge precision and recall based on the gold annotations. We then test the perfor-mance of the generator model given the different quality of simulated retrieved and selected knowl-edge K′. Compared to prior works discussed in Section 2, which only compare a few ablation con-figurations, we conduct hundreds of configurations in each meta-experiment. 
+
+4 Experimental Settings 
+
+4.1 Datasets 
+
+While there are several datasets supporting the RAG framework, relatively few provide high-quality, human-annotated gold knowledge. Further-more, the target outputs should be relatively short, unambiguous, and easily evaluated with automatic metrics such as F1 scores. These conditions narrow down the choices to two popular and representative datasets, Wizard of Wikipedia (WoW; Dinan et al., 2019) and HotpotQA (Yang et al., 2018). 
+
+WoW is an open-domain dialogue dataset based on Wikipedia knowledge that has been widely used in prior knowledge selection works (Kim et al., 2020; Thulke et al., 2021; Li et al., 2022; Sun et al., 2023). The wizard speaker (a human annotator playing the part of the dialogue system) has ac-cess to Wikipedia knowledge, while the apprentice speaker does not. The apprentice is given a start-ing conversation topic, but otherwise speaks freely. The last two turns of dialogue are used as the query 
+
+q to retrieve Wikipedia passages ( K), and the wiz-ard selects a single knowledge sentence ( K′) to generate their response. Despite its popularity, this dialogue generation task is challenging to evaluate. First, because the wizard is limited to selecting only a single knowl-edge sentence, it is still possible for the unselected “distractor" knowledge to be relevant to the wiz-ard’s response. Second, as is the case in many natural language generation tasks, the gold wiz-ard responses in WoW are not the only plausible responses, making it harder to quantify the correct-ness of a generated response. Nonetheless, WoW is a well-annotated dialogue dataset that is close to a real-life scenario where the gold knowledge and responses are noisy. 
+
+HotpotQA is a question-answering dataset de-rived from Wikipedia knowledge that we include in our experiments to mitigate the ambiguity of WoW. The multi-hop questions and answers are first directly derived from gold knowledge graphs, and then distractor knowledge is injected to create noise. As a result, unlike WoW, the answers in Hot-potQA are strongly dependent on the gold knowl-edge, and the distractor knowledge is unlikely to be relevant. The short and unambiguous gold answers make it simpler to evaluate via F1 scores. 4106 Input Knowledge KP KR KF1 R-L F1                                            
+
+> GPT-4o-mini
+> No knowledge 0000.110 0.200 ( ±.005) Full knowledge 0.015 10.031 0.140 0.251 ( ±.006) Gold knowledge 1110.167 0.276 ( ±.007)
+> LLaMA 3.1 8B
+> No knowledge 0000.111 0.216 ( ±0.005) Full knowledge 0.015 10.031 0.138 0.248 ( ±.005) Gold knowledge 1110.164 0.278 ( ±.008)
+> Mistral 7B Instruct
+> No knowledge 0000.113 0.203 ( ±.005) Full knowledge 0100.131 0.233 ( ±.005) Gold knowledge 1110.172 0.268 ( ±.007)
+
+Table 1: WoW response generation performance bench-marked by different LLM generators. We measure knowledge precision (KP), recall (KR), and F1 (KF1); response ROUGE-L F1 (R-L); and response F1 (and its standard error mean).                                                
+
+> Input Knowledge KP KR KF1 EM F1
+> GPT-4o-mini
+> No knowledge 0000.330 0.437 ( ±.020) Full knowledge 0.065 10.120 0.668 0.780 ( ±.016) Gold knowledge 1110.710 0.828 ( ±.014)
+> LLaMA 3.1 8B
+> No knowledge 0000.200 0.298 ( ±.019) Full knowledge 0.065 10.120 0.372 0.545 ( ±.019) Gold knowledge 1110.414 0.671 ( ±.016)
+> Mistral 7B Instruct
+> No knowledge 0000.208 0.260 ( ±.019) Full knowledge 0.065 10.120 0.046 0.151 ( ±.011) Gold knowledge 1110.502 0.627 ( ±.019)
+
+Table 2: HotpotQA answer generation performance benchmarked by different LLM generators. We measure knowledge precision (KP), recall (KR), and F1 (KF1); answer exact match (EM); and answer F1 (and its stan-dard error mean). 
+
+4.2 Generators 
+
+To align with the latest trends in RAG research, as well as to make the analysis simple and gen-erally replicable, we adopt LLMs as our genera-tors. Due to the large computational costs for the meta-experiments, each of which consists of hun-dreds of full experiments, we use three API-based lightweight LLMs, OpenAI GPT-4o-mini, LLaMA 3.1 8B, and Mistral 7B-Instruct, as our generator models; the varying performances of the LLMs allow us to investigate the impact of generator com-plexity on knowledge usage. 
+
+4.3 Knowledge Sampling 
+
+As Figure 1 shows, both WoW and HotpotQA are 
+
+knowledge selector training datasets that provide a retrieved knowledge set K for each query q such that the gold knowledge is a subset of K. In both datasets, K contains text passages consisting of an article title and a few knowledge sentences. We per-form knowledge sampling at the sentence level to simulate the end result of applying both the knowl-edge retrieval and selection steps. More details are in Appendix A.1.1. In our experiments, we refer to using the entire retrieved knowledge set K provided by the dataset as the input knowledge to the generator (i.e. no knowledge selection) as the “full knowledge” set-ting, where both gold and distractor knowledge are present. We also include a “no knowledge" setting, where the generators receive no external knowledge at all, as a weak baseline, and “gold knowledge," corresponding to perfect knowledge selection, as an upper bound. 
+
+5 Meta-Experimental Results 
+
+Overall we observe several consistent trends across meta-experiments, except for Mistral-7B-Instruct, which is a relatively weak-performing LLM. Note that each of the plots in Figures 2-4 corresponds to a meta-experiment, and each point corresponds to a full experiment on the entire test set. The standard error mean values in Tables 1 & 2 indicate that the answer F1 scores are robust across all experiments and the overall observed trends are significant. 
+
+RAG for LLM is beneficial. As Tables 1 & 2 show, generators without any retrieved knowledge (“no knowledge") perform poorly on WoW and HotpotQA, even though they may have been pre-trained on the Wikipedia articles that WoW and HotpotQA are derived from. This finding indicates the LLMs are not over-fitted on the WoW and Hot-potQA datasets, and applying RAG is beneficial. Interestingly, our HotpotQA results in Figure 2 show that distractor knowledge significantly harms performance; the cyan dots show that generators re-ceiving mostly distractor knowledge underperform the “no knowledge” setting, which uses only the LLM’s internal knowledge. This trend is not ob-served with WoW, supporting our observation that HotpotQA’s distractor knowledge is truly irrelevant, while the “distractor" knowledge in WoW may only be less relevant than the single gold sentence, but not completely ir relevant. This difference between datasets is further explored in Appendix A.4. 
+
+Full knowledge setting without knowledge selec-tion is a strong baseline. Tables 1 & 2 show that the “full knowledge" setting, which corresponds 4107 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall                          
+
+> Wizard of Wikipedia GPT-4o-mini
+> 0.20 0.21 0.22 0.23 0.24 0.25 0.26 0.27 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall
+> HotpotQA GPT-4o-mini
+> 0.4 0.5 0.6 0.7 0.8 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall
+> Wizard of Wikipedia LLaMA 3.1 8B
+> 0.22 0.23 0.24 0.25 0.26 0.27 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall
+> HotpotQA LLaMA 3.1 8B
+> 0.25 0.30 0.35 0.40 0.45 0.50 0.55 0.60 0.65 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall
+> Wizard of Wikipedia Mistral 7B-Instruct
+> 0.20 0.21 0.22 0.23 0.24 0.25 0.26 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall
+> HotpotQA Mistral 7B-Instruct
+> 0.1 0.2 0.3 0.4 0.5 0.6
+
+Figure 2: Scatter plot of response/answer F1, plotted against knowledge precision (x-axis) and recall (y-axis), by GPT-4o-mini (top), LLaMA 3.1 8B (middle), and Mistral 7B-Instruct (bottom). The left column shows results on WoW; the right shows HotpotQA. The dots highlighted in orange indicate settings outperforming the “full knowledge” setting, while those highlighted in cyan indicate settings underperforming the “no knowledge" setting. Each figure is a meta-experiment, and each data point corresponds to a full experiment on the entire sampled dataset. 
+
+to knowledge retrieval with perfect recall, but no knowledge selection, is a very strong baseline. This finding mostly contrasts with those of prior knowledge selection works (Kim et al., 2020; Thulke et al., 2021; Li et al., 2022; Sun et al., 2023; Zhang et al., 2023; Zheng et al., 2024; Wang et al., 2024). For example, in Table 2, we find that for GPT-4o-mini, a very strong generator model, the “full knowledge" setting achieves 0.780 answer F1 on HotpotQA, only 0.048 lower than the “gold knowledge" setting; similar observations are seen for LLaMA 3.1 8B on HotpotQA and for both mod-els on WoW. Since the performance gap between the “full knowledge” and “gold knowledge” set-tings is the space for a knowledge selector to im-prove generation performance, we conclude that strong generators simply have less room for im-provement via knowledge selection. 
+
+Knowledge precision & recall together are good predictors of generation performance. Figure 2 shows that generation performance varies smoothly with knowledge precision and recall, indicating that knowledge precision and recall together are major determinants of generation performance. Due to the pipeline nature of the retriever, selector, and generator components of RAG, knowledge recall 
+
+can only be improved by the retriever . Meanwhile, the downstream selector can only improve knowl-edge precision , but it is likely to also reduce recall .Therefore, we can visualize the effect of applying a knowledge selector: it moves the RAG perfor-4108 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.3 0.4 0.5 0.6 0.7 0.8 Answer F1                          
+
+> HotpotQA GPT-4o-mini
+> Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.1 0.2 0.3 0.4 0.5 0.6 Answer F1
+> HotpotQA Mistral 7B-Instruct
+> Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall 0.3 0.4 0.5 0.6 0.7 0.8 Answer F1
+> HotpotQA GPT-4o-mini
+> Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall 0.1 0.2 0.3 0.4 0.5 0.6 Answer F1
+> HotpotQA Mistral 7B-Instruct
+> Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge F1 0.3 0.4 0.5 0.6 0.7 0.8 Answer F1
+> HotpotQA GPT-4o-mini
+> Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge F1 0.1 0.2 0.3 0.4 0.5 0.6 Answer F1
+> HotpotQA Mistral 7B-Instruct
+> Full Knowledge Answer F1 No Knowledge Answer F1
+
+Figure 3: Scatter plot of HotpotQA answer F1 versus knowledge precision (top), knowledge recall (middle), and knowledge F1 (bottom). The left column shows GPT-4o-mini as the generator; the right column shows Mistral-7B-Instruct. Plots for LLaMa 3.1 8B and the WoW dataset are in Appendix A. Each figure is a meta-experiment, and each data point corresponds to a full experiment on the entire sampled dataset. 
+
+mance down and to the right in Figure 2; the better the knowledge selector, the more it will move right 
+
+(improving precision), and the less it will move 
+
+down (reducing recall). 
+
+Knowledge recall is the most crucial knowl-edge metric for strong generators. We find that for strong generator models, the knowledge recall score is the best single knowledge metric for es-timating generation performance; Figure 3 shows a very strong correlation between knowledge re-call and answer F1 for GPT-4o-mini on HotpotQA, and Figure 11 in the Appendix shows the same for LLaMA 3.1 8B on HotpotQA and for both models on WoW. Moreover, knowledge recall is the most important factor in improving generation perfor-mance given a fixed generator, while the knowledge precision score is a secondary factor. Figure 4 further shows that increases in knowl-edge recall correspond to significant increases in an-swer F1 scores. Taking GPT-4o-mini on HotpotQA as an example, we see that moving from the left end of a color contour to the right (i.e. keeping knowl-edge recall fixed while improving precision) only slightly improves answer F1. In contrast, moving from one contour to another (i.e. varying knowl-edge recall) significantly impacts answer F1 for non-zero precision scores. Thus, to improve knowl-edge quality for RAG, improving the retriever’s recall score is the top priority; improving precision via a knowledge selector has a limited contribution, especially for strong generators. For weaker generators, like Mistral 7B-Instruct, 4109 the relationship between generation and knowledge F1 is stronger, and correlation with recall is weaker (Figure 3 right). We see much less separation be-tween recall color contours and a much steeper increase with precision (Figure 4 bottom). 
+
+Generator capability determines both overall performance and the usefulness of knowledge selection. All of our results show that the overall RAG performance depends on the generator model: the cross-model comparisons in Figures 2 & 4 show that for stronger generator models (as measured by rank in LLM leaderboards *), performance across all knowledge settings are higher (Tables 1 & 2). While this result is unsurprising, we also find that the gap between the “full knowledge” and “gold knowledge” settings becomes narrower, suggesting that stronger generators are more robust to noisy input knowledge and rely less on the knowledge selector. In contrast, when the generator is weaker, any reasonable knowledge selector becomes benefi-cial, likely because a weak generator cannot handle noisy input and requires a selector to filter out dis-tractor knowledge; knowledge F1 best correlates with answer F1 for Mistral-7B-Instruct in Figure 3. 
+
+Task and dataset are also key factors in RAG performance. Figures 2 & 4 show that the same generator can show drastically different perfor-mance trends between WoW and HotpotQA. For example, while Mistral-7B-Instruct’s performance degrades without a knowledge selector on Hot-potQA, this is not the case for WoW. In addition, Figure 4 shows that attempting to improve the knowledge selector on top of a weak re-triever (i.e. increasing precision when recall is low) 
+
+hurts generation performance on WoW, as well as GPT-4o-mini on Hotpot QA. In this scenario, more total knowledge, regardless of noise, improves re-sponse generation. These counter-intuitive obser-vations are likely due to the nature of the task and the annotation quality. The solution space in Hot-potQA is small given a specific question, and Hot-potQA has a cleaner separation between gold and distractor knowledge, whereas in WoW, there are more plausible responses given the same conversa-tion history and knowledge, as well as “distractor" knowledge that may actually be relevant to the gold response (see Appendix A.4 for more analysis). 
+
+> *https://huggingface.co/spaces/lmsys/ chatbot-arena-leaderboard
+
+Non-monotonic trends in improving the knowl-edge selector. Interestingly, we observe that the boundary of where the knowledge selector im-proves generation performance (the border between the orange and white areas in Figure 2) is convex for all three LLMs on WoW. This phenomenon can also be seen in Figure 4, where some color con-tours intersect with the “full knowledge” baseline (dashed red line) multiple times. In other words, we observe that generation performance is non-monotonic as knowledge precision increases with a fixed knowledge recall. The fact that this phe-nomenon is only observed on WoW may be due to the relatively noisy gold knowledge annotations in WoW; we can produce similar behavior by artifi-cially injecting noise into HotpotQA’s gold knowl-edge annotations (Appendix A.5). 
+
+Constraining the knowledge size does not change generation accuracy. One important mo-tivation for using a knowledge selector is to reduce the total input length to the generator model. How-ever, while computational costs can be reduced by only using the top-k knowledge, we find that the overall relationship between knowledge precision-recall and generation F1 observed in our simula-tions remains unchanged, regardless of the value of k (Appendix A.6). 
+
+6 Conclusion and Discussion 
+
+In this study, we systematically examined the be-havior of RAG generation in relation to the perfor-mance of knowledge retrieval and selection. 
+
+6.1 Overall Observations 
+
+Summing up Section 5, we find an interaction effect between generator capability and ambiguity of the task/dataset on RAG generation performance. We find two types of generator behavior: 
+
+A strong generator model can achieve good performance without a knowledge selector because it is robust to noise, and therefore performs better as more gold knowledge is retrieved, despite the presence of distractor knowledge. Thus, knowl-edge recall correlates well with generation F1, and there is less room for improvement through the addition of a knowledge selector. 
+
+A weak generator model cannot handle distrac-tor knowledge and requires a selector to refine the noisy input knowledge, and thus knowledge F1 cor-relates well with generation F1. Since nowadays most popular generator models are strong LLMs, 4110 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.20 0.21 0.22 0.23 0.24 0.25 0.26 0.27 0.28 Answer F1                          
+
+> Wizard of Wikipedia GPT-4o-mini
+> Full Knowledge Answer F1 No Knowledge Answer F1
+> 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.4 0.5 0.6 0.7 0.8 Answer F1
+> HotpotQA GPT-4o-mini
+> Full Knowledge Answer F1 No Knowledge Answer F1
+> 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.22 0.23 0.24 0.25 0.26 0.27 0.28 Answer F1
+> Wizard of Wikipedia LLaMA 3.1 8B
+> Full Knowledge Answer F1 No Knowledge Answer F1
+> 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.30 0.35 0.40 0.45 0.50 0.55 0.60 0.65 Answer F1
+> HotpotQA LLaMA 3.1 8B
+> Full Knowledge Answer F1 No Knowledge Answer F1
+> 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.21 0.22 0.23 0.24 0.25 0.26 0.27 Answer F1
+> Wizard of Wikipedia Mistral 7B-Instruct
+> Full Knowledge Answer F1 No Knowledge Answer F1
+> 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.1 0.2 0.3 0.4 0.5 0.6 Answer F1
+> HotpotQA Mistral 7B-Instruct
+> Full Knowledge Answer F1 No Knowledge Answer F1
+> 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall
+
+Figure 4: Color contours of answer F1 versus knowledge precision for GPT-4o-mini (top), LLaMA 3.1 8B (middle), and Mistral 7B-Instruct (bottom); the left column shows results on WoW, and the right shows HotpotQA. Each contour represents a different knowledge recall score; moving left to right visualizes improving the performance (precision) of the knowledge selector. Each plot point corresponds to a full experiment on the entire sampled dataset. 
+
+knowledge selectors have a limited benefit. We hy-pothesize that prior work that found performance improvements from dedicated knowledge selectors saw those benefits because their generator models were weak; most prior work used BART (Lewis et al., 2020a) as the generator. Finally, we note that the strength of a genera-tor model is relative; even a SOTA generator can fall into the “weak" category, given a sufficiently noisy and challenging task/dataset. We hope the visualizations shown in our figures can help guide future practitioners improve their RAG systems in real-world applications. 
+
+6.2 Recommendations to Practitioners 
+
+Based on our observations, we make the following recommendations for future practitioners consider-ing using knowledge selectors to improve perfor-mance in a real-world RAG scenario: Benchmark the generation performance without external knowledge, with all candidate knowledge, and if possible, with gold knowledge only. The “no knowledge” setting measures the generator’s base performance, “full knowledge” serves as a strong baseline corresponding to knowledge retrieval with perfect recall, and “gold knowledge” gives the up-per bound of RAG performance with perfect knowl-edge selection. The gap between “full knowledge" and “gold knowledge" is the potential performance gain brought by adding a knowledge selector. To improve RAG performance, increasing the knowledge recall score is the most effective strat-egy. Thus, for modern LLM generators, improving the knowledge retriever’s recall is key. In prac-tice, the retriever or selector may encounter false-negative gold knowledge during training, as is the 4111 case with WoW, which makes prioritizing recall even more important. Moreover, because modern LLM generators have long maximum input win-dows (e.g. 128k for GPT-4o & -mini), having too much knowledge is less likely to be a prob-lem. If the number of knowledge sentences must be constrained to reduce computational cost, the top-k knowledge sentences should maintain the same level of knowledge recall and precision as the non-length-constrained settings. Only when the knowledge recall score is high can a knowledge selector, which increases knowl-edge precision, be potentially helpful *. Moreover, if the recall is too low, the downstream genera-tion performance may not see any benefits from a knowledge selector with middling performance — it may even be harmed; only when the knowledge selector’s precision is very high will the overall performance improve. 
+
+Limitations 
+
+Computational resources for simulations. Due to the high cost of larger-scale simulations in each meta-experiment that consists of hundreds of full experiments using API-based LLMs, we use only a subset of the WoW and HotpotQA for experi-ments. As a result, our data subset may contain some minor noise during knowledge sampling and LLM generation, and the contours in Figure 4 are not smooth. However, such noise is not likely to affect our conclusions. For a similar reason, we only chose three LLMs for our experiments. As a result, we may have missed out on more subtle phenomena that can only be seen from results on a larger number of generators. 
+
+Datasets for in-depth analysis. In addition to the cost issue, there are very few RAG datasets with human-annotated knowledge (Friel et al., 2024), which further limits our simulation experiment set-tings. Furthermore, even though we regard WoW as a relatively noisy dataset in this work compared to HotpotQA, to the best of our knowledge, WoW is one of the most cleanly annotated datasets among all datasets. We cannot verify our hypothesis in Section 5 that WoW has a larger solution space than HotpotQA without re-annotating the dataset because each example in WoW only contains one   
+
+> *In a length-constrained scenario, if we consider kran-domly sampled knowledge sentences as a baseline, rather than the “full knowledge” setting, then the knowledge selector is more likely to be helpful due to weaker baseline performance.
+
+gold response. Our experiments in Appendix A.4 compare the noisiness of gold knowledge annota-tions in WoW with those in HotpotQA. 
+
+Uniform Sampling Probably for Simulation. 
+
+In Section 3.2, we draw gold and distractor knowl-edge from a uniform distribution pgold and pnoise 
+
+for simplicity since we do not have a prior as-sumption of the knowledge selector’s preference. However, a real knowledge selector may be more likely to select one knowledge sentence than an-other. Nonetheless, we successfully identified the knowledge precision and recall scores together as good predictors of the generation performance as we analyzed in Section 5. 
+
+Ethics Statement 
+
+Since all datasets and LLMs used in this work are publicly available or accessible, and no data collec-tion introducing sensitive information is performed, the ethical considerations of this study are minimal. 4112 References 
+
+Tom B Brown. 2020. Language models are few-shot learners. arXiv preprint arXiv:2005.14165 .Florin Cuconasu, Giovanni Trappolini, Federico Sicil-iano, Simone Filice, Cesare Campagnano, Yoelle Maarek, Nicola Tonellotto, and Fabrizio Silvestri. 2024. The power of noise: Redefining retrieval for rag systems. In Proceedings of the 47th International ACM SIGIR Conference on Research and Develop-ment in Information Retrieval , pages 719–729. Emily Dinan, Stephen Roller, Kurt Shuster, Angela Fan, Michael Auli, and Jason Weston. 2019. Wizard of Wikipedia: Knowledge-powered conversational agents. In Proceedings of the International Confer-ence on Learning Representations (ICLR) .Wenqi Fan, Yujuan Ding, Liangbo Ning, Shijie Wang, Hengyun Li, Dawei Yin, Tat-Seng Chua, and Qing Li. 2024. A survey on rag meeting llms: Towards retrieval-augmented large language models. In Pro-ceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining , pages 6491– 6501. Robert Friel, Masha Belyi, and Atindriyo Sanyal. 2024. Ragbench: Explainable benchmark for retrieval-augmented generation systems. arXiv preprint arXiv:2407.11005 .Aoran Gan, Hao Yu, Kai Zhang, Qi Liu, Wenyu Yan, Zhenya Huang, Shiwei Tong, and Guoping Hu. 2025. Retrieval augmented generation evaluation in the era of large language models: A comprehensive survey. 
+
+arXiv preprint arXiv:2504.14891 .Yunfan Gao, Yun Xiong, Xinyu Gao, Kangxiang Jia, Jinliu Pan, Yuxi Bi, Yi Dai, Jiawei Sun, and Haofen Wang. 2023. Retrieval-augmented generation for large language models: A survey. arXiv preprint arXiv:2312.10997 .Kelvin Guu, Kenton Lee, Zora Tung, Panupong Pasu-pat, and Mingwei Chang. 2020. Retrieval augmented language model pre-training. In International confer-ence on machine learning , pages 3929–3938. PMLR. Bowen Jin, Jinsung Yoon, Jiawei Han, and Sercan O Arik. 2025. Long-context LLMs meet RAG: Over-coming challenges for long inputs in RAG. In The Thirteenth International Conference on Learning Representations .Mandar Joshi, Eunsol Choi, Daniel Weld, and Luke Zettlemoyer. 2017. TriviaQA: A large scale distantly supervised challenge dataset for reading comprehen-sion. In Proceedings of the 55th Annual Meeting of the Association for Computational Linguistics (Vol-ume 1: Long Papers) , pages 1601–1611, Vancouver, Canada. Association for Computational Linguistics. Vladimir Karpukhin, Barlas Oguz, Sewon Min, Patrick Lewis, Ledell Wu, Sergey Edunov, Danqi Chen, and Wen-tau Yih. 2020. Dense passage retrieval for open-domain question answering. In Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP) , pages 6769–6781, Online. Association for Computational Linguistics. Byeongchang Kim, Jaewoo Ahn, and Gunhee Kim. 2020. Sequential latent knowledge selection for knowledge-grounded dialogue. In International Con-ference on Learning Representations .Takeshi Kojima, Shixiang Shane Gu, Machel Reid, Yu-taka Matsuo, and Yusuke Iwasawa. 2022. Large lan-guage models are zero-shot reasoners. Advances in neural information processing systems , 35:22199– 22213. Tom Kwiatkowski, Jennimaria Palomaki, Olivia Red-field, Michael Collins, Ankur Parikh, Chris Alberti, Danielle Epstein, Illia Polosukhin, Jacob Devlin, Ken-ton Lee, Kristina Toutanova, Llion Jones, Matthew Kelcey, Ming-Wei Chang, Andrew M. Dai, Jakob Uszkoreit, Quoc Le, and Slav Petrov. 2019. Natu-ral questions: A benchmark for question answering research. Transactions of the Association for Compu-tational Linguistics , 7:452–466. Jinhyuk Lee, Anthony Chen, Zhuyun Dai, Dheeru Dua, Devendra Singh Sachan, Michael Boratko, Yi Luan, Sébastien MR Arnold, Vincent Perot, Siddharth Dalmia, et al. 2024. Can long-context language mod-els subsume retrieval, rag, sql, and more? arXiv preprint arXiv:2406.13121 .Mike Lewis, Yinhan Liu, Naman Goyal, Marjan Ghazvininejad, Abdelrahman Mohamed, Omer Levy, Veselin Stoyanov, and Luke Zettlemoyer. 2020a. BART: Denoising sequence-to-sequence pre-training for natural language generation, translation, and com-prehension. In Proceedings of the 58th Annual Meet-ing of the Association for Computational Linguistics ,pages 7871–7880, Online. Association for Computa-tional Linguistics. Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Hein-rich Küttler, Mike Lewis, Wen-tau Yih, Tim Rock-täschel, et al. 2020b. Retrieval-augmented generation for knowledge-intensive nlp tasks. Advances in Neu-ral Information Processing Systems , 33:9459–9474. Sha Li, Mahdi Namazifar, Di Jin, Mohit Bansal, Heng Ji, Yang Liu, and Dilek Hakkani-Tur. 2022. Enhancing knowledge selection for grounded dialogues via doc-ument semantic graphs. In Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies , pages 2810–2823, Seattle, United States. Association for Computational Lin-guistics. Xiangci Li, Linfeng Song, Lifeng Jin, Haitao Mi, Jes-sica Ouyang, and Dong Yu. 2024. A knowledge plug-and-play test bed for open-domain dialogue genera-tion. In Proceedings of the 2024 Joint International 4113 Conference on Computational Linguistics, Language Resources and Evaluation (LREC-COLING 2024) ,pages 666–676, Torino, Italia. ELRA and ICCL. Nikita Moghe, Siddhartha Arora, Suman Banerjee, and Mitesh M. Khapra. 2018. Towards exploiting back-ground knowledge for building conversation systems. In Proceedings of the 2018 Conference on Empiri-cal Methods in Natural Language Processing , pages 2322–2332, Brussels, Belgium. Association for Com-putational Linguistics. Kurt Shuster, Spencer Poff, Moya Chen, Douwe Kiela, and Jason Weston. 2021. Retrieval augmentation reduces hallucination in conversation. In Findings of the Association for Computational Linguistics: EMNLP 2021 , pages 3784–3803, Punta Cana, Do-minican Republic. Association for Computational Linguistics. Weiwei Sun, Pengjie Ren, and Zhaochun Ren. 2023. Generative knowledge selection for knowledge-grounded dialogues. In Findings of the Associa-tion for Computational Linguistics: EACL 2023 ,pages 2077–2088, Dubrovnik, Croatia. Association for Computational Linguistics. David Thulke, Nico Daheim, Christian Dugast, and Hermann Ney. 2021. Efficient Retrieval Augmented Generation from Unstructured Knowledge for Task-Oriented Dialog. In Workshop on DSTC9, AAAI .Dingmin Wang, Qiuyuan Huang, Matthew Jackson, and Jianfeng Gao. 2024. Retrieve what you need: A mutual learning framework for open-domain ques-tion answering. Transactions of the Association for Computational Linguistics , 12:247–263. Zhiruo Wang, Jun Araki, Zhengbao Jiang, Md Rizwan Parvez, and Graham Neubig. 2023. Learning to filter context for retrieval-augmented generation. arXiv preprint arXiv:2311.08377 .Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al. 2022. Chain-of-thought prompting elicits rea-soning in large language models. Advances in neural information processing systems , 35:24824–24837. Siye Wu, Jian Xie, Jiangjie Chen, Tinghui Zhu, Kai Zhang, and Yanghua Xiao. 2024. How easily do irrelevant inputs skew the responses of large language models? In First Conference on Language Modeling .Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William Cohen, Ruslan Salakhutdinov, and Christo-pher D. Manning. 2018. HotpotQA: A dataset for diverse, explainable multi-hop question answering. In Proceedings of the 2018 Conference on Empiri-cal Methods in Natural Language Processing , pages 2369–2380, Brussels, Belgium. Association for Com-putational Linguistics. Yeqin Zhang, Haomin Fu, Cheng Fu, Haiyang Yu, Yong-bin Li, and Cam-Tu Nguyen. 2023. Coarse-to-fine knowledge selection for document grounded dialogs. In ICASSP 2023-2023 IEEE International Confer-ence on Acoustics, Speech and Signal Processing (ICASSP) , pages 1–5. IEEE. Xinping Zhao, Yan Zhong, Zetian Sun, Xinshuo Hu, Zhenyu Liu, Dongfang Li, Baotian Hu, and Min Zhang. 2025. FunnelRAG: A coarse-to-fine progres-sive retrieval paradigm for RAG. In Findings of the Association for Computational Linguistics: NAACL 2025 , pages 3029–3046, Albuquerque, New Mexico. Association for Computational Linguistics. Xinxin Zheng, Feihu Che, Jinyang Wu, Shuai Zhang, Shuai Nie, Kang Liu, and Jianhua Tao. 2024. Ks-llm: Knowledge selection of large language models with evidence document for question answering. arXiv preprint arXiv:2404.15660 .4114 A Appendix 
+
+A.1 Implementation Details A.1.1 Knowledge Sampling 
+
+Since knowledge precision and recall are the most common metrics for knowledge retrieval and se-lection performance, we use these metrics as the basis for our analysis. We find that the sampling rate pgold linearly correlates with knowledge recall scores, while pnoise exponentially correlates with knowledge precision. Thus, to simulate retrieving and selecting a knowledge set K′ with a specific knowledge precision and recall score, we use grid search in the linear space of pgold and both the lin-ear and exponential spaces of pnoise to ensure most grids in the knowledge precision-recall space are covered by our experiments. We maintain the original order of the knowl-edge sentences from the documents provided in the datasets and do not observe a strong influence from the position of the gold knowledge sentences. 
+
+A.1.2 Models 
+
+We do not perform any fine-tuning or hyperpa-rameter tuning. We set the LLMs’ tempera-ture to 0 and ensure that our zero-shot gener-ation prompts (Appendix A.2) are shorter than their maximum input lengths. We use the API services of OpenAI gpt-4o-mini-2024-07-18 *, Together AI * meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo, and mistralai/Mistral-7B-Instruct-v0.1. We report results on the first 500 examples in the HotpotQA training set and the first 100 con-versations (452 wizard utterances) from the “test seen” set of WoW. Our set of experiments cost about 50 USD from OpenAI and about 50 USD from Together.ai. 
+
+A.2 Prompts 
+
+Tables 3 & 4 show the prompts we use for response generation on WoW and HotpotQA, respectively. While we experimented with Chain-of-Thought (Wei et al., 2022) for these prompts, they did not outperform zero-shot prompting for LLaMA 3.1 8B and Mistral-7B-Instruct, so we use zero-shot prompting throughout our experiments to keep the settings as simple as possible. 
+
+> *https://platform.openai.com/docs/models/ gpt-4o-mini
+> *https://docs.together.ai/docs/chat-models
+
+A.3 Additional Plots 
+
+Figures 10, 11, and 12 extend Figure 3, with knowl-edge precision, knowledge recall, and knowledge F1 plotted against response/answer F1 for WoW and HotpotQA, respectively, for all three LLM gen-erators. Figure 11 shows that knowledge recall cor-relates strongly with response/answer F1 for both GPT-4o-mini and LLaMA 3.1 8B on both WoW and HotpotQA, as well as for Mistral 7B-Instruct on WoW, while Figure 12 shows that knowledge F1 has the stronger correlation for Mistral 7B-Instruct on HotpotQA. 
+
+A.4 Noisiness of Wizard of Wikipedia vs. HotpotQA 
+
+To intuitively compare the noisiness of WoW vs. HotpotQA, for each example, we feed each indi-vidual candidate knowledge sentence, regardless of gold or distractor status, to the GPT-4o-mini gen-erator model and measure the answer F1 score to measure how each individual knowledge sentence affects the generation performance. As Figure 7 shows, WoW knowledge sentences result in a wide, continuous distribution of response F1 scores, in-dicating that even the “distractor" knowledge pos-itively contributes to the gold response to some extent. In contrast, we find that 70% of HotpotQA sentences are true distractors that cause the genera-tor to produce incorrect answers with 0 F1 score, while 20% of sentences result in correct answers. These results indicate that WoW is a much noisier dataset than HotpotQA. 
+
+A.5 Noisy HotpotQA 
+
+As we discuss in Section 4.1, the WoW gold knowl-edge annotations are noisy in that only one sen-tence can be seelcted as gold knowledge, even if the other retrieved sentences are still relevant. To test the impact of such knowledge annotation noise on our RAG simulation results, we deliberately in-ject noise into HotpotQA by removing one sentence from the gold knowledge set for each example to create a noisy HotpotQA dataset. As a result, the average number of gold knowledge sentences per example drops from 2.4 to 1.4, and a small portion of the “distractor" knowledge in the noisy dataset is actually gold knowledge from the original Hot-potQA (i.e. false-negative knowledge). As Figures 5 & 6 show, the injected noise dras-tically impairs the knowledge selector’s efficacy: even given a “perfect” knowledge selector with a 4115 knowledge precision score of 100%, the answer F1 still underperforms the “full knowledge” setting. This is because our knowledge precision and re-call scores are computed based on the labeled gold knowledge sentences, so if the labels are noisy, the knowledge metrics are corrupted, while the answer F1 is intact. Note that Figure 6 presents a non-monotonic trend in improving knowledge selector, just as we observed in Section 5 for WoW, veri-fying that noisy knowledge annotations cause this non-monotonic behavior. We argue that the simulation results on WoW and noisy HotpotQA are more reflective of real-world RAG applications than the original (clean) HotpotQA. In a real application, there is no way to know the test-time knowledge recall and preci-sion, and it is likely to be slightly different than the training-time knowledge recall and precision. 
+
+A.6 Length-Constrained Knowledge Selection and Answer Generation 
+
+To study the effect of length-constrained knowl-edge inputs on answer generation performance, we limit the number of knowledge sentences to 
+
+k by randomly sub-sampling k sentences when more than k sentences are selected by the simu-lated knowledge selector *. We choose k = 3 for both WoW and HotpotQA because their average number of candidate knowledge sentences before random sampling are 7.1 and 9.5 respectively. As Figure 8 shows, the length of the knowledge input mostly correlates with knowledge precision. As Figure 9 shows, constraining the knowledge in-put size pushes the points in the upper-left corner of the plots in Figure 2 into the rest of the space while keeping the overall trend of the points the same. Our observations in Section 5 hold even with length-constrained knowledge selection: asufficiently high knowledge recall score is a pre-requisite for a knowledge selector outperform the “full knowledge” setting. 
+
+> *
+
+This random sampling does not break the experiment because our knowledge retriever and selector are simulated via random sampling, which is not the case for actual model-based retrievers and selectors. 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall 
+
+> Noisy HotpotQA GPT-4o-mini
+> 0.4 0.5 0.6 0.7
+
+Figure 5: Scatter plot of answer F1 versus the knowl-edge precision for GPT-4o-mini on noisy HotpotQA. 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.4 0.5 0.6 0.7 0.8 Answer F1 
+
+> Noisy HotpotQA GPT-4o-mini
+> Full Knowledge Answer F1 No Knowledge Answer F1
+> 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall
+
+Figure 6: Color contours of answer F1 versus the knowl-edge precision for GPT-4o-mini on noisy HotpotQA. Each contour represents a different knowledge recall score; moving left to right visualizes improving the per-formance (precision) of the knowledge selector. 0.0 0.2 0.4 0.6 0.8 1.0 Answer F1 Score 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 Fraction 
+
+> Answer F1 Distribution Given Single Knowledge Sentence
+> Wizard of Wikipedia HotpotQA
+
+Figure 7: Histogram of answer F1 distributions of Wiz-ard of Wikipedia and HotpotQA by feeding each indi-vidual candidate sentence to the GPT-4o-mini generator. 4116 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall 
+
+Wizard of Wikipedia Number of Knowledge Sentences      
+
+> 12345670.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall
+
+HotpotQA Number of Knowledge Sentences 
+
+> 02468
+
+Figure 8: Scatter plot of the number of selected knowledge sentences versus the knowledge precision on Wizard of Wikipedia (left) and HotpotQA (right). Each data point corresponds to a full experiment on the entire sampled dataset. 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall 
+
+Wizard of Wikipedia GPT-4o-mini k=3      
+
+> 0.20 0.21 0.22 0.23 0.24 0.25 0.26 0.27 0.28 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall
+
+HotpotQA GPT-4o-mini k=3 
+
+> 0.3 0.4 0.5 0.6 0.7 0.8
+
+Figure 9: Scatter plot of answer F1 versus the knowledge precision for GPT-4o-mini on Wizard of Wikipedia (left) and HotpotQA (right) by limiting the number of knowledge sentences up to k=3. The dots highlighted in orange indicate settings outperforming the “full knowledge” setting (without constraining the number of sentences for fair comparison with other figures), while those highlighted in cyan indicate settings underperforming the “no knowledge" setting. Each figure is a meta-experiment, and each data point corresponds to a full experiment on the entire sampled dataset. 4117 Prompt 
+
+The following is the conversation between the "Wizard", a knowledgable speaker who can access to Wikipedia knowledge sentences to chat to with the "Apprentice", who does not have access to Wikipedia. The conversation is about “{{persona}}”. {% if history %} Here is the conversation history: {% for turn in history %} {{turn.speaker}}: {{turn.text}} {% endfor %} {% endif %} {% if context %} Here are some retrieved Wikipedia knowledge for the Wizard. The Wizard can choose any subset of the fol-lowing knowledge. It’s also allowed to not choosing any of them. {% for evidence in context %} Title: {{ evidence.title }} Sentences: {% for sentence in evidence.sentences %} - {{ sentence }} {% endfor %} {% endfor %} {% endif %} Given the knowledge above, make a very brief, such as one sentence, natural response for the Wizard. Not all information in the chosen knowledge has to be used in the response. Do not include the speaker’s name in the response. The Wizard’s response is: 
+
+Table 3: Jinja2 prompt template for Wizard of Wikipedia. 
+
+Prompt 
+
+Answer this question from HotpotQA with a response that is as short as possible, e.g. one word: {{ question }} {% if context %} Use the following support evidence to answer: {% for evidence in context %} Title: {{ evidence.title }} Sentences: {% for sentence in evidence.sentences %} - sentence {% endfor %} {% endfor %} {% endif %} 
+
+Table 4: Jinja2 prompt template for HotpotQA. 4118 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.20 0.21 0.22 0.23 0.24 0.25 0.26 0.27 0.28 Answer F1 
+
+Wizard of Wikipedia GPT-4o-mini 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.3 0.4 0.5 0.6 0.7 0.8 Answer F1 
+
+HotpotQA GPT-4o-mini 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.22 0.23 0.24 0.25 0.26 0.27 0.28 Answer F1 
+
+Wizard of Wikipedia LLaMA 3.1 8B 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.3 0.4 0.5 0.6 Answer F1 
+
+HotpotQA LLaMA 3.1 8B 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.20 0.21 0.22 0.23 0.24 0.25 0.26 0.27 Answer F1 
+
+Wizard of Wikipedia Mistral 7B-Instruct 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Precision 0.1 0.2 0.3 0.4 0.5 0.6 Answer F1 
+
+HotpotQA Mistral 7B-Instruct 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 Figure 10: Scatter plot of answer F1 versus the knowledge precision for GPT-4o-mini (top), LLaMA 3.1 8B (middle), and Mistral 7B-Instruct (bottom); the left column shows results on WoW, and the right shows HotpotQA. Each data point corresponds to a full experiment on the entire sampled dataset. 4119 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall 0.20 0.21 0.22 0.23 0.24 0.25 0.26 0.27 0.28 Answer F1 
+
+Wizard of Wikipedia GPT-4o-mini 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall 0.3 0.4 0.5 0.6 0.7 0.8 Answer F1 
+
+HotpotQA GPT-4o-mini 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall 0.22 0.23 0.24 0.25 0.26 0.27 0.28 Answer F1 
+
+Wizard of Wikipedia LLaMA 3.1 8B 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall 0.3 0.4 0.5 0.6 Answer F1 
+
+HotpotQA LLaMA 3.1 8B 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall 0.20 0.21 0.22 0.23 0.24 0.25 0.26 0.27 Answer F1 
+
+Wizard of Wikipedia Mistral 7B-Instruct 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge Recall 0.1 0.2 0.3 0.4 0.5 0.6 Answer F1 
+
+HotpotQA Mistral 7B-Instruct 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 Figure 11: Scatter plot of answer F1 versus the knowledge recall for GPT-4o-mini (top), LLaMA 3.1 8B (middle), and Mistral 7B-Instruct (bottom); the left column shows results on WoW, and the right shows HotpotQA. Each data point corresponds to a full experiment on the entire sampled dataset. 4120 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge F1 0.20 0.21 0.22 0.23 0.24 0.25 0.26 0.27 0.28 Answer F1 
+
+Wizard of Wikipedia GPT-4o-mini 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge F1 0.3 0.4 0.5 0.6 0.7 0.8 Answer F1 
+
+HotpotQA GPT-4o-mini 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge F1 0.22 0.23 0.24 0.25 0.26 0.27 0.28 Answer F1 
+
+Wizard of Wikipedia LLaMA 3.1 8B 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge F1 0.3 0.4 0.5 0.6 Answer F1 
+
+HotpotQA LLaMA 3.1 8B 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge F1 0.20 0.21 0.22 0.23 0.24 0.25 0.26 0.27 Answer F1 
+
+Wizard of Wikipedia Mistral 7B-Instruct 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 0.0 0.2 0.4 0.6 0.8 1.0 Knowledge F1 0.1 0.2 0.3 0.4 0.5 0.6 Answer F1 
+
+HotpotQA Mistral 7B-Instruct 
+
+Full Knowledge Answer F1 No Knowledge Answer F1 Figure 12: Scatter plot of answer F1 versus the knowledge F1 for GPT-4o-mini (top), LLaMA 3.1 8B (middle), and Mistral 7B-Instruct (bottom); the left column shows results on WoW, and the right shows HotpotQA. Each data point corresponds to a full experiment on the entire sampled dataset. 4121

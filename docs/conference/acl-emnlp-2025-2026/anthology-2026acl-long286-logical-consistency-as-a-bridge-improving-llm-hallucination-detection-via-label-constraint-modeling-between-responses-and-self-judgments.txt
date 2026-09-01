@@ -1,0 +1,768 @@
+Title: 2026.acl-long.286.pdf
+
+URL Source: https://aclanthology.org/2026.acl-long.286.pdf
+
+Published Time: Thu, 11 Jun 2026 01:09:34 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 6311–6330 July 2-7, 2026 ©2026 Association for Computational Linguistics Logical Consistency as a Bridge: Improving LLM Hallucination Detection via Label Constraint Modeling between Responses and Self-Judgments 
+
+Hao Mi Qiang Sheng * Shaofei Wang Beizhe Hu Yifan Sun Zhengjia Wang Hengqi Zeng Yang Li Danding Wang Juan Cao 
+
+Institute of Computing Technology, Chinese Academy of Sciences University of Chinese Academy of Sciences 
+
+{mihao24s , shengqiang18z , caojuan }@ict.ac.cn 
+
+Abstract 
+
+Large Language Models (LLMs) are prone to factual hallucinations, risking their reliability in real-world applications. Existing halluci-nation detectors mainly extract micro-level in-trinsic patterns for uncertainty quantification or elicit macro-level self-judgments through verbalized prompts. However, these methods address only a single facet of the hallucina-tion, focusing either on implicit neural uncer-tainty or explicit symbolic reasoning, thereby treating these inherently coupled behaviors in isolation and failing to exploit their interdepen-dence for a holistic view. In this paper, we pro-pose LaaB (Logical Consistency-as-a-Bridge), a framework that bridges neural features and symbolic judgments for hallucination detection. LaaB introduces a “meta-judgment” process to map symbolic labels back into the feature space. By leveraging the inherent logical bridge where response and meta-judgment labels are either the same or opposite based on the self-judgment’s semantics, LaaB aligns and inte-grates dual-view signals via mutual learning and enhances the hallucination detection. Ex-tensive experiments on 4 public datasets, across 4 LLMs, against 8 baselines demonstrate the superiority of LaaB. 1
+
+1 Introduction 
+
+Large language models (LLMs) have shown im-pressive capabilities across diverse tasks (Wei et al., 2022; Hu et al., 2024a; Zhao et al., 2026; Chen et al., 2026). However, their reliability in real-world applications is compromised by factual hal-lucinations: outputs that appear plausible but con-tradict verified facts or commonsense, even without malicious prompting (Huang et al., 2025). As re-cent studies indicate that hallucinations may be an inherent property of LLMs rather than a fully 
+
+> *
+
+Corresponding author. 
+
+> 1
+
+Our code and dataset are available at https://github. com/ICTMCG/LaaB San Diego      
+
+> Hallu. Detector
+> Non-Hallucination
+> (a) Intrinsic-Pattern-Based (b) Self-Judgment-Based
+> Query Response (hallucination)
+> LLM
+> Yes!
+> Non-Hallucination
+> Micro-Level Macro-Level
+> (c) LaaB: Logic-as-a-Bridge (Ours)
+> San Diego Yes!
+> Self-Judgment
+> Response
+> Response Hallu. Detector
+> Self-Judgment Hallu. Detector
+> Intrinsic Patterns for both views
+> Hallucination Hallucination
+> Logic Constraint Mutual Learning
+> dropped after training
+> Where was ACL 2025 held?
+> Intrinsic Patterns
+> (hidden states, logits, …)
+> Self-Judgment
+> Is this real?
+> LLM
+
+Figure 1: Comparison between existing hallucination detection methods (a-b) and our proposed LaaB (c). Unlike methods that rely solely on micro-level intrinsic patterns (a) or macro-level symbolic judgment (b), LaaB bridges these two views by enforcing logical consistency via logic-constraint mutual learning. 
+
+solvable error, their complete elimination remains elusive (Xu et al., 2025; Mohsin et al., 2026). Con-sequently, accurate hallucination detection is a crit-ical requirement for maintaining reliable and trust-worthy LLM-based systems (Ji et al., 2023a; Liu et al., 2024a; Zhang et al., 2025c; Hu et al., 2025). Hallucination detection is generally formulated as a binary classification task that predicts the factuality of LLM responses. Besides applying fact-checking that relies on reliable external knowl-edge (Min et al., 2023), recent work looks inside 
+
+LLMs by 1) extracting intrinsic patterns, or 2) us-ing LLMs themselves as judges. The intrinsic-pattern-based detectors exploit the LLM’s behav-ioral patterns during generation to quantify its un-
+
+6311 certainty of the response (see Figure 1(a)), includ-ing generation consistency (Manakul et al., 2023; Farquhar et al., 2024), output confidence (Guo et al., 2017), hidden states (Azaria and Mitchell, 2023), and attention maps (Chuang et al., 2024), etc. These methods capture the nuanced internal signals from a micro perspective, but these metrics may lack proper calibration, resulting in the fail-ure to identify high-certainty hallucinations (Tan et al., 2025; Wen et al., 2024; Zhou et al., 2024; Simhi et al., 2025). In contrast, the detectors based on self-judgments directly obtain LLMs’ verbal judgments through factuality-oriented prompting (see Figure 1(b)), assuming that LLMs may elicit different knowledge when switching the role from answering to judging (Ji et al., 2023b; Li et al., 2025a). This paradigm exploits the macro-level judgment, but the verbal judgment suffers from self-preference bias (Wataoka et al., 2024; Panickssery et al., 2024) or overthinking issues (Zhang et al., 2025b; Su et al., 2025), possibly leading to “sec-ondary” hallucination. This motivates us to explore: 
+
+How to effectively integrate the micro-level in-trinsic signals and macro-level self-judgments for more accurate hallucination detection? 
+
+To perform effective integration, we propose a hallucination detection method named LaaB 
+
+(Logical Consistency-as-a-Bridge; see Figure 1(c)). The key challenge in the integration is to build a joint, learnable framework for both the neural fea-tures derived from intrinsic patterns and the sym-bolic judgments from the LLM itself. To address this issue, LaaB exploits the inherent logical con-straint between the response and self-judgment as a bridge. First, we map the symbolic self-judgment back to the feature space to make it possible to optimize the hallucination detection via joint learn-ing. Our idea starts from a simple but crucial fact: The LLM’s self-judgment on its response is also 
+
+a response that may be hallucinatory, and the in-trinsic signal of the judgment generation may re-veal its own veracity. By applying intrinsic-pattern-based methods on the self-judgment ( i.e ., meta-judgment), LaaB obtains the learned features from the quantification of the self-judgment uncertainty. Subsequently, we transform the hallucination pre-diction of the self-judgment into that of the origi-nal response by leveraging the inherent logic con-straint: the response and the self-judgment would share the same factuality label if the self-judgment claims that the response is truthful; otherwise, their labels should be opposite. Based on this logic rule, LaaB can obtain two aligned predictions for the original response from two neural modules of dif-ferent views, thus enhancing the final judgment of hallucination. A mutual learning strategy is finally adopted for the whole optimization. Our contributions are summarized as follows: • Concept: We propose to see LLMs’ self-judgment as a special response that can be checked by another hallucination detector, whose results will bridge the logic constraint that enables the integration of the predictions from both the response and self-judgment views. • Method: We design LaaB, which bridges the prediction signals from both intrinsic patterns and self-judgments, and builds a mutual learning framework for accurate hallucination detection. • Performance: Experiments on 4 public datasets, across 4 LLMs, against 8 baselines show that LaaB can effectively enhance the performance in hallucination detection without introducing significant additional inference cost. 
+
+2 Related Work 
+
+2.1 Hallucination Detection 
+
+Hallucination detection aims to evaluate the fac-tuality of LLM outputs. Given that conventional fact-checking relies heavily on external knowledge retrieval and evidence verification (Hu et al., 2024b; Min et al., 2023; Wang et al., 2024; Wan et al., 2025; Chern et al., 2025), we focus on detection methods that leverage the LLM’s internal signals, which fall into two categories: Intrinsic-pattern-based methods and self-judgment-based methods. 
+
+Intrinsic-pattern-based methods leverage the signals generated during the inference, positing that LLMs exhibit distinct internal behaviors when hallucinating compared to when generating fac-tual content, typically including hidden states, pre-diction logits, and attention scores. Hidden-state-based methods assume that the truthful and halluci-nated boundaries are encoded in the LLM’s latent space, generally training classifiers on layer-wise hidden states (Li et al., 2023b; Azaria and Mitchell, 2023; Su et al., 2024; Du et al., 2024; Liu et al., 2024b; Park et al., 2025; Ni et al., 2025) or acti-vation dynamics (Wang et al., 2025; Zhang et al., 2025d). Logit-based methods interpret the output probability distribution as a proxy for model confi-dence, where lower confidence or higher entropy of-ten correlates with hallucination (Jiang et al., 2024; 6312 Weighter           
+
+> Response Hallu. Detector 𝑫 𝒓
+> 𝓛 𝑳𝒐𝒈𝒊𝒄,𝒓
+> 𝑳𝒐𝒔𝒔 huber (𝑺 𝒓 , ෩ 𝑺 𝒋 )
+> Self-
+> Judgment
+> “Yes”
+> “No”
+> ෩𝑺 𝒋 = 𝑺 𝒋
+> ෩𝑺 𝒋 = 𝟏 − 𝑺 𝒋
+> 𝓛 𝑪𝑬 𝒓 𝑺 𝒓
+> Response Intrinsic 𝑭 𝒓
+> LLM
+> San Diego.
+> Is this response
+> real?
+> Prediction of 𝑫 𝒓
+> Mutual learning
+> 𝓛 𝑳𝒐𝒈𝒊𝒄 =
+> Prediction Loss
+> Judgment Hallu. Detector 𝑫 𝒋
+> 𝓛 𝑳𝒐𝒈𝒊𝒄,𝒋 𝓛 𝑪𝑬 𝒋
+> Judgment Intrinsic 𝑭 𝒋 Prediction
+> of 𝑫 𝒋
+> Mutual learning
+> Prediction
+> Loss
+> 𝑺 𝒋
+> keep
+> flip
+> dropped after
+> training
+> Yes
+> Where was ACL
+> 2025 held?
+> (a) Response Hallucination Modeling
+> (b) Self-Judgment Hallucination Modeling
+> (c) Logic-Constrained Mutual Learning
+> Query
+> Self-Judging
+> Response
+> Self-Judgment
+
+Figure 2: Overall architecture of LaaB . Given a user query and corresponding response, LaaB first performs (a) 
+
+Response Hallucination Modeling, extracting intrinsic features from the response generation to capture implicit uncertainty. (b) Self-Judgment Hallucination Modeling introduces a meta-judgment process that analyzes the elicited verbal judgment to mitigate evaluative biases. Finally, (c) Logic-Constrained Mutual Learning bridges these dual views by enforcing logical consistency between response and judgment predictions, utilizing their inherent dependency for robust joint optimization. 
+
+Ma et al., 2025; Vashurin et al., 2025; Vazhent-sev et al., 2025; Li et al., 2025b; Tan et al., 2026). 
+
+Attention-based methods exploit the information flow, assuming hallucinations stem from improper attention to the context, and identify anomalies through attention map distributions (Chuang et al., 2024; Liu et al., 2025a; Binkowski et al., 2025; Qi et al., 2026). Despite capturing micro-level uncer-tainty, they often lack semantic calibration, failing to identify hallucinations with high confidence (Tan et al., 2025; Simhi et al., 2025; Li et al., 2025c). 
+
+Self-judgment-based methods leverage the se-mantic reasoning capabilities of LLMs to assess factuality through verbal interaction. Early works investigated the self-evaluation feasibility (Yin et al., 2023; Xiong et al., 2024), while subse-quent research introduced mechanisms like self-correction (Ji et al., 2023b; Dhuliawala et al., 2024; Yuan et al., 2025; Zhang et al., 2026) and multi-agent debating (Liu et al., 2025b; Sun et al., 2025) to elicit accurate judgments. However, it inher-ently relies on the model’s generation capabilities, making it susceptible to self-preference bias and “evaluative hallucination” (Wataoka et al., 2024; Zhang et al., 2025b). To address these limitations, we argue that intrinsic signals and verbal judgments are complementary: the former quantifies micro-level uncertainty, while the latter provides logical anchoring. In this work, we propose to bridge these two perspectives by viewing the self-judgment not as a ground truth, but as another generative be-havior subject to hallucination. By modeling the logical constraint between the response and the self-judgment , we integrate them into a mutual learning framework to enhance detection accuracy. 
+
+2.2 Mutual Learning 
+
+Mutual learning is a paradigm in which peer net-works learn from each other to improve perfor-mance and generalization. Zhang et al. (2018) introduced deep mutual learning, where multiple students are jointly trained to align their output distributions with peers. Subsequent works regard mutual learning as a process of online knowledge distillation where the peer predictions serve as a dynamic teacher, and develop variants by introduc-ing ensemble learning (Guo et al., 2020; Tan and Liu, 2022) and contrastive learning (Yang et al., 2023). In this paper, we adopt mutual learning to bridge the individual learning of hallucination de-tection modules for the original response and self-judgment (which serve as the peers in our method). 
+
+3 Task Formulation 
+
+We formulate hallucination detection as a binary classification task. Given a user query Qr and an 6313 Table 1: Summary of notations in LaaB Framework                                         
+
+> Symbol Description
+> Response
+> QrUser query
+> OrLLM response to Qr
+> FrIntrinsic features for Or
+> DrDetector over Fr
+> Lr∈ { 0,1}Ground-truth for Or(1: factual)
+> ˆLr∈ { 0,1}Predicted label for Or
+> SrPredicted distribution from Dr
+> Self-Judgment
+> QjEvaluation prompt on Or
+> Oj∈ { Yes, No }LLM response to Qj(Verbal judge)
+> FjIntrinsic features for Oj
+> DjDetector over Fj
+> Lj∈ { 0,1}Ground-truth for Oj(Meta judge)
+> ˆLj∈ { 0,1}Predicted label for Oj
+> SjPredicted distribution from Dj
+
+LLM-generated response Or, the primary goal is to determine the factuality label Lr ∈ { 0, 1}, where 
+
+Lr = 1 denotes a factual response and Lr = 0 
+
+denotes a hallucination response. For an intrinsic-pattern-based detector Dr, it maps intrinsic model features Fr (derived during the generation process of Or) to a predicted prob-ability distribution Sr over the labels, and then gets the predicted label ˆLr. For a self-judgment-based detector, it generates a verbal judgment 
+
+Oj ∈ {“Yes” , “No” } based on the original re-sponse Or and a factuality evaluation prompt Qj ,where “Yes” and “No” can also correspond to the predicted label ˆLr = 1 and 0, respectively. For the meta-judgment we will detail in § 4, similar to Dr,a secondary detector Dj maps the intrinsic features 
+
+Fj for Oj to the ground-truth label of the judgment factuality Lj ∈ { 0, 1}. The consolidated list of notations used in the LaaB framework is presented in Table 1. 
+
+4 Proposed Method: LaaB 
+
+Figure 2 overviews our proposed LaaB, which first models response hallucination and self-judgment hallucination, respectively, and then adopts logic-constrained mutual learning to guide the joint opti-mization. We detail the components’ design below. 
+
+4.1 Response Hallucination Modeling 
+
+This module detects hallucinations using intrin-sic patterns for generating Or. We utilize an MLP-based detector Dr that accepts features 
+
+Fr and outputs a probability distribution Sr =(Sr_hallu , S r_real ). The extracted features include: 
+
+Hidden States ( Hr). Following Azaria and Mitchell (2023), we assume the hidden represen-tation of final token in a sequence aggregates semantic information. We feed the concatenated sequence pair (Qr, O r) into the LLM and ex-tract the hidden state of the last token at the validation-optimal layer Kval ,r , denoted as Hr.
+
+Prediction Logits ( Pr). We adopt the Logits Lens hypothesis (nostalgebraist, 2020; Jiang et al., 2024), which assumes that all hidden layers of the LLM share the same unembedding space with the output layer. Let Pll represent the layer-wise probabilities of the generated tokens in Or. We aggregate Pll 
+
+via a single Transformer layer followed by mean-pooling to obtain the sequence-level feature Pr.
+
+Attention Scores ( Ar). Following Chuang et al. (2024), we utilize the “Lookback” ratio, which quantifies the token-level attention assigned to pre-ceding context components. Building upon this idea, we further adapt it to our context for factual hallucination detection. For each token in Or, we compute attention ratios targeting four segments: the system prompt, query Qr, response trigger, and preceding tokens of Or. We pool these token-wise ratios and select the top-P informative heads based on KL divergence to form the feature Ar.The details of feature extraction are provided in Appendix B. In the implementation, Dr uses one feature in {Hr, P r, A r} as the input Fr and is trained via cross-entropy loss LCE,r against Lr.
+
+4.2 Self-Judgment Hallucination Modeling 
+
+We define evaluative hallucination as the scenario where an LLM acting as a judge produces an incor-rect assessment Oj . Rather than accepting Oj as ground truth, we treat it as a generated artifact with a learnable factuality label Lj . We train a detec-tor Dj to predict Lj based on intrinsic features Fj
+
+extracted during the generation of Oj . Similar to §4.1, we extract features Fj ∈ { Hj , P j , A j }, with specific adaptations for the judgment context: 
+
+Hidden States ( Hj ). The states are extracted from the last token of the judgment Oj at layer Kval ,j .
+
+Prediction Logits ( Pj ). Based on Logits Lens, we first extract the layer-wise probability distribution of the first token of Oj . Then we construct se-mantic sets Vyes and Vno (grouping synonyms for “Yes”/“No”, Appendix B.2) and aggregate their probabilities into Pyes and Pno . To emphasize the 6314 Table 2: Logic constraints between the truth value of the response factuality and self-judgment factuality based on the LLM self-judgment.           
+
+> Self-Judgment (Oj)Interpretation Target (Lr)“Yes” Affirmation : The LLM supports the original re-sponse. Keep labels con-sistent.
+> Lj
+> “No” Negation : The LLM re-futes. Reverse the factual-ity.
+> 1−Lj
+
+contrast, the input feature is constructed as: 
+
+Pj =
+
+
+
+Pyes ⊕ (Pyes − Pno ), if Oj = “Yes” ,Pno ⊕ (Pno − Pyes ), if Oj = “No” .
+
+(1) 
+
+Attention Scores ( Aj ). We segment the judgment context Qj into six components (Framing, Query, Response, Eval_Query, Format, and Trigger) and compute the attention ratios of the judgment token over these segments to form Aj .
+
+4.3 Logic-Constrained Mutual Learning Logical Dependency. In the self-judgment setting, the verbal judgment Oj implies the factuality pre-diction of the response Or, and we can derive the logical consistency between Lr and Lj . Specifi-cally, when Oj is “Yes”, the LLM predicts ˆLr = 1 .If Lj = 1 , then the above prediction is correct and Lr = 1 ; otherwise, the prediction is incorrect and Lr = 0 . Similarly, when Oj is “No”, the re-lationship between the labels is reversed. Logical dependency is summarized in Table 2. 
+
+Framework. Detectors Dr and Dj produce prob-ability distributions Sr = (Sr, hallu , S r, real ) and 
+
+Sj = ( Sj, hallu , S j, real ), respectively. To enforce log-ical consistency, we employ the Huber loss (Huber, 1964), denoted as LHuber , to align the scalar proba-bilities of the two detectors. The logic-constrained loss LLogic is defined as: 
+
+LLogic =
+
+{
+
+LHuber (Sr, hallu , S j, hallu ), if Oj = “Yes” ,
+
+LHuber (Sr, hallu , S j, real ), if Oj = “No” .
+
+(2) This loss encourages Dr and Dj to learn robust rep-resentations by aligning their predictions according to the logical dependency. More details about Hu-ber loss are provided in Appendix C. To prevent mutual degradation (where a weaker detector misleads a stronger one), we introduce a confidence-aware weighting mechanism. We assume a detector with higher confidence on the ground truth label possesses better representations. For a sample pair, we compute a weight based on the ratio of the peer’s confidence to the self’s con-fidence. The specific logic losses for Dr and Dj
+
+are: 
+
+LLogic ,r = log 
+
+(
+
+1 + Sj (Lj )
+
+Sr(Lr)
+
+)
+
+· L Logic , (3) 
+
+LLogic ,j = log 
+
+(
+
+1 + Sr(Lr)
+
+Sj (Lj )
+
+)
+
+· L Logic , (4) where S(L) denotes the predicted probability of the ground truth class. Finally, the total training objective for each detector ( ∗ ∈ { r, j }) combines the cross-entropy loss and the weighted logic loss: 
+
+L∗ = LCE ,∗ + α∗LLogic ,∗. (5) Here, α∗ is a batch-level balancing coefficient dy-namically computed using the ratio of gradient norms with respect to the last-layer parameters θ−1 
+
+> ∗
+
+,ensuring stable optimization: 
+
+α∗ =
+
+∥∥∥∇θ−1 
+
+> ∗
+
+LCE ,∗
+
+∥∥∥2∥∥∥∇θ−1 
+
+> ∗
+
+LLogic ,∗
+
+∥∥∥2 + ϵ. (6) 
+
+Training Strategy. We adopt a two-stage training strategy. In the first stage, Dr and Dj are trained asynchronously in a round-robin manner; when one converges, it is frozen while the other continues. In the second stage, both detectors are jointly fine-tuned using the combined loss: 
+
+LJoint = LCE ,r + LCE ,j + αLLogic . (7) 
+
+Inference. During inference, only Dr is deployed. This allows the system to benefit from the knowl-edge distilled from Dj via mutual learning, with-out incurring the additional computational costs associated with the judgment generation. The pseu-docode for the LaaB training and inference proce-dures is provided in Appendix H. 
+
+5 Experiments 
+
+5.1 Experimental Settings Datasets. We utilize four widely used datasets for factualness hallucination detection: TriviaQA, MMLU, NQ_Open, and HaluEval (Appendix A.1). For each dataset, we 1) prompt the LLM to gen-erate responses to the given query; 2) prompt the 6315 Table 3: Performance comparison of baselines and LaaB in hallucination detection. Bolded numbers denote that the use of LaaB is better-performing than its corresponding base version. Underlined numbers are the highest in each column within each LLM group. 
+
+TriviaQA MMLU NQ_Open HaluEval Average LLM Method macF1 Acc macF1 Acc macF1 Acc macF1 Acc macF1 Acc Self-Judge 67.67 71.36 57.29 65.13 59.12 59.14 60.89 62.78 61.24 64.60 SelfCheckGPT 76.34 81.98 59.78 63.56 69.77 73.17 74.41 74.49 70.08 73.30 Eigen-Score 69.92 75.58 57.88 63.47 64.82 67.07 66.34 66.81 64.74 68.23 SAPLMA 77.05 79.87 69.96 70.75 73.01 75.15 75.70 75.88 73.93 75.41 
+
++LaaB 78.74 82.09 71.77 73.25 73.10 77.13 77.20 77.60 75.20 77.52 
+
+Logits Lens 72.50 74.81 65.27 66.07 62.63 63.26 72.21 72.48 68.15 69.16 
+
++LaaB 75.11 78.88 66.72 70.65 65.72 68.90 72.29 73.04 69.96 72.87 
+
+Lookback Lens 71.65 74.45 72.74 73.96 68.60 70.88 75.13 75.49 72.03 73.70 
+
+Llama-3.1-8B-Instruct 
+
++LaaB 73.58 77.44 70.96 72.50 72.63 75.46 77.00 77.54 73.54 75.74 
+
+Self-Judge 66.00 83.58 64.30 82.18 68.65 79.21 65.27 66.82 66.06 77.95 SelfCheckGPT 72.15 86.12 50.75 69.70 67.73 77.31 75.57 76.11 66.55 77.31 Eigen-Score 66.97 82.37 59.39 77.48 60.59 71.60 64.41 64.43 62.84 73.97 SAPLMA 71.12 83.13 71.19 79.62 71.64 78.62 77.17 77.22 72.78 79.65 
+
++LaaB 73.20 86.22 71.40 81.75 71.71 78.48 79.15 79.44 73.87 81.47 
+
+Logits Lens 65.67 76.55 62.42 70.63 54.50 60.03 72.33 72.52 63.73 69.93 
+
++LaaB 70.23 84.19 60.18 72.33 57.21 71.74 72.07 72.36 64.92 75.16 
+
+Lookback Lens 69.97 79.53 68.95 75.07 64.30 68.67 78.31 78.54 70.38 75.45 
+
+Llama-3.1-70B-Instruct 
+
++LaaB 72.45 85.11 69.73 79.62 66.65 76.28 78.73 78.91 71.89 79.98 
+
+Self-Judge 72.19 78.73 65.14 77.54 71.29 73.99 69.07 69.28 69.42 74.89 SelfCheckGPT 72.83 79.73 52.17 76.86 74.83 76.81 74.17 74.24 68.50 76.91 Eigen-Score 67.52 73.51 56.98 75.35 61.33 62.63 69.19 69.24 63.76 70.18 SAPLMA 76.73 80.09 69.38 78.38 76.81 77.55 76.65 76.76 74.89 78.20 
+
++LaaB 79.42 83.85 69.60 78.99 79.35 80.65 77.17 77.19 76.39 80.17 
+
+Logits Lens 68.15 72.74 53.19 63.17 65.02 66.03 72.56 72.62 64.73 68.64 
+
++LaaB 70.90 77.06 54.62 74.36 67.21 70.61 73.80 73.91 66.63 73.99 
+
+Lookback Lens 76.59 79.99 68.14 75.07 76.62 77.99 78.46 78.48 74.95 77.88 
+
+Qwen-2.5-32B-Instruct 
+
++LaaB 77.66 82.36 70.29 79.79 78.08 79.32 78.16 78.21 76.05 79.92 
+
+Self-Judge 56.84 73.55 42.28 61.80 46.86 64.81 43.10 49.54 47.27 62.43 SelfCheckGPT 68.67 75.69 56.73 60.40 66.31 68.07 72.60 72.61 66.08 69.19 Eigen-Score 67.78 72.06 55.84 59.33 59.14 62.67 65.11 65.35 61.97 64.85 SAPLMA 76.72 79.02 70.89 71.36 72.96 74.36 74.87 75.00 73.86 74.94 
+
++LaaB 77.69 80.40 70.99 71.26 74.48 75.11 76.04 76.46 74.80 75.81 
+
+Logits Lens 68.72 72.52 59.56 60.26 58.94 62.82 68.53 68.87 63.94 66.12 
+
++LaaB 67.73 73.54 60.98 62.91 58.94 62.07 68.26 68.66 63.98 66.80 
+
+Lookback Lens 73.81 75.95 69.61 69.68 71.46 72.26 74.82 75.00 72.43 73.22 
+
+Mistral-7B-Instruct-v0.3 
+
++LaaB 74.46 77.02 71.24 72.10 71.67 73.01 74.32 75.11 72.92 74.31 
+
+LLM to self-evaluate its responses using the tem-plate (Appendix A.2); 3) annotate the factuality of responses and judgments based on the ground-truth (Appendix A.3); and 4) split the resulting dataset with a 7:1:2 ratio for the training, validation, and testing sets. 
+
+Large Language Models. We use four commonly-used open-source LLMs, including Llama-3.1-8B-Instruct, Llama-3.1-70B-Instruct, Qwen-2.5-32B-Instruct, and Mistral-7B-Instruct-v0.3, which cover different families and scales (Appendix D). 
+
+Baselines. We include self-judgment-based de-tector Self-Judge (Kadavath et al., 2022) and five intrinsic-pattern-based detectors. The trainable de-tectors using internal model representations are detailed in §4.1, including SAPLMA (with hid-den states), Logits Lens (with logits), and Look-back Lens (with attention patterns). The latter two include consistency-based methods, SelfCheck-GPT (Manakul et al., 2023) and EigenScore (Chen et al., 2024), which are detailed in Appendix F. 
+
+Evaluation Metrics. Macro F1 (macF1) and ac-curacy (Acc) are adopted as evaluation metrics for hallucination detection, reflecting class-level and instance-level performance, respectively. 
+
+Implementation Details. For representation-based detectors, we configure the architectures of Dr and 
+
+Dj as follows. For SAPLMA and Lookback Lens, both Dr and Dj employ a Multi-Layer Percep-tron (MLP) classifier with hidden dimensions of 
+
+[256 , 128 , 64] . For Logits Lens, we use a single Transformer layer with 4 attention heads to aggre-gate token-level features, followed by a MLP Dr
+
+configured with [64 , 16] for classification; while 6316 Dj utilizes an MLP with hidden dimensions of 
+
+[128 , 64 , 16] . We select the optimal learning rate from [1 e-4, 5e-4, 1e-3, 5e-3] based on validation performance to conduct asynchronous training of 
+
+Dr and Dj (the same lr selection criterion for base-line), followed by the joint fine-tuning with a learn-ing rate of 1e-6. All classifiers are optimized us-ing AdamW with a weight decay of 1e-5 and a dropout rate of 0.1. We adopt an early stopping strategy based on validation loss with a patience of 10 epochs. For consistency-based detectors, each data in-stance is sampled 15 times using a decoding con-figuration of temperature=0.7, Top-p=0.9, and Top-k=10. Owing to the training-free attribute, we de-termine the optimal classification threshold via a grid search (step size = 0.1) on the validation set and report the results obtained on the test set. 
+
+5.2 Main Results 
+
+To evaluate the effectiveness of the LaaB frame-work, we conduct extensive experiments on four LLMs across four benchmarks. By comparing LaaB-enhanced detectors against various baselines, we aim to assess their capability in mining halluci-nation patterns by integrating information in two views guided by the logical constraints. The main results are summarized in Table 3. We observe that: 
+
+1) LaaB yields additional performance gains for the baselines using modeling intrinsic pat-terns in most cases. The sustained improvement observed across most settings demonstrates the method’s robust adaptability along two key dimen-sions. First , LaaB exhibits exceptional generaliza-tion across diverse intrinsic patterns. As indicated by the bold values, it consistently augments de-tection capabilities when applied to hidden states (SAPLMA), logits (Logits Lens), and attention pat-terns (Lookback Lens). Second , LaaB maintains its efficacy across varying model scales (ranging from 7B to 70B) and distinct architectures (including LLaMA, Qwen, and Mistral), underscoring its gen-eralizability in capturing fundamental hallucination signatures across different LLM families. 
+
+2) The hidden-state-based method SAPLMA shows higher detection performance than others and benefits more from LaaB. Among base de-tectors, SAPLMA achieves higher detection perfor-mance than logits-based and attention-based meth-ods in most cases. With the LaaB enhancement, SAPLMA shows more stable improvements and predominantly attains the best results across the ma-jority of evaluation settings. This performance gap suggests that denser hidden-state representations possess a higher capacity for retaining informative signals, which are critical for effective hallucina-tion detection. In contrast, logits-based detectors (Logits Lens) are limited by their inherent spar-sity and discreteness, thus perform relatively worse among the three intrinsic pattern types. 
+
+3) Detectors leveraging intrinsic patterns de-rived from LLMs’ internal states outperform those leveraging the self-judgments or sampling estimates. Detectors like SAPLMA, Logits Lens, and Lookback Lens show higher accuracy and macro F1 scores than Self-Judge and sampling-based baselines in most cases. This observation suggests that intrinsic model representations en-code richer factuality-related signals than discrete token-level outputs, and based on that, the mu-tual learning from LaaB provides a more effective mechanism for exploiting such signals. 
+
+5.3 Variant Analysis 
+
+We evaluate two variants of LaaB to dissect the con-tributions of response and judgment hallucination detectors. 1) LaaB ( Dj ) uses only the judgment de-tector Dj at inference to predict the self-judgment label and then derives the response-level decision according to the logical dependency shown in Ta-ble 2. 2) LaaB ( Dj + Dj ) utilizes both the response and judgment detectors at inference and averages their scores under the logical constraints. The results are shown in Table 4, LaaB mostly outperforms LaaB ( Dj ), suggesting that the intrin-sic patterns of responses remain the most informa-tive cues for hallucination detection. Dj primarily serves to complement Dr by supplying additional signals from the self-judgment perspective. More-over, LaaB ( Dj +Dj ) provides only marginal gains over LaaB despite nearly doubling LLM inference cost, indicating that most benefits of the judgment view are already distilled into the response detector 
+
+Dr during training. Overall, these ablations sug-gest that logic-constrained mutual learning success-fully integrates both perspectives into the response detector, enabling efficient and effective hallucina-tion detection using only Dr at inference time. 
+
+5.4 Cross-Dataset Generalization 
+
+To assess the generalizability of our method un-der dataset shift, we adopt a leave-one-dataset-out evaluation protocol over four datasets. For each held-out benchmark, the hallucination detector is 6317 Table 4: Performance comparison of LaaB and its variants on Llama-3.1-8B-Instruct                                                                                                 
+
+> TriviaQA MMLU NQ_Open HaluEval Method Variant macF1 Acc macF1 Acc macF1 Acc macF1 Acc
+> SAPLMA
+> LaaB 78.74 82.09 71.77 73.25 73.10 77.13 77.20 77.60 LaaB ( Dj)75.71 81.26 69.23 71.50 71.72 77.29 77.36 77.99 LaaB ( Dr+Dj)79.21 83.12 71.70 73.39 74.16 78.51 77.92 78.43
+> Logits Lens
+> LaaB 75.11 78.88 66.72 70.65 65.72 68.90 72.29 73.04 LaaB ( Dj)45.17 72.64 62.57 69.28 41.02 67.07 70.91 71.65 LaaB ( Dr+Dj)73.97 81.72 63.00 69.66 67.89 76.07 75.24 75.76
+> Lookback Lens
+> LaaB 73.58 77.44 70.96 72.50 72.63 75.46 77.00 77.54 LaaB ( Dj)69.42 78.63 61.89 69.19 67.87 75.61 71.99 73.10 LaaB ( Dr+Dj)75.26 80.74 63.69 69.90 72.24 77.44 76.61 77.43
+
+Table 5: Leave-one-out Cross-Dataset Generalization Performance (macF1) on Llama-3.1-8B-Instruct. Both the baselines and LaaB are trained on the remaining three datasets and evaluated on the held-out benchmark.                          
+
+> Method TriviaQA MMLU NQ_Open HaluEval
+> SAPLMA 73.90 56.19 65.76 67.49
+> +LaaB 78.18 59.31 68.33 70.25
+> Logits Lens 73.05 56.65 57.25 67.78
+> +LaaB 73.13 55.05 61.06 68.89
+> Lookback Lens 74.09 60.05 65.44 68.25
+> +LaaB 72.61 63.61 68.00 69.92
+
+trained on the other three datasets and then evalu-ated on the held-out benchmark. As shown in Table 5, equipping diverse halluci-nation detectors with LaaB consistently improves cross-dataset performance in most cases, suggest-ing enhanced robustness to distribution shift. One plausible explanation is that our logic-constrained mutual learning bridges two complementary sig-nals—intrinsic prediction representations and self-judgment patterns. By encouraging logical agree-ment across two views, the training objective dis-courages reliance on spurious, dataset-specific cues that are unlikely to be supported by both signals, thereby pushing the detector toward evidence that transfers across datasets. Consequently, the learned decision boundary appears less sensitive to dataset-specific characteristics and transfers more reliably to unseen benchmarks. 
+
+5.5 Further Analysis 
+
+We perform further analysis to find out how LaaB brings detection improvement by breaking down the test set into subsets from different views. Specifically, we focus on the origin of the corrected instances and the length distribution. The follow-ing analysis is based on experiments with Llama-3.1-8B-Instruct, aggregated as the average across TriviaQA            
+
+> Only Dr √Only Dj √Both ×LaaB √LaaB ×
+> MMLU NQ_Open HaluEval
+
+Figure 3: Prediction correctness transitions before and after applying LaaB. 
+
+SAPLMA, Logits Lens, and Lookback Lens. 
+
+How do the predictions change before and after applying LaaB? We categorized all testing data into four groups according to the independently trained detectors Dr and Dj : Only Dr ✓( ), only 
+
+Dj ✓( ), both × ( ), and both ✓. For the cate-gories except “both ✓”, we visualize the prediction correctness transition with the sankey diagram (Fig-ure 3), where flow widths are proportional to the absolute instance counts. We see that: 
+
+1) After adopting our proposed LaaB, a sub-stantial portion of samples that Dr originally pre-dicted wrongly were corrected (the yellow flow to purple end), indicating that LaaB indeed transfers knowledge for the detection of hallucination from the self-judgment view to the response view. 
+
+2) Compared to the loss that Dr turns into in-correct predictions (the green flow to red end), LaaB preserves most correct predictions of Dr.
+
+3) Interestingly, we find a small but consistent flow from the “both ×” category to the correct class on all four datasets (the blue flow to purple end), 6318 Dr 
+
+> Dr+LaaB 12.5 13.3 10.5 33.3 Figure 4: Performance on testing subsets with instances in different length intervals.
+
+which is beyond expectation. This might be be-cause the logical constraints from LaaB introduced weak yet useful supervision signals that allow Dr
+
+to refine the learned representations, even when both Dr and Dj predicted incorrectly before. 
+
+How effective is LaaB for instances with vary-ing lengths? We calculate the accuracy of the subsets containing test instances in different length intervals. As presented in Figure 4, LaaB brings accuracy improvement for most length intervals on all four datasets, demonstrating its general ap-plicability. Among the subsets, we see a greater improvement at the long text intervals like (20 , 30] 
+
+and > 30 . And the largest improvement occurs for the instances longer than 30 tokens at the MMLU dataset. This indicates that the hallucination detec-tor can better handle more complex responses than before under the LaaB training. Inspired by Zhang et al. (2025a), a possible explanation is that self-judgment compresses response-level factuality into a single token (“Yes” or “No”), thereby mitigating representation sparsity and noise issues that arise with increasing sequence length. 
+
+6 Conclusion 
+
+We introduced LaaB (Logical Consistency-as-a-Bridge), a framework for LLM hallucination detec-tion that bridges the gap between micro-level intrin-sic neural patterns and macro-level symbolic self-judgments. By introducing a “meta-judgment” pro-cess to map symbolic labels back into the feature space, LaaB provides a mutual learning framework between the hallucination detection modules for the response and the LLM self-judgment, guided by the inherent logical constraint. Extensive ex-periments on four public benchmarks, across four open-source LLMs, against eight baseline models show that LaaB can improve the hallucination de-tection performance for most base models, without introducing a significant increase in the inference cost. 
+
+Future Work. We plan to further explore the fol-lowing directions: 1) Evaluate LaaB and develop an improved version for hallucination detection in long articles; 2) Extend the core design to the multi-modality scenarios; and 3) Build a unified framework that integrates methods like LaaB with fact-checking pipelines. 
+
+Acknowledgment 
+
+This work is supported by the Strategic Priority Research Program of Chinese Academy of Sci-ences (XDB0680202), the National Natural Sci-ence Foundation of China (62406310), the China Postdoctoral Science Foundation (2024M763336), the Innovation Funding of ICT, CAS (E561160), and the Postdoctoral Fellowship Program of CPSF (GZC20232738, YJB20250186). We adhere to the ACL Policy on Publication Ethics, including its Guidelines for Generative As-sistance in Authorship (Cahill et al., 2025). We used generative AI tools solely for language polish-ing of the manuscript and for assistance in drafting certain portions of the code. All generated content was reviewed and verified by the authors. 
+
+Limitations 
+
+In this paper, we propose the integrated framework LaaB to combine the signals from LLMs’ intrinsic patterns and self-judgments for hallucination de-tection. Despite its effectiveness, we identify the following limitations: 1) To obtain the self-judgment from the LLMs, we force the LLM to answer with “Yes” or “No”, which is to avoid the situation where the LLM is originally intended to respond with “I don’t know.” The compulsory constraint of the candidate answer space may bring some noise that negatively influ-ences detectors’ training. 2) Theoretically, our integration cannot correct the result of the samples that both intrinsic-pattern-based and self-judgment-based methods make in-correct predictions. The joint learning procedure 6319 may help some samples of this kind, but such an effect should be attributed to the joint optimiza-tion against ground-truth labels. Furthermore, our method does not guarantee the complete logical consistency for each sample in the resulting model because the applied constraint is soft. 3) The used intrinsic patterns and self-judgments are derived from the LLM that generates the given response, so our method is only applicable for the LLM service provider to monitor its service. The method cannot be used for third-party users who cannot access the internal information of LLMs. For these cases, fact-based misinformation detec-tion (Sheng et al., 2021) or black-box hallucination detection (Bai et al., 2026) methods are more suit-able. 
+
+Ethical Considerations 
+
+Risks. Our work aims at detecting hallucinated LLM outputs and is suitable to be a monitoring component for LLM services, thus reducing the risk of users being misled. Given that an individual detector could hardly be perfect, real-world appli-cations should consider multiple ways to detect hallucination more accurately. 
+
+Data. This work uses four publicly released datasets, including TriviaQA, MMLU, NQ_Open, and HaluEval, under Apache-2.0 license, MIT li-cense, Apache-2.0 license, and MIT license, respec-tively. We follow their intended use of academic research. During the research, we did not collect and use any unauthorized personal private data and did not recruit any human annotators. 
+
+References 
+
+Amos Azaria and Tom Mitchell. 2023. The internal state of an LLM knows when it’s lying. In Find-ings of the Association for Computational Linguis-tics: EMNLP 2023 , pages 967–976. Association for Computational Linguistics. Yuzhuo Bai, Shuzheng Si, Kangyang Luo, Qingyi Wang, Wenhao Li, Gang Chen, Fanchao Qi, and Maosong Sun. 2026. Infi-check: Interpretable and fine-grained fact-checking of llms. Preprint , arXiv:2601.06666. Jakub Binkowski, Denis Janiak, Albert Sawczyn, Bog-dan Gabrys, and Tomasz Jan Kajdanowicz. 2025. Hallucination detection in LLMs using spectral fea-tures of attention maps. In Proceedings of the 2025 Conference on Empirical Methods in Natural Lan-guage Processing , pages 24354–24385. Association for Computational Linguistics. Aoife Cahill, Leon Derczynski, and Kokil Jaidka. 2025. ACL Policy on Publication Ethics. Accessed: 2026-01-02. Chao Chen, Kai Liu, Ze Chen, Yi Gu, Yue Wu, Mingyuan Tao, Zhihang Fu, and Jieping Ye. 2024. INSIDE: LLMs’ internal states retain the power of hallucination detection. In The Twelfth International Conference on Learning Representations .Junjie Chen, Haitao Li, Minghao Qin, Yujia Zhou, Yanxue Ren, Wuyue Wang, Yiqun Liu, Yueyue Wu, and Qingyao Ai. 2026. Simulating dispute mediation with llm-based agents for legal research. In Proceed-ings of the AAAI Conference on Artificial Intelligence ,volume 40, pages 29368–29375. Ethan Chern, Steffi Chern, Shiqi Chen, Weizhe Yuan, Kehua Feng, Chunting Zhou, Junxian He, Graham Neubig, and Pengfei Liu. 2025. Factool: Factuality detection in generative ai–a tool augmented frame-work for multi-task and multi-domain scenarios. In 
+
+Second Conference on Language Modeling .Yung-Sung Chuang, Linlu Qiu, Cheng-Yu Hsieh, Ran-jay Krishna, Yoon Kim, and James R. Glass. 2024. Lookback lens: Detecting and mitigating contextual hallucinations in large language models using only attention maps. In Proceedings of the 2024 Con-ference on Empirical Methods in Natural Language Processing , pages 1419–1436. Association for Com-putational Linguistics. Shehzaad Dhuliawala, Mojtaba Komeili, Jing Xu, Roberta Raileanu, Xian Li, Asli Celikyilmaz, and Ja-son Weston. 2024. Chain-of-verification reduces hal-lucination in large language models. In Findings of the Association for Computational Linguistics: ACL 2024 , pages 3563–3578. Association for Computa-tional Linguistics. Xuefeng Du, Chaowei Xiao, and Yixuan Li. 2024. Halo-scope: Harnessing unlabeled llm generations for hal-lucination detection. Advances in Neural Information Processing Systems , 37:102948–102972. Sebastian Farquhar, Jannik Kossen, Lorenz Kuhn, and Yarin Gal. 2024. Detecting hallucinations in large language models using semantic entropy. Nature ,630:625–630. Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schel-ten, Alex Vaughan, Amy Yang, Angela Fan, Anirudh Goyal, Anthony Hartshorn, Aobo Yang, Archi Mi-tra, Archie Sravankumar, Artem Korenev, Arthur Hinsvark, and 542 others. 2024. The llama 3 herd of models. Preprint , arXiv:2407.21783. Chuan Guo, Geoff Pleiss, Yu Sun, and Kilian Q Wein-berger. 2017. On calibration of modern neural net-works. In International conference on machine learn-ing , pages 1321–1330. PMLR. 6320 Qiushan Guo, Xinjiang Wang, Yichao Wu, Zhipeng Yu, Ding Liang, Xiaolin Hu, and Ping Luo. 2020. Online knowledge distillation via collaborative learn-ing. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 11017–11026. Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. 2021. Measuring massive multitask language under-standing. In International Conference on Learning Representations .Beizhe Hu, Qiang Sheng, Juan Cao, Yang Li, and Dand-ing Wang. 2025. Llm-generated fake news induces truth decay in news ecosystem: A case study on neu-ral news recommendation. In Proceedings of the 48th International ACM SIGIR Conference on Re-search and Development in Information Retrieval ,page 435–445. Association for Computing Machin-ery. Beizhe Hu, Qiang Sheng, Juan Cao, Yuhui Shi, Yang Li, Danding Wang, and Peng Qi. 2024a. Bad actor, good advisor: Exploring the role of large language models in fake news detection. In Proceedings of the AAAI conference on artificial intelligence , volume 38, pages 22105–22113. Xiangkun Hu, Dongyu Ru, Lin Qiu, Qipeng Guo, Tian-hang Zhang, Yang Xu, Yun Luo, Pengfei Liu, Yue Zhang, and Zheng Zhang. 2024b. Knowledge-centric hallucination detection. In Proceedings of the 2024 Conference on Empirical Methods in Natural Lan-guage Processing , pages 6953–6975. Association for Computational Linguistics. Lei Huang, Weijiang Yu, Weitao Ma, Weihong Zhong, Zhangyin Feng, Haotian Wang, Qianglong Chen, Weihua Peng, Xiaocheng Feng, Bing Qin, and Ting Liu. 2025. A survey on hallucination in large lan-guage models: Principles, taxonomy, challenges, and open questions. ACM Trans. Inf. Syst. , 43(2). Peter J Huber. 1964. Robust estimation of a location parameter. The Annals of Mathematical Statistics ,35(1):73–101. Ziwei Ji, Nayeon Lee, Rita Frieske, Tiezheng Yu, Dan Su, Yan Xu, Etsuko Ishii, Ye Jin Bang, Andrea Madotto, and Pascale Fung. 2023a. Survey of halluci-nation in natural language generation. ACM Comput. Surv. , 55(12). Ziwei Ji, Tiezheng Yu, Yan Xu, Nayeon Lee, Etsuko Ishii, and Pascale Fung. 2023b. Towards mitigat-ing LLM hallucination via self reflection. In Find-ings of the Association for Computational Linguis-tics: EMNLP 2023 , pages 1827–1843. Association for Computational Linguistics. Albert Q. Jiang, Alexandre Sablayrolles, Arthur Men-sch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guil-laume Lample, Lucile Saulnier, Lélio Renard Lavaud, Marie-Anne Lachaux, Pierre Stock, Teven Le Scao, Thibaut Lavril, Thomas Wang, Timothée Lacroix, and William El Sayed. 2023. Mistral 7b. Preprint ,arXiv:2310.06825. Che Jiang, Biqing Qi, Xiangyu Hong, Dayuan Fu, Yang Cheng, Fandong Meng, Mo Yu, Bowen Zhou, and Jie Zhou. 2024. On large language models’ halluci-nation with regard to known facts. In Proceedings of the 2024 Conference of the North American Chap-ter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , pages 1041–1053. Association for Compu-tational Linguistics. Mandar Joshi, Eunsol Choi, Daniel Weld, and Luke Zettlemoyer. 2017. TriviaQA: A large scale distantly supervised challenge dataset for reading comprehen-sion. In Proceedings of the 55th Annual Meeting of the Association for Computational Linguistics (Vol-ume 1: Long Papers) , pages 1601–1611. Association for Computational Linguistics. Saurav Kadavath, Tom Conerly, Amanda Askell, Tom Henighan, Dawn Drain, Ethan Perez, Nicholas Schiefer, Zac Hatfield-Dodds, Nova DasSarma, Eli Tran-Johnson, Scott Johnston, Sheer El-Showk, Andy Jones, Nelson Elhage, Tristan Hume, Anna Chen, Yuntao Bai, Sam Bowman, Stanislav Fort, and 17 others. 2022. Language models (mostly) know what they know. Preprint , arXiv:2207.05221. Tom Kwiatkowski, Jennimaria Palomaki, Olivia Red-field, Michael Collins, Ankur Parikh, Chris Alberti, Danielle Epstein, Illia Polosukhin, Jacob Devlin, Ken-ton Lee, Kristina Toutanova, Llion Jones, Matthew Kelcey, Ming-Wei Chang, Andrew M. Dai, Jakob Uszkoreit, Quoc Le, and Slav Petrov. 2019. Natu-ral questions: A benchmark for question answering research. Transactions of the Association for Compu-tational Linguistics , 7:452–466. Junyi Li, Xiaoxue Cheng, Xin Zhao, Jian-Yun Nie, and Ji-Rong Wen. 2023a. HaluEval: A large-scale hal-lucination evaluation benchmark for large language models. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing ,pages 6449–6464. Association for Computational Linguistics. Kenneth Li, Oam Patel, Fernanda Viégas, Hanspeter Pfister, and Martin Wattenberg. 2023b. Inference-time intervention: Eliciting truthful answers from a language model. In Thirty-seventh Conference on Neural Information Processing Systems .Miaoran Li, Jiangning Chen, Minghua Xu, and Xiao-long Wang. 2025a. Hallucination detection in struc-tured query generation via LLM self-debating. In 
+
+Findings of the Association for Computational Lin-guistics: EMNLP 2025 , pages 16102–16113. Associ-ation for Computational Linguistics. Rui Li, Jing Long, Muge Qi, Heming Xia, Lei Sha, Peiyi Wang, and Zhifang Sui. 2025b. Towards harmonized uncertainty estimation for large language models. In 6321 Proceedings of the 63rd Annual Meeting of the As-sociation for Computational Linguistics (Volume 1: Long Papers) , pages 22938–22953. Association for Computational Linguistics. Yibo Li, Miao Xiong, Jiaying Wu, and Bryan Hooi. 2025c. Conftuner: Training large language models to express their confidence verbally. In The Thirty-ninth Annual Conference on Neural Information Pro-cessing Systems .Aiwei Liu, Qiang Sheng, and Xuming Hu. 2024a. Pre-venting and detecting misinformation generated by large language models. In Proceedings of the 47th International ACM SIGIR Conference on Research and Development in Information Retrieval , page 3001–3004. Association for Computing Machinery. Junteng Liu, Shiqi Chen, Yu Cheng, and Junxian He. 2024b. On the universal truthfulness hyperplane in-side LLMs. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Process-ing , pages 18199–18224. Association for Computa-tional Linguistics. Qiang Liu, Xinlong Chen, Yue Ding, Bowen Song, Weiqiang Wang, Shu Wu, and Liang Wang. 2025a. Attention-guided self-reflection for zero-shot hallu-cination detection in large language models. In Pro-ceedings of the 2025 Conference on Empirical Meth-ods in Natural Language Processing , pages 21005– 21021. Association for Computational Linguistics. Zihang Liu, Jiawei Guo, Hao Zhang, Hongyang Chen, Jiajun Bu, and Haishuai Wang. 2025b. Long-form hallucination detection with self-elicitation. In Find-ings of the Association for Computational Linguis-tics: ACL 2025 , pages 4082–4100. Association for Computational Linguistics. Huan Ma, Jingdong Chen, Joey Tianyi Zhou, Guangyu Wang, and Changqing Zhang. 2025. Estimat-ing llm uncertainty with evidence. Preprint ,arXiv:2502.00290. Potsawee Manakul, Adian Liusie, and Mark Gales. 2023. SelfCheckGPT: Zero-resource black-box hallucina-tion detection for generative large language models. In Proceedings of the 2023 Conference on Empiri-cal Methods in Natural Language Processing , pages 9004–9017. Association for Computational Linguis-tics. Sewon Min, Kalpesh Krishna, Xinxi Lyu, Mike Lewis, Wen-tau Yih, Pang Koh, Mohit Iyyer, Luke Zettle-moyer, and Hannaneh Hajishirzi. 2023. FActScore: Fine-grained atomic evaluation of factual precision in long form text generation. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 12076–12100. Associa-tion for Computational Linguistics. Muhammad Ahmed Mohsin, Muhammad Umer, Ahsan Bilal, Zeeshan Memon, Muhammad Ibtsaam Qadir, Sagnik Bhattacharya, Hassan Rizwan, Abhiram R. Gorle, Maahe Zehra Kazmi, Nukhba Amir, Ali Sub-han, Muhammad Usman Rafique, Zihao He, Pulkit Mehta, Muhammad Ali Jamshed, and John M. Cioffi. 2026. On the fundamental limits of llms at scale. 
+
+Preprint , arXiv:2511.12869. Shiyu Ni, Keping Bi, Jiafeng Guo, Lulu Yu, Baolong Bi, and Xueqi Cheng. 2025. Towards fully exploiting LLM internal states to enhance knowledge boundary perception. In Proceedings of the 63rd Annual Meet-ing of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 24315–24329. Asso-ciation for Computational Linguistics. nostalgebraist. 2020. interpreting GPT: the logit lens. Accessed: 2026-01-02. Arjun Panickssery, Samuel Bowman, and Shi Feng. 2024. Llm evaluators recognize and favor their own generations. Advances in Neural Information Pro-cessing Systems , 37:68772–68802. Seongheon Park, Xuefeng Du, Min-Hsuan Yeh, Haobo Wang, and Yixuan Li. 2025. Steer LLM latents for hallucination detection. In Forty-second Inter-national Conference on Machine Learning .Siya Qi, Yudong Chen, Runcong Zhao, Qinglin Zhu, Zhanghao Hu, Wei Liu, Yulan He, Zheng Yuan, and Lin Gui. 2026. Detecting contextual hallucinations in llms with frequency-aware attention. Preprint ,arXiv:2602.18145. Qiang Sheng, Xueyao Zhang, Juan Cao, and Lei Zhong. 2021. Integrating pattern-and fact-based fake news detection via model preference learning. In Proceed-ings of the 30th ACM international conference on information & knowledge management , pages 1640– 1650. Yuhui Shi, Qiang Sheng, Juan Cao, Hao Mi, Beizhe Hu, and Danding Wang. 2024. Ten words only still help: improving black-box ai-generated text detection via proxy-guided efficient re-sampling. In Proceedings of the Thirty-Third International Joint Conference on Artificial Intelligence , pages 494–502. Adi Simhi, Itay Itzhak, Fazl Barez, Gabriel Stanovsky, and Yonatan Belinkov. 2025. Trust me, I’m wrong: LLMs hallucinate with certainty despite knowing the answer. In Findings of the Association for Compu-tational Linguistics: EMNLP 2025 , pages 14665– 14688. Association for Computational Linguistics. Jinyan Su, Jennifer Healey, Preslav Nakov, and Claire Cardie. 2025. Between underthinking and overthink-ing: An empirical study of reasoning length and cor-rectness in llms. Preprint , arXiv:2505.00127. Weihang Su, Changyue Wang, Qingyao Ai, Yiran Hu, Zhijing Wu, Yujia Zhou, and Yiqun Liu. 2024. Unsu-pervised real-time hallucination detection based on the internal states of large language models. In Find-ings of the Association for Computational Linguis-tics: ACL 2024 , pages 14379–14391. Association for Computational Linguistics. 6322 Xiaoxi Sun, Jinpeng Li, Yan Zhong, Dongyan Zhao, and Rui Yan. 2025. Towards detecting llms hallu-cination via markov chain-based multi-agent debate framework. In 2025 IEEE International Conference on Acoustics, Speech and Signal Processing , pages 1–5. IEEE. Chao Tan and Jie Liu. 2022. Online knowledge distilla-tion with elastic peer. Information Sciences , 583:1– 13. Hexiang Tan, Fei Sun, Sha Liu, Du Su, Qi Cao, Xin Chen, Jingang Wang, Xunliang Cai, Yuanzhuo Wang, Huawei Shen, and Xueqi Cheng. 2025. Too consis-tent to detect: A study of self-consistent errors in LLMs. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing ,pages 4755–4765. Association for Computational Linguistics. Hexiang Tan, Wanli Yang, Junwei Zhang, Xin Chen, Rui Tang, Du Su, Jingang Wang, Yuanzhuo Wang, Fei Sun, and Xueqi Cheng. 2026. Basecal: Unsuper-vised confidence calibration via base model signals. 
+
+Preprint , arXiv:2601.03042. Roman Vashurin, Maiya Goloburda, Preslav Nakov, and Maxim Panov. 2025. UNCERTAINTY-LINE: Length-invariant estimation of uncertainty for large language models. In Proceedings of the 2025 Con-ference on Empirical Methods in Natural Language Processing , pages 7881–7908. Association for Com-putational Linguistics. Artem Vazhentsev, Ekaterina Fadeeva, Rui Xing, Gleb Kuzmin, Ivan Lazichny, Alexander Panchenko, Preslav Nakov, Timothy Baldwin, Maxim Panov, and Artem Shelmanov. 2025. Unconditional truthfulness: Learning unconditional uncertainty of large language models. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing ,pages 35673–35694. Association for Computational Linguistics. Yingjia Wan, Haochen Tan, Xiao Zhu, Xinyu Zhou, Zhi-wei Li, Qingsong Lv, Changxuan Sun, Jiaqi Zeng, Yi Xu, Jianqiao Lu, Yinhong Liu, and Zhijiang Guo. 2025. FaStFact: Faster, stronger long-form factuality evaluations in LLMs. In Findings of the Associa-tion for Computational Linguistics: EMNLP 2025 ,pages 23814–23854. Association for Computational Linguistics. Pengyu Wang, Linyang Li, Ke Ren, Botian Jiang, Dong Zhang, and Xipeng Qiu. 2023. SeqXGPT: Sentence-level AI-generated text detection. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 1144–1156. As-sociation for Computational Linguistics. Yiming Wang, Pei Zhang, Baosong Yang, Derek F. Wong, and Rui Wang. 2025. Latent space chain-of-embedding enables output-free LLM self-evaluation. In The Thirteenth International Conference on Learn-ing Representations .Yuxia Wang, Revanth Gangi Reddy, Zain Muhammad Mujahid, Arnav Arora, Aleksandr Rubashevskii, Ji-ahui Geng, Osama Mohammed Afzal, Liangming Pan, Nadav Borenstein, Aditya Pillai, Isabelle Au-genstein, Iryna Gurevych, and Preslav Nakov. 2024. Factcheck-bench: Fine-grained evaluation bench-mark for automatic fact-checkers. In Findings of the Association for Computational Linguistics: EMNLP 2024 , pages 14199–14230. Association for Computa-tional Linguistics. Koki Wataoka, Tsubasa Takahashi, and Ryokan Ri. 2024. Self-preference bias in LLM-as-a-judge. In 
+
+Neurips Safe Generative AI Workshop 2024 .Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel, Barret Zoph, Sebastian Borgeaud, Dani Yogatama, Maarten Bosma, Denny Zhou, Donald Metzler, Ed H. Chi, Tatsunori Hashimoto, Oriol Vinyals, Percy Liang, Jeff Dean, and William Fedus. 2022. Emer-gent abilities of large language models. Transactions on Machine Learning Research . Survey Certifica-tion. Bingbing Wen, Chenjun Xu, Bin HAN, Robert Wolfe, Lucy Lu Wang, and Bill Howe. 2024. Mitigating overconfidence in large language models: A behav-ioral lens on confidence estimation and calibration. In NeurIPS 2024 Workshop on Behavioral Machine Learning .Miao Xiong, Zhiyuan Hu, Xinyang Lu, YIFEI LI, Jie Fu, Junxian He, and Bryan Hooi. 2024. Can LLMs express their uncertainty? an empirical evaluation of confidence elicitation in LLMs. In The Twelfth Inter-national Conference on Learning Representations .Ziwei Xu, Sanjay Jain, and Mohan Kankanhalli. 2025. Hallucination is inevitable: An innate limitation of large language models. Preprint , arXiv:2401.11817. An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li, Dayi-heng Liu, Fei Huang, Haoran Wei, Huan Lin, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Ji-axi Yang, Jingren Zhou, Junyang Lin, Kai Dang, and 23 others. 2025. Qwen2.5 technical report. Preprint ,arXiv:2412.15115. Chuanguang Yang, Zhulin An, Helong Zhou, Fuzhen Zhuang, Yongjun Xu, and Qian Zhang. 2023. Online knowledge distillation via mutual contrastive learn-ing for visual recognition. IEEE Transactions on Pat-tern Analysis and Machine Intelligence , 45(8):10212– 10227. Zhangyue Yin, Qiushi Sun, Qipeng Guo, Jiawen Wu, Xipeng Qiu, and Xuanjing Huang. 2023. Do large language models know what they don’t know? In 
+
+Findings of the Association for Computational Lin-guistics: ACL 2023 , pages 8653–8665. Association for Computational Linguistics. Yige Yuan, Bingbing Xu, Hexiang Tan, Fei Sun, Teng Xiao, Wei Li, Huawei Shen, and Xueqi Cheng. 2025. Fact-level calibration and correction for long-form 6323 generations. In Proceedings of the 48th Interna-tional ACM SIGIR Conference on Research and De-velopment in Information Retrieval , SIGIR ’25, page 2807–2811. Association for Computing Machinery. Fujie Zhang, Peiqi Yu, Biao Yi, Baolei Zhang, Tong Li, and Zheli Liu. 2025a. Prompt-guided internal states for hallucination detection of large language models. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 21806–21818. Association for Computational Linguistics. Qingjie Zhang, Di Wang, Haoting Qian, Yiming Li, Tianwei Zhang, Minlie Huang, Ke Xu, Hewu Li, Liu Yan, and Han Qiu. 2025b. Understanding the dark side of LLMs’ intrinsic self-correction. In Proceed-ings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Pa-pers) , pages 27066–27101. Association for Compu-tational Linguistics. Wei Zhang, Guojun Dai, Ding Luo, Yan Wang, and Chen Ye. 2026. From hallucination to certainty: Meta-knowledge guided self-correcting large lan-guage models. ACM Transactions on Intelligent Sys-tems and Technology .Ying Zhang, Tao Xiang, Timothy M Hospedales, and Huchuan Lu. 2018. Deep mutual learning. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 4320–4328. Yue Zhang, Yafu Li, Leyang Cui, Deng Cai, Lemao Liu, Tingchen Fu, Xinting Huang, Enbo Zhao, Yu Zhang, Yulong Chen, Longyue Wang, Anh Tuan Luu, Wei Bi, Freda Shi, and Shuming Shi. 2025c. Siren’s song in the ai ocean: A survey on hallucination in large language models. Computational Linguistics ,51(4):1373–1418. Zhenliang Zhang, Xinyu Hu, Huixuan Zhang, Junzhe Zhang, and Xiaojun Wan. 2025d. ICR probe: Track-ing hidden state dynamics for reliable hallucination detection in LLMs. In Proceedings of the 63rd An-nual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 17986– 18002. Association for Computational Linguistics. Weike Zhao, Chaoyi Wu, Yanjie Fan, Pengcheng Qiu, Xiaoman Zhang, Yuze Sun, Xiao Zhou, Shuju Zhang, Yu Peng, Yanfeng Wang, Xin Sun, Ya Zhang, Yong-guo Yu, Kun Sun, and Weidi Xie. 2026. An agentic system for rare disease diagnosis with traceable rea-soning. Nature , 651:775–784. Kaitlyn Zhou, Jena D. Hwang, Xiang Ren, and Maarten Sap. 2024. Relying on the unreliable: The impact of language models’ reluctance to express uncertainty. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 3623–3643. Association for Computational Linguistics. 
+
+A Additional Details of Datasets 
+
+A.1 Introduction of Used Datasets 
+
+The detailed introduction of the four datasets used is as follows: • TriviaQA (Joshi et al., 2017): A large-scale dataset for reading comprehension and ques-tion answering, consisting of trivia questions authored by enthusiasts and their associated ev-idence documents. We utilize the deduplicated validation split (rc.nocontext subset) with 9,961 Question-Answer Pairs. • MMLU (Hendrycks et al., 2021): A bench-mark covering 57 tasks across diverse domains, including STEM, humanities, social sciences, and professional knowledge. It evaluates a model’s multitasking and general reasoning abil-ities using multiple-choice questions drawn from publicly available exams and academic sources. We utilize the test set with 14,041 multiple-choice questions. • NQ_Open (Kwiatkowski et al., 2019): An open-domain question answering benchmark de-rived from Natural Questions. It contains real user queries paired with relevant passages from Wikipedia, designed to evaluate models’ ability to retrieve and answer factual questions from large text corpora. We use its validation split without relevant passages, which contains 3,610 QA pairs. • HaluEval (Li et al., 2023a): A large collection of generated and human-annotated hallucinated samples for evaluating the performance of LLMs in recognizing hallucination, including four sub-sets: QA, Dialogue, Summarization, and Gen-eral Data. In our experiment, we use the QA split with 10K data samples. 
+
+A.2 Prompts for Response and Self-judgment 
+
+In this paper, we design the following simple prompt template to instruct the LLM to generate the response Or:
+
+Prompt for Response Generation 
+
+Answer the question concisely: 
+
+Q: {Qr}
+
+A: 
+
+Then we design the following prompt for LLM self-judgment to get the verbal judgment Oj :6324 Prompt for LLM Self-Judgment 
+
+Given the following QA pair: 
+
+Q: {Qr}
+
+A: {Or}Does the answer above reflect the facts? Please respond with one of the following labels: “Yes” or “No”. 
+
+Answer: 
+
+After generation, we filter out a small number of invalid responses ( e.g ., ‘. . . ’), which fall outside the scope of hallucination detection. 
+
+A.3 Automatic Labeling of LLMs’ Responses 
+
+To obtain the factuality label Lr for LLM re-sponses, we design a three-stage automated anno-tation pipeline consisting of text pattern matching, semantic similarity scoring, and annotation using GPT-4o-mini. Each stage hierarchically processes the remaining unlabeled samples. First, for samples that cannot be annotated via text pattern matching, we compute the semantic entailment score between the LLM response and the golden answer using the nli-deberta-v3-base model 2 , which is specifically fine-tuned for natural language inference. Next, for samples with neutral NLI scores, we employ GPT-4o-mini as the anno-tator to assign factuality labels, using the prompt template shown below. 
+
+Prompt for GPT-4o-mini Annotation 
+
+Given the following Query–Response pair: 
+
+Query: {Qr}
+
+Response: {Or}A possible ground-truth answer is also pro-vided: 
+
+Ground-Truth (possible): {Gt}Your task is to determine whether the Re-sponse is accurate, based on: 1) The provided ground-truth (possible), 2) Your own knowledge. Please choose one of the following labels as your final judgment: 
+
+“True” , “False” , “Uncertain” .
+
+Final Judgment: 
+
+For samples labeled as “Uncertain” by GPT-4o-mini, we conduct manual verification and selec-
+
+> 2https://huggingface.co/cross-encoder/ nli-deberta-v3-base
+
+tively discard them due to the ambiguity and poten-tial unreliability of their factuality labels. To assess annotation quality, we randomly sample 200 such uncertain instances for manual inspection, achiev-ing an agreement rate of 93.50%, which indicates that GPT-4o-mini provides sufficiently reliable an-notations for effective data filtering. Finally, to further check the overall annotation quality, we randomly sample 800 instances from the automatically labeled dataset for manual verifi-cation. The agreement between automatic and hu-man annotations reaches 96.125%, demonstrating the high quality of the automated labeling pipeline. The statistics of the final available dataset and label distribution are presented in Table 6. 
+
+B Details of Intrinsic Patterns Extraction 
+
+B.1 Hidden States ( Hr & Hj )Selection Strategy of Kval . To balance perfor-mance and efficiency while avoiding the increasing complexity of searching for the optimal layer as LLM size grows, we adopt a quantile-based strat-egy. Specifically, we partition the total number of LLM layers according to proportional quan-tiles [1 /8, 1/4, 3/8, 1/2, 5/8, 3/4, 7/8, 1] , yield-ing eight candidate layers. During the implemen-tation of SAPLMA, we perform a grid search over the hidden states of these candidate layers, and se-lect the one achieving the highest Macro-F1 score on the validation set as Kval ,r and Kval ,j for the response and self-judgment settings, respectively. 
+
+B.2 Prediction Logits ( Pr & Pj )Additional Details of Logits Lens. Given a nat-ural language input X, we first tokenize it into a sequence of tokens T = [ t0, t 1, . . . , t N −1] us-ing the tokenizer associated with the target LLM, where N denotes the number of tokens. The to-ken sequence is then mapped to embedding vec-tors E = [ e0, e 1, . . . , e N −1] via the embedding ma-trix. Subsequently, E is processed through a stack of Transformer blocks to produce hidden states 
+
+H = [ hkn], where hkn represents the hidden state of the n-th token at the k-th layer. The hidden state of the final token at the last layer, hKN −1, is projected through the unembedding matrix to obtain the prob-ability distribution for next-token prediction. 3
+
+For Logits Lens, let NQr and NOr denote the token lengths of the query Qr and response Or,
+
+> 3For brevity, we omit standard operations such as Layer Normalization and Softmax.
+
+6325 Table 6: Dataset statistics across benchmarks and large language models used in the experiments                                                               
+
+> LLM TriviaQA MMLU NQ_Open HaluEval
+> Total Real Hallu. Total Real Hallu. Total Real Hallu. Total Real Hallu. Llama-3.1-8B-Instruct 9,668 6,981 2,687 10,555 6,863 3,692 3,255 2,183 1,072 8,976 3,784 5,192 Llama-3.1-70B-Instruct 9,848 8,485 1,363 9,112 7,518 1,594 3,400 2,638 762 9,438 5,225 4,213 Qwen2.5-32B-Instruct 9,702 7,161 2,541 10,574 8,643 1,931 3,364 2,147 1,217 9,296 4,345 4,951 Mistral-7B-Instruct-v0.3 9,752 6,859 2,893 10,750 6,612 4,138 3,316 2,072 1,244 9,203 3,970 5,233
+
+respectively. To compute the probabilities of to-kens in Or, we first extract the hidden states corresponding to the token span T [NQr − 1 :
+
+NQr + NOr − 1] across all layers, resulting in a tensor of shape (NOr , layer_num , hidden_dim ).We then project these hidden states into the LLM’s output space using the unembedding matrix, yielding a probability tensor of shape 
+
+(NOr , layer_num , vocab_size ).Finally, we obtain the layer-wise probabilities for each token in 
+
+Or by indexing this tensor with the correspond-ing token IDs, resulting in a matrix of shape 
+
+(NOr , layer_num ).4
+
+To obtain a sequence-level Logits prediction rep-resentation, we employ a single multi-head Trans-former layer followed by mean pooling to aggre-gate token-level representations in Pr. Similar de-sign choices have been explored in prior works such as those from Wang et al. (2023) and Shi et al. (2024). For Pj , we extract the Logits Lens repre-sentation of the first token in Oj (typically “Yes” or “No”, along with their aggregated synonyms), and further enhance the contrast using Eq. (1). The resulting representation is then used as a sequence-level feature, as it sufficiently captures the core decision semantics of the judgment. 
+
+The equivalents of “Yes” include:      
+
+> [‘Yes’, ‘yes’, ‘YES’, ‘_Yes’, ‘_yes’, ‘_YES’, ‘Y’, ‘y’, ‘_Y’, ‘_y’, ‘True’, ‘true’, ‘TRUE’, ‘_True’, ‘_true’, ‘_TRUE’, ‘Correct’, ‘correct’, ‘CORRECT’, ‘_Correct’, ‘_correct’, ‘_CORRECT’]
+
+The equivalents of “No” include:              
+
+> [‘No’, ‘no’, ‘NO’, ‘_No’, ‘_no’, ‘_NO’, ‘N’, ‘n’, ‘_N’, ‘_n’, ‘False’, ‘false’, ‘FALSE’, ‘_False’, ‘_false’, ‘_FALSE’, ‘Incorrect’, ‘incorrect’, ‘INCORRECT’, ‘_Incorrect’, ‘_incorrect’, ‘_INCORRECT’]
+
+Synonyms Group for “Yes”/“No”. We adopt a verbalization strategy for LLM self-judgments    
+
+> 4vocab_size denotes the vocabulary size of the LLM, and
+> layer_num corresponds to Kdefined above.
+
+to more accurately capture the model’s decision uncertainty. Specifically, following common prac-tices in prompt engineering, we treat tokens with similar semantics or prefixes as equivalents of “Yes” or “No”. The synonym groups for “Yes” and “No” in Section 4.2 are constructed by intersecting the above token lists with the vocabulary of the target LLM. 
+
+B.3 Attention Scores ( Ar & Aj )Context Segmentation. Building upon the core idea of the original “Lookback” approach, we adapt the context segmentation strategy to align with the specific prompt templates utilized for the Response and Self-Judgment tasks in our work. For the re-sponse scenario ( r), we partition the context into four distinct segments: system prompt, query Qr,response trigger, and preceding tokens of Or. The first three segments correspond directly to the three respective lines of the “Prompt for Response Gen-eration” template detailed in Appendix A.2. Simi-larly, for the self-judgment scenario ( j), we parti-tion the context into six distinct segments: Framing, Query, Response, Eval_Query, Format, and Trigger. These six segments correspond respectively to the six clauses of the “Prompt for LLM Self-Judgment” template, also detailed in Appendix A.2. 
+
+Lookback Ratio Calculation. We follow the core implementation by Chuang et al. (2024) and adapt it to our task setting. Specifically, we first par-tition all tokens in a sequence into two categories: 
+
+anchor tokens and context tokens . We then extract the token-level attention score matrix from anchor tokens to context tokens, with shape (layer_num ×
+
+head_num , N ach , N ctx ), where head_num denotes the number of attention heads per layer in the LLM, and Nach and Nctx represent the number of anchor tokens and context tokens, respectively. Next, ac-cording to the aforementioned context segmenta-tion scheme, we divide the context tokens into Nseg 
+
+segments. For each anchor token, we perform intra-segment average pooling over the attention scores 6326 Cumulative KL Ratio 
+
+> Number of Attention Heads (sorted by KL) Figure 5: Normalized cumulative distribution of KL divergence across all attention heads in Llama-3.1-70B. The pronounced long-tail distribution reveals that a small subset of heads captures the core factual discriminative capacity, while the majority provides only weak signals. The orange dashed line indicates a cumulative probability of 0.85.
+
+assigned to the context tokens within each segment, yielding ach2seg attention distributions with shape 
+
+(layer_num ×head_num , N ach , N seg ). We then nor-malize the ach2seg attention map along the Nseg 
+
+dimension to obtain the token-level Lookback Ra-tio. Finally, we apply average pooling over all an-chor tokens to derive the sequence-level Lookback Ratio, with shape (layer_num × head_num , N seg ).For the response scenario ( r), the anchor is Or,the context is concat (Qr, O r), and Nseg = 4 . For the self-judgment scenario ( j), the anchor is Oj
+
+(“Yes/No”), the context is Qj , and Nseg = 6 .
+
+Top-P Informative Heads Selection. As de-scribed above, the Lookback Ratio yields ahigh-dimensional vector of shape (layer_num ×
+
+head_num , N seg ) for each sequence. As LLMs scale, this dimensionality increases substantially (e.g., from 1024 heads in Llama-3.1-8B to 5120 in Llama-3.1-70B), raising the question of potential redundancy in these representations. Specifically, we compute the KL divergence be-tween the Lookback Ratio distributions of posi-tive and negative training samples to quantify each head’s factual discriminative power. We then rank the heads by descending KL divergence and plot the normalized cumulative distribution (as shown in Figure 5). The curve exhibits a sharp initial in-crease before flattening, indicating a pronounced long-tail distribution. This reveals that a small sub-set of heads captures the core factual discriminative capacity, while the majority provides only weak signals. Figure 5 only shows results on Llama-3.1-70B for brevity, and consistent patterns hold across three other LLMs. Such sparsity and redundancy limit effective training and introduce unnecessary computational overhead. Consequently, we apply a top-P se-lection strategy ( P = 0 .85 , orange dashed line in Figure 5) to retain only heads with strong fac-tual discriminability. Empirically, this approach preserves the hallucination detector’s performance while effectively mitigating the long-tail effect and reducing the classifier’s input dimensionality. 
+
+C Huber Loss Function 
+
+The Huber loss (Huber, 1964) is a robust loss func-tion that combines the advantages of Mean Squared Error (MSE) and Mean Absolute Error (MAE). Given a prediction x and target y, the Huber loss is defined as: 
+
+Lδ(x, y ) = 
+
+{ 12 (x − y)2, if |x − y| ≤ δ, δ (|x − y| − 12 δ) , otherwise ,
+
+(8) where δ is a threshold hyperparameter that con-trols the transition between quadratic and linear regimes. In our framework, we set the threshold hyperparameter to δ = 0 .5.Compared to MSE, which applies a quadratic penalty to all errors and is sensitive to outliers, the Huber loss behaves quadratically for small errors and linearly for large errors. This property makes it more robust to noisy or misaligned signals, while still maintaining smooth optimization near the opti-mum. 
+
+D Large Language Models 
+
+We use four commonly used open-source LLMs to cover different model families and scales. For 6327 Table 7: Efficiency profiling of three versions of LaaB. Parameters are reported in thousands ( K). Inference latency is measured in ms/instance .                    
+
+> Version Params (R/E) Train Speed Inf. Latency
+> (×10 3)(s / epoch) (ms / inst.) Hidden Based 1,090 /1,090 1.06 0.0215 Logits Based 155 /25 1.63 0.0347 Attns Based 575 /520 0.40 0.0232
+
+Llama 3 (Grattafiori et al., 2024), we use Llama-3.1-8B-Instruct 5 and Llama-3.1-70B-Instruct 6. For Qwen-2.5 (Yang et al., 2025), we use Qwen-2.5-32B-Instruct 7. For Mistral (Jiang et al., 2023), we use Mistral-7B-Instruct-v0.3 8. The three LLM fam-ilies are developed and released by independent organizations in different countries, and all of them are popular in the open-source community, which enhances their representativeness. 
+
+E Efficiency Analysis 
+
+We conducted experiments on a server equipped with a single NVIDIA A800 GPU with a batch size of 128 and a learning rate of 1e-4 for the efficiency test. As summarized in Table 7, the Attns Based 
+
+variant demonstrates the highest training speed, re-quiring only 0.40 s/epoch. In terms of inference, the Hidden Based variant achieves the lowest la-tency at 0.0215 ms/instance. Notably, although the 
+
+Logits Based variant has the fewest trainable param-eters, it incurs higher temporal costs in both train-ing ( 1.63 s/epoch) and testing phases compared to the other variants. This indicates that our proposed LaaB framework would not introduce a significant increase in inference cost, making it a practical option for training hallucination detectors. 
+
+F Introduction of Consistency-based Baselines 
+
+Here, we supplement the introduction of two hallu-cination detection baseline methods based on multi-sampling consistency: • SelfCheckGPT (Manakul et al., 2023): Asampling-based hallucination detector based on 
+
+> 5https://huggingface.co/meta-llama/Llama-3. 1-8B-Instruct
+> 6https://huggingface.co/meta-llama/Llama-3. 1-70B-Instruct
+> 7https://huggingface.co/Qwen/Qwen2. 5-32B-Instruct
+> 8https://huggingface.co/mistralai/ Mistral-7B-Instruct-v0.3
+
+the assumption that the sampled responses will be consistent if an LLM has clear “knowledge” to respond to a query. If the LLM is halluci-nating, the responses obtained from multiple samplings would be inconsistent. SelfCheck-GPT provides five implementations, including BERTScore, MGQA, Unigram, NLI, and GPT-Prompt. In this work, we adopt SelfCheckGPT-NLI to balance detection performance and effi-ciency. • Eigen-Score (Chen et al., 2024): An uncertainty-based method to detect hallucina-tions by leveraging the semantic consistency of generated outputs in the dense embedding space. Specifically, it constructs a covariance matrix from the hidden states of multi-sampled responses and calculates its logarithmic determi-nant (equivalent to the sum of the logarithms of all eigenvalues) to measure the differential en-tropy of the representations. Therefore, a higher Eigen-Score indicates greater semantic diver-gence and a higher likelihood of hallucination. Following the original setup, we extract the hid-den state of the final token from a middle layer for each sequence and report results without fea-ture clipping in our experimental tables. 
+
+G Evaluation on More Baseline Methods 
+
+To further demonstrate the broad adaptability of the LaaB framework across diverse hallucination detection approaches, we augment our experiments with two additional baselines: LapEigvals and TSV. Specifically, we compare the detection perfor-mance of the base detectors against their LaaB-enhanced counterparts. A brief introduction to these baselines is provided below: • LapEigvals (Binkowski et al., 2025): An attention-based method that leverages the spec-tral properties of LLM attention maps. Specifi-cally, it interprets the attention maps generated during the autoregressive inference process as weighted adjacency matrices of directed graphs. For each attention head across all transformer layers, the method computes the corresponding graph Laplacian matrix and extracts its top-k
+
+eigenvalues. These eigenvalues serve to quan-tify disruptions or bottlenecks in the model’s internal information flow, which are hypothe-sized to correlate with the occurrence of hal-lucinations. Ultimately, the extracted spectral 6328 Table 8: Performance comparison of LaaB with additional baseline methods (LapEigvals and TSV) in hallucination detection. The blue-shaded rows indicate the LaaB-enhanced versions. Bolded numbers denote that the use of LaaB outperforms its corresponding base version.                                                                                                                                                                                
+
+> TriviaQA MMLU NQ_Open HaluEval Average LLM Method macF1 Acc macF1 Acc macF1 Acc macF1 Acc macF1 Acc LapEigvals 74.92 78.32 68.77 69.75 69.56 72.71 75.81 76.04 72.27 74.21
+> +LaaB 76.44 80.69 69.71 72.07 70.48 75.15 76.45 76.88 73.27 76.20
+> TSV 75.61 79.71 61.49 65.97 71.05 73.02 74.48 75.15 70.66 73.46
+> Llama-3.1-8B-Instruct
+> +LaaB 77.17 81.47 62.59 66.92 71.49 74.84 74.82 75.32 71.52 74.64
+> LapEigvals 72.34 83.08 68.59 76.16 66.03 71.30 76.17 76.37 70.78 76.73
+> +LaaB 73.01 86.37 71.08 81.97 68.44 77.01 76.38 76.48 72.23 80.46
+> TSV 71.85 85.41 71.12 81.48 66.95 74.52 77.85 77.96 71.94 79.84
+> Llama-3.1-70B-Instruct
+> +LaaB 72.75 86.47 71.10 81.75 68.17 77.01 78.09 78.17 72.53 80.85
+> LapEigvals 74.59 78.55 64.15 72.29 76.31 77.55 76.40 76.49 72.86 76.22
+> +LaaB 76.54 81.53 65.86 77.15 78.82 80.06 77.01 77.08 74.56 78.96
+> TSV 76.21 80.86 63.27 69.18 76.47 77.55 77.20 77.29 73.29 76.22
+> Qwen-2.5-32B-Instruct
+> +LaaB 78.12 83.18 64.21 71.19 78.30 79.32 77.82 77.94 74.61 77.91
+> LapEigvals 74.18 76.66 68.27 68.99 73.57 75.11 73.41 73.75 72.36 73.63
+> +LaaB 74.91 78.05 68.31 68.99 74.59 76.16 74.08 74.67 72.97 74.47
+> TSV 76.69 79.53 68.16 69.96 75.90 76.76 76.20 76.46 74.24 75.68
+> Mistral-7B-Instruct-v0.3
+> +LaaB 76.60 79.58 69.14 70.24 76.50 77.66 74.44 75.54 74.17 75.76
+
+features are concatenated, projected to a lower-dimensional space using Principal Component Analysis (PCA), and fed into a supervised probe to predict the final hallucination label. • TSV (Park et al., 2025): A hidden-based inter-vention method that reshapes the latent space of LLMs for hallucination detection. Pre-trained embeddings are optimized for linguistic coher-ence rather than factual accuracy, causing truth-ful and hallucinated representations to overlap. To mitigate this, TSV injects a single trainable steering vector into the residual stream of an in-termediate transformer layer, scaled by a fixed strength hyperparameter. This lightweight in-tervention propagates through subsequent layers via inherent non-linear transformations, avoiding full model fine-tuning. As a result, the final-layer representations—often characterized by a von Mises-Fisher distribution—are reorganized into more compact and separable clusters, improving the linear separability between truthful and hallu-cinated outputs without degrading core language capabilities. We follow the core designs of the two baseline methods and make light adaptations to align them with the LaaB framework. The detailed configura-tions are as follows: 
+
+LapEigvals. We extract the top-10 Laplacian eigenvalues for each attention head and reduce the concatenated spectral features to 512 dimensions via PCA. Both the response detector Dr and the self-judgment detector Dj use an MLP probe with hidden sizes [128 , 32] .
+
+TSV. The steering vector is injected into the Transformer residual stream with a strength of 5 and an EMA decay rate of 0.9. The interven-tion layer is chosen by model depth: layer 8 for Llama-3.1-8B-Instruct and layer 16 for Qwen2.5-32B-Instruct (approximately one-quarter depth), and layer 40 for Llama-3.1-70B-Instruct and layer 16 for Mistral-7B-Instruct-v0.3 (approximately halfway). We randomly sample 2,000 training in-stances to learn separate steering vectors for the response and self-judgment scenarios. The LaaB constraint is then applied to the final-layer hidden representations after steering. Both Dr and Dj
+
+employ an MLP probe with hidden dimensions 
+
+[256 , 128 , 64] .The results in Table 8 show that the LaaB frame-work improves the performance of both LapEigvals and TSV in most cases. This further demonstrates that, by introducing logical consistency constraints from both the response and self-judgment perspec-tives, LaaB can be reliably integrated with diverse hallucination detectors, highlighting its effective-ness and compatibility. 
+
+H Algorithm of LaaB 
+
+The pseudocode for the training and inference pro-cedures of the LaaB hallucination detection frame-work is shown in Algorithm 1. 6329 Algorithm 1 Training & Inference of LaaB 
+
+Require: Training set S, Validation set Sval , Testing set Stest , Learning rates (ηr , η j , η tune ), Early stopping patience P .
+
+Ensure: Response detector Dr (θr ), Self-Judgment detector Dj (θj ).
+
+procedure T RAINING (S, Sval )
+
+STAGE 1: A SYNCHRONOUS MUTUAL LEARNING /* Dr and Dj learn interactively */ 
+
+stop r ← False, stop j ← False 
+
+while not (stop r and stop j ) do for mini-batch B ∈ S do 1. Extract intrinsic features Fr , F j for B
+
+if not stop r then 2. LCE ,r , LLogic ,r ← MutualLoss (Dr , D j , F r , F j , S, role = r)
+
+3. αr ← AdaptiveWeight (LCE ,r , LLogic ,r , θ r )
+
+4. Lr ← L CE ,r + αr LLogic ,r 
+
+5. θr ← θr − ηr ∇θr Lr
+
+end if if not stop j then 6. LCE ,j , LLogic ,j ← MutualLoss (Dr , D j , F r , F j , S, role = j)
+
+7. αj ← AdaptiveWeight (LCE ,j , LLogic ,j , θ j )
+
+8. Lj ← L CE ,j + αj LLogic ,j 
+
+9. θj ← θj − ηj ∇θj Lj
+
+end if end for 
+
+// Early Stopping & State Reversion 
+
+Evaluate BCE loss on Sval 
+
+If Dr (Dj ) does not improve for P epochs, freeze θr (θj ) and set stop r (stop j ) ← True 
+
+If one converges, revert to its best state and continue training the other 
+
+end while STAGE 2: J OINT FINE -TUNING /* Synchronized optimization */ 
+
+Restore Dr and Dj to their best states from Stage 1 and unfreeze 
+
+wait ← 0, stop ← False 
+
+while not stop do for mini-batch B ∈ S do 1. LCE ,r , LCE ,j , LLogic = JointLoss (Dr , D j , F r , F j , S )
+
+2. α ← 12
+
+∑ 
+
+> k∈{ r,j }
+
+AdaptiveWeight (LCE ,k , LLogic , θ k )
+
+3. LJoint ← L CE ,r + LCE ,j + αLLogic 
+
+4. θr ← θr − ηtune ∇θr LJoint , θj ← θj − ηtune ∇θj LJoint 
+
+end for 
+
+Evaluate LCE ,r on Sval : update best θ∗ 
+
+> r
+
+, θ ∗ 
+
+> j
+
+if improved, else wait ← wait + 1 
+
+If wait ≥ P then break /* Early stopping */ 
+
+end while return Optimal parameters θ∗ 
+
+> r
+
+, θ ∗
+
+> j
+
+end procedure procedure I NFERENCE ({Qr , O r } ∈ Stest )
+
+DEPLOYMENT ▷ Only Dr is deployed to save costs 
+
+1. Extract intrinsic feature Fr ∈ { Hr , P r , A r } during generating Or
+
+2. Predict hallucination probability Sr = D∗ 
+
+> r
+
+(Fr )
+
+return Sr
+
+end procedure 6330

@@ -1,0 +1,1009 @@
+Title: 2026.acl-long.704.pdf
+
+URL Source: https://aclanthology.org/2026.acl-long.704.pdf
+
+Published Time: Thu, 11 Jun 2026 01:09:43 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+> Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 15449–15470 July 2-7, 2026 ©2026 Association for Computational Linguistics
+
+# Hallucination Detection in LLMs with Topological Divergence on Attention Graphs 
+
+Alexandra Bazarova 1, Andrei Volodichev 1, Aleksandr Yugay 1, Andrey Shulga 1, Alina Ermilova 1,Konstantin Polev 2, Julia Belikova 2, Rauf Parchiev 2,
+
+Dmitry Simakov 2, Maxim Savchenko 2, Andrey Savchenko 2,3 ,
+
+Serguei Barannikov ∗1, 4 , Alexey Zaytsev ∗1,
+
+> 1
+
+Applied AI Institute, 2SB AI Lab, 3 HSE University, 4CNRS, Universite Paris Cite  
+
+> Correspondence: bazarovaai.239@gmail.com
+
+Abstract 
+
+Hallucinations remain a critical challenge for large language models (LLMs), particularly in Retrieval-Augmented Generation (RAG) set-tings where models may generate outputs un-supported by the provided context. To address this, we introduce TOHA, a TOpology-based HAllucination detector, which leverages a topo-logical divergence metric to quantify the struc-tural properties of graphs induced by atten-tion matrices. Examining the topological di-vergence between prompt and response sub-graphs in RAG settings reveals consistent pat-terns: higher divergence values in specific at-tention heads correlate with unfaithful outputs, independent of the dataset. Extensive exper-iments — including evaluations on question-answering and summarization tasks — show that our approach achieves state-of-the-art or competitive results across several benchmarks while requiring minimal annotated data and computational resources. Our findings indi-cate that the topological structure of attention matrices provides an efficient and robust met-ric for assessing the correctness of LLM’s re-sponses. Our source code is publicly available: 
+
+https://github.com/sb-ai-lab/TOHA .
+
+1 Introduction 
+
+Large language models (LLMs) have advanced sig-nificantly in recent years, with applications across various fields (Chkirbene et al., 2024). To en-sure factual reliability, modern LLMs are often combined with the retrieval-augmented generation (RAG) technique, which integrates relevant exter-nal knowledge from diverse databases directly into the generation process (Lewis et al., 2020). Despite these improvements, LLMs remain prone to producing so-called hallucinations , i.e., content that is factually or contextually incor-rect (Huang et al., 2023; Li et al., 2024). Detecting hallucinations is crucial for the safe deployment of 
+
+> *Equal contribution.
+
+LLMs in sensitive fields, as erroneous outputs may seriously erode user trust. An effective detector would therefore expand the scope of LLM applica-tions while mitigating risks (Gao et al., 2024). Though many methods address this problem (Sa-hoo et al., 2024; Shorinwa et al., 2025), they often face significant practical constraints, such as the scarcity of annotated datasets (Zhang et al., 2023) required for supervised methods (Sky et al., 2024; Orgad et al., 2025), the high computational cost of generating multiple additional samples (Chen et al., 2024; Hou et al., 2025), or the inability of LLMs’ output probabilities to fully represent the model’s true uncertainty (Fadeeva et al., 2024; Shelmanov et al., 2025). These challenges can be addressed by leveraging LLMs’ internal states, which are informative for the hallucination-detection problem (Azaria and Mitchell, 2023; Sriramanan et al., 2024; Gekhman et al., 2025). We introduce TOHA (a TOpology-based HAllucination detector), a training-free method designed for the RAG scenario that lever-ages the structure of LLM attention maps to iden-tify hallucinations. Our method requires minimal annotated data while avoiding the computational overhead of multiple generations, which makes TOHA both data- and compute-efficient. Our core insight is that the prompt-response in-terconnections within an LLM’s attention mech-anism reveal the extent to which a response is faithful to the original prompt. TOHA formalizes this idea by analyzing attention graphs — com-plete weighted graphs derived from LLM atten-tion maps, the representation prior used for topo-logical data analysis (TDA) in NLP (Kushnareva et al., 2021; Tulchinskii et al., 2023). Unlike exist-ing attention-based methods, which treat all atten-tion heads as equally important (Sriramanan et al., 2024; Binkowski et al., 2025) or ignore the geo-metric structure of attention maps (Sun et al., 2025; Vazhentsev et al., 2025), our approach leverages a 1
+
+15449 small set of attention heads selected by a topologi-cal criterion designed to identify hallucinations. Specifically, TOHA is based on the 
+
+MTop-Div G(R, P ), our adaptation of Mani-fold Topology Divergence (Barannikov et al., 2021) for the graph setting, which quantifies the dissimilarity between the prompt ( P ) and response ( R) token sets in the attention graph. We demonstrate that this score not only reflects the geometry but also measures the informational novelty of the response relative to the prompt, making it well-suited for hallucination detection in RAG scenarios. By analyzing divergence values across atten-tion heads, we identified a subset of heads that consistently yield higher scores for hallu-cinated samples (Figure 2), irrespective of the dataset. TOHA’s final hallucination score is the average MTop-Div G(R, P ) value from these “hallucination-aware” heads. Some of these heads are associated with copying behavior, which is aligned with prior findings (Sun et al., 2025). Here are our main contributions :• We introduce TOHA, a training-free frame-work for hallucination detection in the RAG scenario that leverages the topology of LLM attention graphs. Our method operates up to an order of magnitude faster than methods of comparable quality and requires minimal annotated data. • Central to TOHA is MTop-Div G(R, P ), an adaptation of Manifold Topology Divergence for graphs, which quantifies the topological dissimilarity between prompt and response sets of tokens. We demonstrate that this score characterizes the novelty of the response rela-tive to the prompt, making it highly effective for detecting hallucinations in RAG systems. • By analyzing the proposed score, we discover the existence of “hallucination-aware” atten-tion heads, which consistently yield greater divergence values for hallucinated samples across different datasets. This finding ensures TOHA’s efficiency and strong cross-domain transferability: averaging MTop-Div G(R, P )
+
+over just 10 heads is sufficient for robust hal-lucination detection. • Our experiments show that TOHA consis-tently matches or exceeds state-of-the-art per-formance across multiple benchmarks when applied to open-source LLMs of varying sizes, including 7B- and 13B-parameter models. 
+
+2 Background 
+
+2.1 Attention Map as a Weighted Graph 
+
+Modern LLMs are mainly based on the self-attention mechanism (Vaswani et al., 2017). Let 
+
+X ∈ Rn×d be a matrix consisting of d-dimensional representations of n tokens, WQ, W K , W V ∈
+
+Rd×d be trainable projection matrices. Given a set of queries Q = XW Q ∈ Rn×d, a set of keys 
+
+K = XW K ∈ Rn×d, and corresponding values 
+
+V = XW V ∈ Rn×d, the attention mechanism calculates a weighted sum of the values: 
+
+Attention( Q, K, V ) = W (Q, K )V, (1) where W (Q, K ) is an attention map 
+
+W( Q, K ) = softmax 
+
+( QK T
+
+√d
+
+)
+
+, (2) and each entry wij = Wij (Q, K ) captures how strongly token i attends to token j, with greater values indicating closer relationship. We consider decoder-only LLMs, for which the attention maps are lower triangular. An attention map can be reframed as a complete undirected weighted graph G with edge weights 
+
+1 − wij to represent pseudo-distances between to-kens. We call G an attention graph . It naturally partitions into prompt ( P ) and response ( R) tokens (see Figure 1b). We analyze the topological rela-tionships between these node subsets, which, as we assume, should be indicative of hallucinations in the RAG scenario. 
+
+2.2 Manifold Topology Divergence 
+
+The Manifold Topology Divergence, or MTop-Div ,was proposed in (Barannikov et al., 2021). 
+
+MTop-Div( M, N ) quantifies the difference be-tween two data manifolds M and N , approxi-mated by point clouds M and N . It is com-puted as the sum of interval lengths in the 
+
+Cross-Barcode( M, N ), a set of intervals repre-senting topological features distinguishing N from 
+
+M ∪ N . A larger divergence indicates a greater topological difference between the manifolds. Ap-pendix B contains more details on TDA. 
+
+3 Method 
+
+This section introduces the MTop-Div G(R, P )
+
+score, which is designed to quantify the topologi-cal divergence between the prompt and response 215450 0.70 0.76 0.69   
+
+> Capital France [BOS] of ?It 's Paris
+> [BOS] Capital of France ?It 's Paris 1.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.67 0.33 0.00 0.00 0.00 0.00 0.00 0.00 0.28 0.53 0.53 0.08 0.22 0.08 0.00 0.00 0.00 0.09 0.31 0.03 0.22 0.07 0.29 0.00 0.00 0.12 0.24 0.06 0.12 0.10 0.11 0.25 0.00 0.30 0.09 0.07 0.09 0.08 0.03 0.11 0.23
+> a) b)
+
+[[0.19 0.00 0.00 0.00 0.00 0.00 0.27 0.44 0.10 0.20 0.00 0.00 0.00 0.00 0.09 
+
+> c)
+
+MTop-Div = 2.15 average Figure 1: a) An attention map. Blue and green denote the prompt and response tokens, respectively. b) The corresponding attention graph G. Prompt tokens P are located on the left, response tokens R — on the right. To keep the figure neat, we only plot edges with an attention score of at least 0.15 . c) The minimum spanning forest attaching R to P and the corresponding MTop-Div value. 
+
+subgraphs in attention maps. We demonstrate that not only can it be interpreted as a geomet-ric characteristic of the attention graph, but also as an information-theoretic measure of the novelty of the response in relation to the prompt. With 
+
+MTop-Div G(R, P ), we identify “hallucination-aware” heads that consistently separate halluci-nated samples from grounded, irrespective of the dataset. This finding allows us to formulate the TOHA algorithm (Algorithm 1), which computes a final hallucination score by averaging the diver-gence values from these specific heads. 
+
+3.1 MTop-Div for Attention Graphs: Definition 
+
+Let R and P be the response and prompt vertex sets in an attention graph G. After zeroing edge weights between the P nodes, we compute the 0-th order homology barcode B0 of the Vietoris-Rips simpli-cial complex of the modified graph. Essentially, this barcode tracks the evolution of connected com-ponents as we threshold the graph edges (see Ap-pendix B for details). Our proposed topological divergence is a sum of the lengths of B0 intervals: 
+
+MTop-Div G(R, P ) = ∑
+
+> [bi,d i]∈B 0
+
+|di − bi|.
+
+This score can be interpreted from two perspec-tives: geometric (as the length of a minimal span-ning forest in the attention graph) and information-theoretic (as a measure of the response novelty in the space induced by query-key matrices). We explore these two interpretations in the following subsections. 
+
+3.2 MTop-Div G(R, P ) and the Geometry of the Attention Graph 
+
+Formally, we can prove the following property (see proof in Appendix C): 
+
+Proposition 3.1. Consider an attention graph G
+
+with vertex set VG and its complementary vertex subsets P, R , where P ∪ R = VG and P ∩ R = ∅.
+
+MTop-Div( R, P ) value equals the length of the minimal spanning forest (MSF) attaching R to P .
+
+This proposition’s geometric meaning is illus-trated in Figure 1. While the connections between prompt nodes (Figure 1b) are semantically and syn-tactically meaningful, we hypothesize they primar-ily introduce noise for hallucination detection (see Section 4.4 for the corresponding experiment). Af-ter setting these distances to zero, we construct an MSF on the modified graph (Figure 1c). The sum of the lengths of the remaining edges in this MSF is precisely the value of MTop-Div G(R, P ).
+
+3.3 MTop-Div G(R, P ) as a Topology-Based Novelty Score 
+
+Consider an attention graph G. It can be inter-preted as a non-metric space, with “distances” in-duced by the attention weights. By Proposition 3.1, 
+
+MTop-Div G(R, P ) equals the length of the mini-mum spanning forest attaching the response tokens 
+
+R to the prompt tokens P . Therefore, 
+
+MTop-Div G(R, P ) ≥ LMST (R∪P )−LMST (P ),
+
+since adding an MST on P to such a forest yields a spanning tree on R ∪ P .This shows that MTop -Div G(R, P ) is at least the increase in MST length obtained when the re-sponse tokens are added to the prompt tokens. Re-315451 call that MST length is commonly used as a proxy for geometric dispersion (Müller et al., 2012), more precisely, the entropy estimate given the MST of length L on points X is the following: 
+
+HM ST (X ) = d log L − (d − 1) log n + log βd,
+
+where |X | = n, d is the intrinsic dimensionality of the data, and βd is some data-independent constant. Therefore larger values of MTop -Div G(R, P ) can be interpreted as indicating greater structural nov-elty of the response relative to the prompt. Thus, our MTop-Div G(R, P ) should be an effective statistic for identifying hallucinated responses. 
+
+3.4 Hallucination-Aware Heads 
+
+Denote by hij the j-th attention head from the layer i. For the specific data sample s and head 
+
+hij , let Gsij be the corresponding attention graph, 
+
+P sij , R sij — its prompt and response vertex subsets. We examined typical values of the average dis-tance between hallucinated and grounded training examples for different heads and layers: 
+
+∆ij = 1
+
+|Shallu |
+
+∑
+
+> s∈Shallu
+
+dij (s) − 1
+
+|Sgr |
+
+∑
+
+> s∈Sgr
+
+dij (s),
+
+(3) where Shallu stands for all hallucinated samples from the training set, Sgr stands for all grounded training samples, and 
+
+dij (s) = 1
+
+|Rsij | MTop-Div Gsij (Rsij , P sij ).
+
+Figure 2 displays sample differences ∆ij across three datasets, with each marker representing some attention head. We discovered that the same four (for Mistral-7B) and three (for Llama-2-7B) heads, highlighted in pink, demonstrate similar behavior across the datasets: they consistently appear in the upper-right corner, indicating strong separation between hallucinated and grounded samples, irre-spective of the dataset. This finding suggests that there are specific attention heads somehow “aware” of the presence of hallucination, which is captured by the proposed MTop-Div G(R, P ).
+
+3.5 TOHA 
+
+The existence of “hallucination-aware” attention heads underlies our method, which is detailed in Algorithm 1. TOHA uses two annotated probe sets (Sh for hallucinations, Sg for grounded samples) to rank attention heads by their separation capa-bility ∆ij and select the top Nopt ones with the 0.00 0.05 0.01 
+
+> 0.00 0.01 0.02 0.03
+> MS MARCO vs CNN/DM
+
+Mistral-7B   
+
+> 0.02 0.00 0.02 0.010
+> 0.005
+> 0.000 0.005 0.010 0.015
+
+Llama-2-7B        
+
+> 0.1 0.0 0.1 0.2 0.01
+> 0.00 0.01 0.02 0.03
+> CoQA vs CNN/DM
+> (18,2) (18,3) (7,18) (12,7) 0.0 0.2 0.010
+> 0.005
+> 0.000 0.005 0.010 0.015
+> (16,19) (11,15) (8,25) 0.00 0.05 0.1
+> 0.0 0.1 0.2
+> MS MARCO vs CoQA
+> 0.02 0.00 0.02 0.1
+> 0.0 0.1 0.2 0.3
+
+Figure 2: ∆ij values for ij -th heads. Vertical axis corre-sponds to the difference on dataset (B), horizontal — to the one on dataset (A). The heads that separate samples best are highlighted in pink; their (layer, head) positions are reflected in the legend. 
+
+combined probe size |Sh ∪ Sg| kept small (see Fig-ure 3). During testing, the final hallucination score for test samples T equals the average topological divergence from the selected Nopt heads. For com-putational efficiency, we limit Nopt to a maximum of Nmax = 10 in all experiments. 
+
+4 Results 
+
+4.1 Experiment Setting Datasets and models. We consider five tasks that evaluate question answering and summa-rization abilities of LLMs: two benchmarks of RAGTruth (Niu et al., 2023) — long-form QA dataset MS MARCO and summarization dataset CNN/DM; conversational QA dataset CoQA (Reddy et al., 2019), reading comprehen-sion dataset SQuAD (Rajpurkar et al., 2016), and extreme summarization dataset XSum (Narayan et al., 2018). For more details, see Appendix D. We employ five popularly adopted open-source LLMs with accessible inner states: LLaMA-2-7B-chat, LLaMA-2-13B-chat, LLaMA-3.1-8B-Instruct, Mistral-7B-Instruct-v0.1, and Qwen2.5-415452 Algorithm 1 TOHA Algorithm 
+
+Require: dij (s), Sh, Sg, V = Sh ∪ Sg, T , Nmax 
+
+Ensure: Hallucination scores {ps} for s ∈ T 
+
+> 1:
+
+function HEADS SELECTION  
+
+> 2:
+
+for each head hij do  
+
+> 3:
+
+Calculate ∆ij according to eq. (3)  
+
+> 4:
+
+end for  
+
+> 5:
+
+H ← sort all heads by ∆ij (descending)  
+
+> 6:
+
+Nopt , AUROC max ← 1, 0 
+
+> 7:
+
+Initialize ps ← 0 for all s ∈ V 
+
+> 8:
+
+for N = 1 to Nmax do  
+
+> 9:
+
+for each s ∈ V do  
+
+> 10:
+
+ps ← N −1 
+
+> N
+
+ps + 1 
+
+> N
+
+dhN (s) 
+
+> 11:
+
+end for  
+
+> 12:
+
+auroc ← AUROC ({ys}s∈V , {ps}s∈V ) 
+
+> 13:
+
+if auroc > AUROC max then  
+
+> 14:
+
+AUROC max ← auroc ; Nopt ← N 
+
+> 15:
+
+end if  
+
+> 16:
+
+end for  
+
+> 17:
+
+return Nopt  
+
+> 18:
+
+end function  
+
+> 19:
+
+function PREDICTION (Nopt ) 
+
+> 20:
+
+for each s ∈ T do  
+
+> 21:
+
+ps ← 1
+
+> Nopt
+
+∑Nopt  
+
+> i=1
+
+dhi (s) 
+
+> 22:
+
+end for  
+
+> 23:
+
+return {ps} 
+
+> 24:
+
+end function 
+
+7B-Instruct. As the RAGTruth dataset does not con-tain responses for LLaMA-3.1-8B and Qwen-2.5-7B, we conducted experiments on SQuAD, CoQA, and XSum for these models. 
+
+Baselines. We compare TOHA with a com-prehensive set of eight baselines: uncertainty-based perplexity (Ren et al., 2023) and max en-tropy (Fadeeva et al., 2024); inner states-based Re-DeEP (Sun et al., 2025), HaloScope (Du et al., 2024), and LLM-Check (Sriramanan et al., 2024); consistency-based semantic entropy (Farquhar et al., 2024), EigenScore (Chen et al., 2024), and SelfCheckGPT (Manakul et al., 2024). 
+
+Implementation details. The reported results are averaged over 5 runs with different data splits, using test sets comprising 25% of the data and a fixed validation set size of 100, following the methodology of HaloScope (Du et al., 2024). To ensure a fair comparison, we consider two imple-mentations of the latter: a standard setting with 
+
+20 generations (see Tables 6-7), and an efficiency-comparable one with minimal number of genera-tions — 1 for SelfCheckGPT, 5 for semantic en-tropy and EigenScore (Tables 1-2). Appendix E provides additional implementation details. 
+
+4.2 Results Main results. The results of our experiments are provided in Tables 1–2. We evaluate TOHA against state-of-the-art hallucination detection methods and demonstrate its competitive performance TOHA significantly outperforms uncertainty-based baselines and matches the quality of consistency-based approaches, achieving notable improvements of 11 .7% on the challenging long-form QA MS MARCO dataset for Mistral-7B and 21 .6% on the conversational QA dataset CoQA for LLama-2-7B. We rigorously validate the statistical signifi-cance of our results using a critical difference dia-gram with Wilcoxon-Holm post-hoc analysis (Is-mail Fawaz et al., 2019). The results provided in Tables 12-13 (Appendix A) confirm that while many baseline methods remain statistically indis-tinguishable from one another, TOHA achieves the top overall rank (1.67) and its performance im-provements are statistically significant compared to every other evaluated method ( p ≤ 0.0016 ). To evaluate TOHA’s robustness to data distribu-tion change, we conducted transfer experiments on Mistral-7B, see Figure 3(c) for the results. TOHA exhibits strong transferability: across the XSum and CNN/DM datasets, performance falls within the method’s standard deviation (see the statistical significance analysis in Table 14), while remaining competitive on the other datasets (Table 1). 
+
+Evaluation on a multi-hop dataset. To validate TOHA in a more realistic setting, we consider an additional experiment using the HotpotQA (Yang et al., 2018) dataset. It consists of questions that require knowledge from multiple supporting doc-uments — much like real-world queries, which rarely rely on a single source of information. The results are provided in Table 3. TOHA demon-strates superior performance to baselines, confirm-ing its effectiveness “in the wild”. 
+
+Efficiency. Figure 4(a) shows that TOHA is ap-proximately seven times faster than SelfCheckGPT with a single additional generation. Given that Self-CheckGPT typically requires 10-20 generations, this makes TOHA over 70 times faster in prac-tice. Furthermore, TOHA’s runtime is close to the 515453 Table 1: ROC AUC (↑) of hallucination detection techniques for three LLMs. The best results for each model are highlighted in bold , and the second best are underlined. 
+
+Method Single MS MARCO CNN/DM + CoQA SQuAD XSum generation Recent News Mistral-7B SelfCheckGPT [1] ✗ 0.63 ± 0.04 0.51 ± 0.04 0.86 ± 0.02 0.71 ± 0.04 0.66 ± 0.04 
+
+Semantic entropy [2] ✗ 0.54 ± 0.03 0.51 ± 0.04 0.83 ± 0.02 0.70 ± 0.03 0.56 ± 0.03 
+
+EigenScore [3] ✗ 0.54 ± 0.04 0.50 ± 0.06 0.74 ± 0.02 0.71 ± 0.04 0.58 ± 0.04 
+
+HaloScope [4] ✓ 0.57 ± 0.08 0.51 ± 0.10 0.62 ± 0.08 0.92 ± 0.07 0.62 ± 0.02 
+
+LLM-Check [5] ✓ 0.49 ± 0.03 0.49 ± 0.03 0.60 ± 0.01 0.50 ± 0.03 0.58 ± 0.04 
+
+Perplexity [6] ✓ 0.45 ± 0.01 0.54 ± 0.02 0.54 ± 0.03 0.81 ± 0.05 0.54 ± 0.06 
+
+Max entropy [7] ✓ 0.68 ± 0.04 0.60 ± 0.07 0.73 ± 0.00 0.75 ± 0.05 0.71 ± 0.02 
+
+ReDEEP [8] ✓ 0.54 ± 0.02 0.47 ± 0.06 0.59 ± 0.03 0.45 ± 0.05 0.63 ± 0.04 
+
+TOHA (ours) ✓ 0.76 ± 0.04 0.60 ± 0.09 0.89 ± 0.01 0.96 ± 0.01 0.66 ± 0.05 LLama-2-7B SelfCheckGPT [1] ✗ 0.59 ± 0.03 0.60 ± 0.03 0.66 ± 0.03 0.57 ± 0.03 0.64 ± 0.05 
+
+Semantic entropy [2] ✗ 0.53 ± 0.03 0.51 ± 0.03 0.76 ± 0.01 0.73 ± 0.03 0.61 ± 0.04 
+
+EigenScore [3] ✗ 0.55 ± 0.03 0.53 ± 0.04 0.61 ± 0.03 0.75 ± 0.02 0.63 ± 0.02 
+
+HaloScope [4] ✓ 0.51 ± 0.05 0.48 ± 0.05 0.61 ± 0.04 0.67 ± 0.04 0.57 ± 0.07 
+
+LLM-Check [5] ✓ 0.44 ± 0.02 0.49 ± 0.06 0.60 ± 0.03 0.49 ± 0.01 0.61 ± 0.01 
+
+Perplexity [6] ✓ 0.54 ± 0.04 0.44 ± 0.03 0.74 ± 0.02 0.46 ± 0.03 0.56 ± 0.09 
+
+Max entropy [7] ✓ 0.65 ± 0.04 0.59 ± 0.06 0.65 ± 0.03 0.73 ± 0.04 0.56 ± 0.03 
+
+ReDEEP [8] ✓ 0.54 ± 0.04 0.52 ± 0.04 0.72 ± 0.04 0.42 ± 0.08 0.54 ± 0.06 
+
+TOHA (ours) ✓ 0.65 ± 0.02 0.56 ± 0.02 0.90 ± 0.01 0.87 ± 0.04 0.68 ± 0.05 
+
+LLaMA-2-13B SelfCheckGPT [1] ✗ 0.58 ± 0.04 0.58 ± 0.05 0.77 ± 0.02 0.64 ± 0.03 0.60 ± 0.04 
+
+Semantic entropy [2] ✗ 0.57 ± 0.04 0.54 ± 0.03 0.76 ± 0.04 0.65 ± 0.03 0.60 ± 0.03 
+
+EigenScore [3] ✗ 0.56 ± 0.04 0.47 ± 0.04 0.57 ± 0.03 0.57 ± 0.02 0.52 ± 0.06 
+
+HaloScope [4] ✓ 0.54 ± 0.09 0.51 ± 0.04 0.57 ± 0.03 0.55 ± 0.02 0.55 ± 0.07 
+
+LLM-Check [5] ✓ 0.49 ± 0.06 0.56 ± 0.05 0.57 ± 0.02 0.57 ± 0.07 0.57 ± 0.07 
+
+Perplexity [6] ✓ 0.54 ± 0.04 0.46 ± 0.07 0.62 ± 0.03 0.45 ± 0.02 0.49 ± 0.05 
+
+Max entropy [7] ✓ 0.62 ± 0.03 0.53 ± 0.06 0.66 ± 0.03 0.78 ± 0.02 0.59 ± 0.04 
+
+ReDEEP [8] ✓ 0.62 ± 0.06 0.48 ± 0.05 0.73 ± 0.02 0.48 ± 0.07 0.58 ± 0.08 
+
+TOHA (ours) ✓ 0.67 ± 0.04 0.56 ± 0.05 0.92 ± 0.02 0.88 ± 0.05 0.66 ± 0.03 
+
+lightweight entropy baseline; with a more efficient low-level implementation, it has the potential to approach the cost of a single forward pass while achieving higher accuracy than other inexpensive techniques. 
+
+4.3 Analysis of Hallucination-Aware Attention Heads Attention patterns and copying behavior. For hallucination-aware heads, we analyzed MSF’s pat-terns that distinguish hallucinated from grounded samples. A key finding is that for these heads, hal-lucinated samples frequently exhibit strong atten-tion to the first token, whereas grounded samples tend to attend to the first token less. An exam-ple is provided in Figure 5. Since this pattern is a known behavior of induction , or token copying 
+
+heads (Feucht et al., 2025) — which default to the first token when unable to find previous oc-currences of the current token pattern in the con-text (Elhage et al., 2021) — we decided to explore the relationship between these special heads and hallucination-aware ones. We ranked all attention heads in LLama-2-7B and Mistral-7B based on their token copying (induction) scores, following the method of (Feucht et al., 2025). For the subset of heads frequently identified by TOHA (appearing in ≥ 20% of runs across all datasets), their copy-ing ranks were recorded. The results (Figure 6) reveal that hallucination-aware heads are often also among the model’s top-25 copiers, a finding that aligns with prior work (Sun et al., 2025). 
+
+4.4 Ablation Studies Why zero out the distances between prompt tokens? We hypothesize that the connections 615454 100 200 300 400 
+
+Probe Set Size 
+
+> 0.6 0.7 0.8 0.9
+> ROC-AUC
+
+a) Llama-2-7B    
+
+> MS MARCO SQuAD CoQA
+> 100 200 300 400
+
+Probe Set Size 
+
+> 0.7 0.8 0.9 1.0
+> ROC-AUC
+
+b) Mistral-7B                     
+
+> MS MARCO SQuAD CoQA
+> MS MARCO CNN/DM CoQA SQuAD XSum MS MARCO CNN/DM CoQA SQuAD XSum
+> 0.76 0.65 0.86 0.74 0.66 0.78 0.60 0.77 0.77 0.67 0.71 0.63 0.89 0.70 0.61 0.71 0.64 0.71 0.96 0.63 0.72 0.63 0.85 0.70 0.66
+
+c) Transfer 
+
+> 0.6 0.7 0.8 0.9
+
+Figure 3: (a)-(b): Detection quality dependence on the size of a probe set, models: Mistral-7B (left), LLama-2-7B (right). (c) Generalizability between the datasets, model: Mistral-7B. The vertical axis corresponds to the origin of the probe set, and the horizontal axis to the test dataset. Response Generation Max entropy TOHA SelfCheckGPT 
+
+> 020 40 60 80
+> Time, s
+> 69.0±10.0 s 2.0±0.1 s 10.5±0.2 s 73.6±10.1 s
+
+a)          
+
+> Sampling time Detection time
+> 12345678910
+
+Nmax 
+
+> 0.65 0.70 0.75 0.80 0.85 0.90
+> ROC-AUC
+
+b) Mistral-7B          
+
+> CoQA MS MARCO
+> 12345678910
+
+Nmax 
+
+> 0.6 0.7 0.8 0.9
+> ROC-AUC
+
+c) Llama-2-7B 
+
+> CoQA MS MARCO
+
+Figure 4: a): Inference time comparison (seconds) for various methods evaluated on 16 MS MARCO samples using Mistral-7B. SelfCheckGPT measurement includes one additional generated answer per sample. b)-c): ROC-AUC performance of TOHA across different numbers of selected attention heads ( Nmax ) on Mistral-7B and Llama-2-7B. Table 2: ROC AUC (↑) of hallucination detection tech-niques. The best results for each model are highlighted in bold , and the second best are underlined. 
+
+Method Single gen. CoQA SQuAD XSum LLaMA-3.1-8B SelfCheckGPT [1] ✗ 0.91 ± 0.01 0.65 ± 0.05 0.68 ± 0.05 
+
+Semantic entropy [2] ✗ 0.78 ± 0.02 0.55 ± 0.07 0.47 ± 0.04 
+
+EigenScore [3] ✗ 0.80 ± 0.02 0.45 ± 0.05 0.50 ± 0.03 
+
+HaloScope [4] ✓ 0.67 ± 0.08 0.84 ± 0.07 0.55 ± 0.06 
+
+LLM-Check [5] ✓ 0.54 ± 0.06 0.49 ± 0.05 0.52 ± 0.04 
+
+Perplexity [6] ✓ 0.51 ± 0.05 0.68 ± 0.02 0.65 ± 0.03 
+
+Max entropy [7] ✓ 0.82 ± 0.03 0.60 ± 0.02 0.65 ± 0.03 
+
+ReDEEP [8] ✓ 0.58 ± 0.08 0.39 ± 0.04 0.62 ± 0.06 
+
+TOHA (ours) ✓ 0.84 ± 0.01 0.87 ± 0.03 0.65 ± 0.05 
+
+Qwen2.5-7B SelfCheckGPT [1] ✗ 0.69 ± 0.01 0.74 ± 0.02 0.69 ± 0.02 
+
+Semantic entropy [2] ✗ 0.76 ± 0.04 0.57 ± 0.04 0.64 ± 0.03 
+
+EigenScore [3] ✗ 0.78 ± 0.03 0.55 ± 0.04 0.55 ± 0.04 
+
+HaloScope [4] ✓ 0.66 ± 0.13 0.75 ± 0.04 0.57 ± 0.07 
+
+LLM-Check [5] ✓ 0.53 ± 0.07 0.54 ± 0.06 0.54 ± 0.02 
+
+Perplexity [6] ✓ 0.39 ± 0.03 0.65 ± 0.03 0.53 ± 0.05 
+
+Max entropy [7] ✓ 0.85 ± 0.02 0.47 ± 0.05 0.60 ± 0.06 
+
+ReDEEP [8] ✓ 0.37 ± 0.10 0.56 ± 0.03 0.67 ± 0.03 
+
+TOHA (ours) ✓ 0.79 ± 0.05 0.77 ± 0.02 0.69 ± 0.03 
+
+within the prompt contribute little to hallucina-tion detection; therefore, our method is designed to disregard them. To validate this architectural choice, we considered an ablation study, where 
+
+MTop-Div G(R, P ) was replaced by the MST length of the complete graph in Algorithm 1. The 
+
+Table 3: ROC-AUC (↑) values on the HotpotQA dataset. Best results are highlighted in bold , and the second best are underlined. 
+
+Method Single gen. Mistral-7B Llama-2-13B SelfCheckGPT ✗ 0.70 ± 0.06 0.63 ± 0.04 
+
+Semantic entropy ✗ 0.70 ± 0.05 0.70 ± 0.04 
+
+EigenScore ✗ 0.68 ± 0.04 0.67 ± 0.04 
+
+HaloScope ✓ 0.60 ± 0.06 0.50 ± 0.01 
+
+LLM-Check ✓ 0.48 ± 0.03 0.56 ± 0.04 
+
+Perplexity ✓ 0.55 ± 0.06 0.49 ± 0.04 
+
+Max entropy ✓ 0.62 ± 0.04 0.69 ± 0.05 
+
+ReDEEP ✓ 0.49 ± 0.04 0.62 ± 0.05 
+
+TOHA (ours) ✓ 0.71 ± 0.08 0.80 ± 0.03 
+
+results showing the effectiveness of the proposed approach are in Table 4. 
+
+What about other attention map-based fea-tures? To demonstrate that our topology-based approach offers an advantage over conventional attention map features, we compared them to 
+
+MTop-Div in the supervised setting. Table 9 (Appendix A) shows that a classifier trained on 
+
+MTop-Div G(R, P ) achieves the best performance, confirming that our score captures unique patterns in an attention map that standard approaches miss. 715455 <s> [INST ]Brief ly Grounded Hallucinated <s> [INST ]Brief ly Figure 5: Attention to the first token ( <s> in this exam-ple) for (a) a hallucinated generation and (b) a grounded one. Green highlights edges and nodes corresponding to grounded tokens, while yellow indicates hallucinated tokens. Model: Mistral-7B. 0 200 400 600 800 1000 1200 (12, 7) (12, 6) (18, 3) (18, 2) (12, 27) (19, 6) (8, 15) (28, 0) (12, 15) (7, 18) 
+
+> Rank: 3 Rank: 4 Rank: 21 Rank: 22
+> Rank: 497 Rank: 553 Rank: 696 Rank: 762 Rank: 887 Rank: 1023
+
+Mistral-7B      
+
+> Top 25 Heads Other Heads
+> 0200 400 600 800 1000
+> Copy Rank
+> (16, 19) (11, 15) (6, 1) (31, 25) (16, 4) (31, 28) (8, 25)
+> Rank: 1 Rank: 2
+> Rank: 369 Rank: 786 Rank: 789 Rank: 818 Rank: 914
+
+Llama-2-7B 
+
+> Top 25 Heads Other Heads
+
+Figure 6: Copying ranks of hallucination-aware atten-tion heads (lower ranks indicate stronger copying behav-ior). The row labels (X, Y ) correspond to X-th layer and Y -th head. 
+
+How large should the probe sets be? To eval-uate TOHA’s sensitivity to probe set size, we con-ducted a sensitivity study. The results shown in Figure 3 confirm TOHA’s robustness: even with only 50 samples, performance does not drop signif-icantly and remains mostly stable as the probe set size increases. 
+
+Can TOHA operate without any annotated data? As demonstrated in Section 4.3, many of the attention heads naturally selected by TOHA exhibit strong inductive (token copying) behavior. Crucially, identifying these heads does not require any labeled hallucination data (Feucht et al., 2025). To evaluate TOHA in an extreme zero-shot setting, we completely bypassed the probe set selection and simply averaged the divergence scores from the model’s top-4 copying heads (TOHA Copy Heads ). 
+
+Table 4: ROC-AUC (↑) of Algorithm 1 with MST length of the complete graph vs MTop-Div G(R, P ). Best re-sults are highlighted in bold .
+
+Dataset MST length MTop-Div G(R, P )
+
+Mistral-7B CoQA 0.75 ± 0.03 0.90 ± 0.01 
+
+MS MARCO 0.38 ± 0.03 0.65 ± 0.02 
+
+LLama-2-7B CoQA 0.60 ± 0.03 0.89 ± 0.01 
+
+MS MARCO 0.37 ± 0.02 0.76 ± 0.04 
+
+The results in Table 5 confirm that this fully unsupervised variant is highly competitive, demon-strating that TOHA can be effectively deployed even when zero annotated data is available. 
+
+How many attention heads do we need? To evaluate the sensitivity of our method to the hyper-parameter Nmax , we performed an ablation study for values from 1 to 10 . As shown in Figure 4, TOHA achieves strong detection performance even when Nmax = 1 , which underscores the effective-ness of our topological approach. 
+
+5 Related Works 
+
+Existing hallucination detection methods face strict trade-offs (Zhang et al., 2023; Huang et al., 2023; Wang et al., 2024). Consistency-based ap-proaches (Manakul et al., 2024; Chen et al., 2024; Qiu and Miikkulainen, 2024; Nikitin et al., 2024; Hou et al., 2025) are robust but computationally ex-pensive due to multiple generation passes. Surface-level metrics like perplexity (Fadeeva et al., 2024; Malinin and Gales, 2021) are efficient yet limited, as they ignore the model’s rich internal representa-tions (Gekhman et al., 2025). Conversely, hidden-state classifiers (Azaria and Mitchell, 2023; Sky et al., 2024; Zhou et al., 2025) capture these rep-resentations but require extensive annotated data and suffer from poor task transferability (Sky et al., 2024). Even semi-supervised alternatives like Halo-Scope (Du et al., 2024) still demand large volumes of unannotated outputs. Attention map-based methods represent apromising yet underdeveloped direction. Cur-rent techniques either (i) rely on large annotated datasets (Chuang et al., 2024; Binkowski et al., 2025), (ii) exploit only simplistic attention graph properties like self-loop weights (Sriramanan et al., 2024), or (iii) disregard attention map geometry en-tirely, using mechanistic scores instead (Sun et al., 815456 Method Single generation LLaMA-2-7B Mistral-7B CoQA MS MARCO CoQA MS MARCO SelfCheckGPT [1] ✗ 0.66 ± 0.03 0.59 ± 0.03 0.86 ± 0.02 0.63 ± 0.04 Semantic entropy [2] ✗ 0.76 ± 0.01 0.53 ± 0.03 0.83 ± 0.02 0.54 ± 0.03 EigenScore [3] ✗ 0.61 ± 0.03 0.55 ± 0.03 0.74 ± 0.02 0.54 ± 0.04 HaloScope [4] ✓ 0.61 ± 0.04 0.51 ± 0.05 0.62 ± 0.08 0.57 ± 0.08 LLM-Check [5] ✓ 0.60 ± 0.03 0.44 ± 0.02 0.60 ± 0.01 0.49 ± 0.03 Perplexity [6] ✓ 0.74 ± 0.02 0.54 ± 0.04 0.54 ± 0.03 0.45 ± 0.01 Max entropy [7] ✓ 0.65 ± 0.03 0.65 ± 0.04 0.73 ± 0.04 0.68 ± 0.04                             
+
+> ReDeEP [8] ✓0.72 ±0.04 0.54 ±0.04 0.59 ±0.03 0.54 ±0.02 TOHA Copy Heads (ours) ✓0.89 ±0.01 0.62 ±0.04 0.77 ±0.01 0.66 ±0.04
+> Table 5: ROC AUC ( ↑) evaluation of TOHA using only the top-4 copying heads (zero annotated data) compared to baselines. The best results in each column are highlighted in bold , and the second best are underlined.
+
+2025). Thus, training-free methods that fully lever-age the rich structural information encoded in at-tention graphs remain underexplored. 
+
+6 Conclusion 
+
+This paper introduces TOHA, a novel hallucination detection method based on the topological struc-ture of attention maps. Central to TOHA is the 
+
+MTop-Div G(R, P ), our adaptation of Manifold Topology Divergence (Barannikov et al., 2021) for the graph setting, which, as we demonstrate, serves as a measure of the response novelty in relation to the prompt. This property makes the proposed divergence well-suited for hallucination detection in RAG scenarios. By analyzing divergence values, we identified a subset of “hallucination-aware” attention heads that reliably distinguish hallucinated from grounded samples across datasets. TOHA computes the final hallucination scores by averaging the topological divergences from these heads. Further investiga-tion reveals that some of these heads are associ-ated with copying behavior, which aligns with prior work (Sun et al., 2025). Extensive experiments show that TOHA is a ro-bust alternative to existing approaches, matching or surpassing state-of-the-art baselines. Moreover, our method is both data- and compute-efficient: just 50 annotated samples suffice for reliable detec-tion, and inference runs several times faster than comparable methods of similar quality. Crucially, we validate TOHA’s transferability, demonstrating its robustness to shifts in data distribution — a key advantage for real-world deployment, where LLM inputs are far more diverse and complex than benchmark examples. In summary, TOHA delivers state-of-the-art de-tection performance while combining efficiency and solid generalizability, making it particularly well-suited for practical applications. 
+
+Acknowledgements 
+
+The authors wish to thank our colleague Ilya Kuleshov for his time and the many insightful dis-cussions regarding this research. The work was sup-ported by the grant for research centers in the field of AI provided by the Ministry of Economic De-velopment of the Russian Federation in accordance with the agreement 000000C313925P4F0002 and the agreement №139-10-2025-033. 
+
+Limitations 
+
+While TOHA demonstrates strong performance and efficiency, several limitations warrant discussion. 
+
+Model-specific dependencies. TOHA’s effec-tiveness relies on identifying “hallucination-aware” attention heads, which may vary across LLM ar-chitectures. While our experiments cover popular open-source models (e.g., LLaMA, Mistral), fur-ther validation is needed for proprietary or larger models (e.g., GPT-4, Claude). 
+
+Multimodal extensions. The current frame-work operates solely on text. Adapting TOHA to multimodal settings (e.g., vision-language models) would require redefining attention graphs across heterogeneous data modalities. 915457 References 
+
+Amos Azaria and Tom Mitchell. 2023. The internal state of an LLM knows when it’s lying. In Find-ings of the Association for Computational Linguistics: EMNLP 2023 , pages 967–976, Singapore. Associa-tion for Computational Linguistics. S. A. Barannikov. 1994. The framed Morse complex and its invariants. Serguei Barannikov, Ilya Trofimov, Grigorii Sotnikov, Ekaterina Trimbach, Alexander Korotin, Alexander Filippov, and Evgeny Burnaev. 2021. Manifold topol-ogy divergence: a framework for comparing data manifolds. Advances in neural information process-ing systems , 34:7294–7305. Jakub Binkowski, Denis Janiak, Albert Sawczyn, Bog-dan Gabrys, and Tomasz Kajdanowicz. 2025. Hallu-cination detection in llms using spectral features of attention maps. arXiv preprint arXiv:2502.17598 .Meng Cao, Yue Dong, and Jackie Cheung. 2022. Hal-lucinated but factual! inspecting the factuality of hallucinations in abstractive summarization. In Pro-ceedings of the 60th Annual Meeting of the Associa-tion for Computational Linguistics (Volume 1: Long Papers) , pages 3340–3354. Frédéric Chazal and Bertrand Michel. 2021. An intro-duction to topological data analysis: fundamental and practical aspects for data scientists. Frontiers in artificial intelligence , 4:667963. Chao Chen, Kai Liu, Ze Chen, Yi Gu, Yue Wu, Mingyuan Tao, Zhihang Fu, and Jieping Ye. 2024. INSIDE: LLMs’ internal states retain the power of hallucination detection. In The Twelfth International Conference on Learning Representations .Zina Chkirbene, Ridha Hamila, Ala Gouissem, and Unal Devrim. 2024. Large language models (LLM) in industry: A survey of applications, challenges, and trends. In 2024 IEEE 21st International Conference on Smart Communities: Improving Quality of Life using AI, Robotics and IoT (HONET) , pages 229–234. IEEE. Yung-Sung Chuang, Linlu Qiu, Cheng-Yu Hsieh, Ran-jay Krishna, Yoon Kim, and James Glass. 2024. Lookback lens: Detecting and mitigating contextual hallucinations in large language models using only attention maps. In Proceedings of the 2024 Con-ference on Empirical Methods in Natural Language Processing , pages 1419–1436. Xuefeng Du, Chaowei Xiao, and Sharon Li. 2024. Halo-scope: Harnessing unlabeled llm generations for hal-lucination detection. Advances in Neural Information Processing Systems , 37:102948–102972. Nelson Elhage, Neel Nanda, Catherine Olsson, Tom Henighan, Nicholas Joseph, Ben Mann, Amanda Askell, Yuntao Bai, Anna Chen, Tom Conerly, Nova DasSarma, Dawn Drain, Deep Ganguli, Zac Hatfield-Dodds, Danny Hernandez, Andy Jones, Jackson Kernion, Liane Lovitt, Kamal Ndousse, and 6 others. 2021. A mathemati-cal framework for transformer circuits. Trans-former Circuits Thread . Https://transformer-circuits.pub/2021/framework/index.html. Ekaterina Fadeeva, Aleksandr Rubashevskii, Artem Shelmanov, Sergey Petrakov, Haonan Li, Hamdy Mubarak, Evgenii Tsymbalov, Gleb Kuzmin, Alexan-der Panchenko, Timothy Baldwin, and 1 others. 2024. Fact-checking the output of large language mod-els via token-level uncertainty quantification. arXiv preprint arXiv:2403.04696 .Sebastian Farquhar, Jannik Kossen, Lorenz Kuhn, and Yarin Gal. 2024. Detecting hallucinations in large language models using semantic entropy. Nature ,630(8017):625–630. Sheridan Feucht, Eric Todd, Byron C Wallace, and David Bau. 2025. The dual-route model of induction. In Second Conference on Language Modeling .Zhengjie Gao, Xuanzi Liu, Yuanshuai Lan, and Zheng Yang. 2024. A brief survey on safety of large lan-guage models. Journal of computing and information technology , 32(1):47–64. Zorik Gekhman, Eyal Ben-David, Hadas Orgad, Eran Ofek, Yonatan Belinkov, Idan Szpektor, Jonathan Herzig, and Roi Reichart. 2025. Inside-out: Hidden factual knowledge in LLMs. In Second Conference on Language Modeling .Bairu Hou, Yang Zhang, Jacob Andreas, and Shiyu Chang. 2025. A probabilistic framework for llm hal-lucination detection via belief tree propagation. In 
+
+Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Compu-tational Linguistics: Human Language Technologies (Volume 1: Long Papers) , pages 3076–3099. Lei Huang, Weijiang Yu, Weitao Ma, Weihong Zhong, Zhangyin Feng, Haotian Wang, Qianglong Chen, Weihua Peng, Xiaocheng Feng, Bing Qin, and 1 oth-ers. 2023. A survey on hallucination in large lan-guage models: Principles, taxonomy, challenges, and open questions. ACM Transactions on Information Systems .Hassan Ismail Fawaz, Germain Forestier, Jonathan We-ber, Lhassane Idoumghar, and Pierre-Alain Muller. 2019. Deep learning for time series classification: a review. Data Mining and Knowledge Discovery ,33(4):917–963. Tianchu Ji, Shraddhan Jain, Michael Ferdman, Peter Milder, H. Andrew Schwartz, and Niranjan Bala-subramanian. 2021. On the distribution, sparsity, and inference-time quantization of attention values in transformers. In Findings of the Association for Com-putational Linguistics: ACL-IJCNLP 2021 , pages 4147–4157. 
+
+10 15458 Goro Kobayashi, Tatsuki Kuribayashi, Sho Yokoi, and Kentaro Inui. 2020. Attention is not only a weight: Analyzing transformers with vector norms. In 
+
+Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP) ,pages 7057–7075. Lorenz Kuhn, Yarin Gal, and Sebastian Farquhar. 2023. Semantic uncertainty: Linguistic invariances for un-certainty estimation in natural language generation. In The Eleventh International Conference on Learn-ing Representations .Laida Kushnareva, Daniil Cherniavskii, Vladislav Mikhailov, Ekaterina Artemova, Serguei Barannikov, Alexander Bernstein, Irina Piontkovskaya, Dmitri Piontkovski, and Evgeny Burnaev. 2021. Artificial text detection via examining the topology of atten-tion maps. In Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing ,pages 635–649. Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Hein-rich Küttler, Mike Lewis, Wen-tau Yih, Tim Rock-täschel, Sebastian Riedel, and Douwe Kiela. 2020. Retrieval-augmented generation for knowledge-intensive NLP tasks. In Proceedings of the 34th International Conference on Neural Information Pro-cessing Systems , NeurIPS ’20, Red Hook, NY, USA. Curran Associates Inc. Junyi Li, Jie Chen, Ruiyang Ren, Xiaoxue Cheng, Xin Zhao, Jian-Yun Nie, and Ji-Rong Wen. 2024. The dawn after the dark: An empirical study on factuality hallucination in large language models. In Proceed-ings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Pa-pers) , pages 10879–10899, Bangkok, Thailand. As-sociation for Computational Linguistics. Zhen Lin, Shubhendu Trivedi, and Jimeng Sun. 2024. Generating with confidence: Uncertainty quantifica-tion for black-box large language models. Transac-tions on Machine Learning Research .Andrey Malinin and Mark Gales. 2021. Uncertainty estimation in autoregressive structured prediction. In 
+
+International Conference on Learning Representa-tions .Potsawee Manakul, Adian Liusie, and Mark Gales. 2024. SelfCheckGPT: Zero-resource black-box hallucina-tion detection for generative large language models. In The 2023 Conference on Empirical Methods in Natural Language Processing .Andreas C. Müller, Sebastian Nowozin, and Christoph H. Lampert. 2012. Information Theoretic Clustering Using Minimum Spanning Trees , page 205–215. Springer Berlin Heidelberg. Shashi Narayan, Shay B. Cohen, and Mirella Lapata. 2018. Don‘t give me the details, just the summary! topic-aware convolutional neural networks for ex-treme summarization. In Proceedings of the 2018 Conference on Empirical Methods in Natural Lan-guage Processing , pages 1797–1807. Association for Computational Linguistics. Alexander Nikitin, Jannik Kossen, Yarin Gal, and Pekka Marttinen. 2024. Kernel language entropy: Fine-grained uncertainty quantification for llms from se-mantic similarities. Advances in Neural Information Processing Systems , 37:8901–8929. Cheng Niu, Yuanhao Wu, Juno Zhu, Siliang Xu, Kashun Shum, Randy Zhong, Juntong Song, and Tong Zhang. 2023. RAGTruth: A hallucination corpus for de-veloping trustworthy retrieval-augmented language models. arXiv preprint arXiv:2401.00396 .Hadas Orgad, Michael Toker, Zorik Gekhman, Roi Re-ichart, Idan Szpektor, Hadas Kotek, and Yonatan Belinkov. 2025. Llms know more than they show: On the intrinsic representation of llm hallucinations. In ICLR .Xin Qiu and Risto Miikkulainen. 2024. Semantic den-sity: Uncertainty quantification for large language models through confidence measurement in semantic space. In The Thirty-eighth Annual Conference on Neural Information Processing Systems .Pranav Rajpurkar, Jian Zhang, Konstantin Lopyrev, and Percy Liang. 2016. SQuAD: 100,000+ questions for machine comprehension of text. In Proceedings of the 2016 Conference on Empirical Methods in Natural Language Processing .Siva Reddy, Danqi Chen, and Christopher D Manning. 2019. CoQA: A conversational question answering challenge. Transactions of the Association for Com-putational Linguistics , 7:249–266. Jie Ren, Jiaming Luo, Yao Zhao, Kundan Krishna, Mo-hammad Saleh, Balaji Lakshminarayanan, and Pe-ter J Liu. 2023. Out-of-distribution detection and selective generation for conditional language mod-els. In The Eleventh International Conference on Learning Representations .Pranab Sahoo, Prabhash Meharia, Akash Ghosh, Sri-parna Saha, Vinija Jain, and Aman Chadha. 2024. A comprehensive survey of hallucination in large lan-guage, image, video and audio foundation models. In Findings of the Association for Computational Linguistics: EMNLP 2024 , pages 11709–11724. Artem Shelmanov, Maxim Panov, Roman Vashurin, Artem Vazhentsev, Ekaterina Fadeeva, and Timothy Baldwin. 2025. Uncertainty quantification for large language models. In Proceedings of the 63rd An-nual Meeting of the Association for Computational Linguistics (Volume 5: Tutorial Abstracts) , pages 3– 4, Vienna, Austria. Association for Computational Linguistics. Weijia Shi, Xiaochuang Han, Mike Lewis, Yulia Tsvetkov, Luke Zettlemoyer, and Wen-tau Yih. 2024. 
+
+11 15459 Trusting your evidence: Hallucinate less with context-aware decoding. In Proceedings of the 2024 Confer-ence of the North American Chapter of the Associ-ation for Computational Linguistics: Human Lan-guage Technologies (Volume 2: Short Papers) , pages 783–791. Ola Shorinwa, Zhiting Mei, Justin Lidard, Allen Z. Ren, and Anirudha Majumdar. 2025. A survey on un-certainty quantification of large language models: Taxonomy, open research challenges, and future di-rections. ACM Comput. Surv. , 58(3). C.H.-Wang Sky, Benjamin Van Durme, Jason Eisner, and Chris Kedzie. 2024. Do androids know they’re only dreaming of electric sheep? In Findings of the Association for Computational Linguistics ACL 2024 ,pages 4401–4420. Gaurang Sriramanan, Siddhant Bharti, Vinu Sankar Sadasivan, Shoumik Saha, Priyatham Kattakinda, and Soheil Feizi. 2024. LLM-check: Investigating detection of hallucinations in large language models. In The Thirty-eighth Annual Conference on Neural Information Processing Systems .Zhongxiang Sun, Xiaoxue Zang, Kai Zheng, Jun Xu, Xiao Zhang, Weijie Yu, Yang Song, and Han Li. 2025. Redeep: Detecting hallucination in retrieval-augmented generation via mechanistic interpretabil-ity. In ICLR .Christopher Tralie, Nathaniel Saul, and Rann Bar-On. 2018. Ripser.py: A lean persistent homology library for python. The Journal of Open Source Software ,3(29):925. Eduard Tulchinskii, Kristian Kuznetsov, Daniil Cherni-avskii, Serguei Barannikov, Sergey Nikolenko, and Evgeny Burnaev. 2023. Topological data analysis for speech processing. In Proceedings of the Annual Conference of the International Speech Communica-tion Association, INTERSPEECH , pages 311–315. A Vaswani, N Shazeer, N Parmar, J Uszkoreit, L Jones, A Gomez, L Kaiser, and I Polosukhin. 2017. Atten-tion is all you need. In Advances in Neural Informa-tion Processing Systems .Artem Vazhentsev, Lyudmila Rvanova, Gleb Kuzmin, Ekaterina Fadeeva, Ivan Lazichny, Alexander Panchenko, Maxim Panov, Timothy Baldwin, Mrin-maya Sachan, Preslav Nakov, and 1 others. 2025. Uncertainty-aware attention heads: Efficient unsu-pervised uncertainty quantification for llms. arXiv preprint arXiv:2505.20045 .Jesse Vig and Yonatan Belinkov. 2019. Analyzing the structure of attention in a transformer language model. In Proceedings of the 2019 ACL Workshop BlackboxNLP: Analyzing and Interpreting Neural Networks for NLP , pages 63–76. Yuxia Wang, Minghan Wang, Muhammad Arslan Man-zoor, Fei Liu, Georgi Georgiev, Rocktim Das, and Preslav Nakov. 2024. Factuality of large language models: A survey. In Proceedings of the 2024 Con-ference on Empirical Methods in Natural Language Processing , pages 19519–19529. Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Ben-gio, William W. Cohen, Ruslan Salakhutdinov, and Christopher D. Manning. 2018. HotpotQA: A dataset for diverse, explainable multi-hop question answer-ing. In Conference on Empirical Methods in Natural Language Processing (EMNLP) .Yue Zhang, Yafu Li, Leyang Cui, Deng Cai, Lemao Liu, Tingchen Fu, Xinting Huang, Enbo Zhao, Yu Zhang, Yulong Chen, and 1 others. 2023. Siren’s song in the AI ocean: a survey on hallucination in large language models. arXiv preprint arXiv:2309.01219 .Xiaoling Zhou, Mingjie Zhang, Zhemg Lee, Wei Ye, and Shikun Zhang. 2025. Hademif: Hallucination detection and mitigation in large language models. In 
+
+The Thirteenth International Conference on Learning Representations .
+
+A Additional Experimental Results 
+
+A.1 Multiple Generations-based Methods 
+
+To provide a complete comparison, we considered an implementation of consistency-based methods with 20 additional generations. The results are demonstrated in Tables 6-7. We can see that TOHA still remains superior to the baselines, achieving top performance in most experiments. 
+
+A.2 Comparison with ReDeEP 
+
+To provide a comprehensive comparison with Re-DeEP (Sun et al., 2025), which was evaluated on the entire RAGTruth dataset in the original paper, we conducted a similar evaluation of TOHA under the same conditions. As shown in Table 8, TOHA not only outperforms ReDeEP but also demon-strates greater robustness to data distribution shifts, exhibiting less significant performance degradation on separate benchmarks of RAGTruth (Tables 1-2). 
+
+A.3 Alternative Attention-based Features for Hallucination Detection 
+
+During preliminary experiments for an attention map-based hallucination detector, we evaluated a range of topological and traditional features. As standard topological features, we employed barcode-based features, such as the sum of bar lengths in persistence diagrams, and naive topo-logical features, including the average vertex de-gree in attention graphs (Kushnareva et al., 2021). As for traditional attention-based features, we 12 15460 Table 6: ROC AUC (↑) of multiple generations-based methods (with 20 additional samples) and TOHA. The best results for each model are highlighted in bold , and the second best are underlined. 
+
+Method Single MS MARCO CNN/DM + CoQA SQuAD XSum generation Recent News Mistral-7B SelfCheckGPT [1] ✗ 0.67 ± 0.03 0.59 ± 0.04 0.93 ± 0.01 0.83 ± 0.02 0.71 ± 0.04 
+
+Semantic entropy [2] ✗ 0.53 ± 0.03 0.52 ± 0.03 0.86 ± 0.01 0.74 ± 0.01 0.63 ± 0.02 
+
+EigenScore [3] ✗ 0.49 ± 0.03 0.53 ± 0.05 0.78 ± 0.02 0.77 ± 0.04 0.59 ± 0.05 
+
+TOHA (ours) ✓ 0.76 ± 0.04 0.60 ± 0.09 0.89 ± 0.01 0.96 ± 0.01 0.66 ± 0.05 LLama-2-7B SelfCheckGPT [1] ✗ 0.60 ± 0.04 0.60 ± 0.03 0.77 ± 0.02 0.78 ± 0.02 0.67 ± 0.04 
+
+Semantic entropy [2] ✗ 0.56 ± 0.03 0.49 ± 0.03 0.79 ± 0.01 0.77 ± 0.02 0.63 ± 0.04 
+
+EigenScore [3] ✗ 0.57 ± 0.04 0.52 ± 0.06 0.61 ± 0.03 0.78 ± 0.02 0.65 ± 0.03 
+
+TOHA (ours) ✓ 0.65 ± 0.02 0.56 ± 0.02 0.90 ± 0.01 0.87 ± 0.04 0.68 ± 0.05 
+
+LLaMA-2-13B SelfCheckGPT [1] ✗ 0.61 ± 0.05 0.60 ± 0.06 0.88 ± 0.02 0.75 ± 0.04 0.61 ± 0.04 
+
+Semantic entropy [2] ✗ 0.60 ± 0.03 0.52 ± 0.03 0.77 ± 0.04 0.70 ± 0.02 0.62 ± 0.03 
+
+EigenScore [3] ✗ 0.58 ± 0.04 0.48 ± 0.05 0.59 ± 0.03 0.60 ± 0.02 0.54 ± 0.05 
+
+TOHA (ours) ✓ 0.67 ± 0.04 0.56 ± 0.05 0.92 ± 0.02 0.88 ± 0.05 0.66 ± 0.03 
+
+Table 7: ROC AUC (↑) of multiple generations-based methods (with 20 additional samples) and TOHA. The best results for each model are highlighted in bold , and the second best are underlined.                                                                                     
+
+> Method Single gen. CoQA SQuAD XSum LLaMA-3.1-8B SelfCheckGPT [1] ✗0.95 ±0.01 0.78 ±0.03 0.75 ±0.03
+> Semantic entropy [2] ✗0.82 ±0.03 0.54 ±0.06 0.46 ±0.05
+> EigenScore [3] ✗0.84 ±0.01 0.56 ±0.03 0.48 ±0.03
+> TOHA (ours) ✓0.84 ±0.01 0.87 ±0.03 0.65 ±0.05
+> Qwen2.5-7B SelfCheckGPT [1] ✗0.75 ±0.02 0.77 ±0.02 0.72 ±0.03
+> Semantic entropy [2] ✗0.83 ±0.05 0.58 ±0.04 0.69 ±0.05
+> EigenScore [3] ✗0.83 ±0.05 0.56 ±0.03 0.48 ±0.03
+> TOHA (ours) ✓0.79 ±0.05 0.77 ±0.02 0.69 ±0.03
+
+Table 8: Performance comparison between ReDEEP and TOHA on the entire RAGTruth dataset. 
+
+Method Llama-2-7B Llama-2-13B ReDeEP [8] 0.68 ± 0.02 0.77 ± 0.01 
+
+TOHA (ours) 0.70 ± 0.04 0.80 ± 0.02 
+
+used sparsity ratio, attention entropy, and spec-tral norm (Kobayashi et al., 2020; Vig and Be-linkov, 2019; Ji et al., 2021). We also considered Wasserstein distances between the persistent dia-grams (Chazal and Michel, 2021) of the prompt and response subgraphs as an alternative measure of their similarity. Finally, we analyzed average atten-tion to the first token and found that hallucination-aware heads often attend in the presence of halluci-nations (see Section 4). To identify the most informative features for hal-lucination detection, we trained L1-regularized su-pervised classifiers on concatenated features from all layers and heads and compared them to clas-
+
+Table 9: ROC-AUC values of supervised classifiers on top of various sets of features. TOP-1 results are highlighted with bold font , while TOP-2 are underlined. 
+
+Features MS MARCO CoQA Mistral-7B Standard topological 0.67 0.69 Sparsity ratio 0.66 0.7 Entropy 0.75 0.77 Wasserstein 0.77 0.73 Spectral norm 0.73 0.72 Attention to <s> 0.65 0.61 MTop-Div 0.86 0.98 
+
+LLaMA-2-7B Standard topological 0.69 0.7 Sparsity ratio 0.49 0.61 Entropy 0.38 0.68 Wasserstein 0.73 0.6 Spectral norm 0.49 0.64 Attention to <s> 0.62 0.64 MTop-Div 0.75 0.96 
+
+sifiers trained only on MTop-Div G(R, P ) values under the same conditions. The results are pre-sented in Table 9. While the classifier based on 
+
+MTop-Div G(R, P ) values significantly out-performs alternative approaches, computing these values across all layers and attention heads is highly computationally expensive. To address this, we developed TOHA — a more efficient alternative that aggregates divergence values from only a subset of the “hallucination-aware” attention heads. 13 15461 A.4 Evaluation of Alternative Head Selection Metrics 
+
+Additionally, we investigated alternative attention map-based scores, such as entropy, spectral norm, and the Wasserstein distance between the persistent diagrams of prompts and responses, for selecting specialized attention heads. Following the pipeline of the Algorithm 1, we computed the average dis-tances between hallucinated and grounded samples using alternative scores. The results, presented in Figure 10, reveal that the heads that separate sam-ples best for MS MARCO do not generalize to the CoQA dataset. This suggests that our proposed 
+
+MTop-Div G(R, P ) metric is better suited for the task compared to existing solutions. 
+
+A.5 Feature-Level Comparison with LookBack Lens 
+
+To further validate the representational power of our proposed MTop-Div G(R, P ) features, we compared them against the attention-ratio features introduced in Lookback Lens (Chuang et al., 2024). As Lookback Lens is fundamentally a supervised method, we established a fair, comparable setting by isolating its attention-ratio features and evaluat-ing them using the same attention-head selection procedure as TOHA. The results of this compari-son are provided in Table 10. TOHA consistently outperforms the attention-ratio features across all evaluated models and datasets, confirming the su-perior effectiveness of topological features over standard attention metrics for hallucination detec-tion.                           
+
+> Table 10: Performance comparison between TOHA and attention-ratio features (derived from LookBack Lens) evaluated under identical settings.
+> Method CoQA XSum Llama-2-7B Attention ratio 0.76 ±0.05 0.59 ±0.05 TOHA (ours) 0.90 ±0.01 0.68 ±0.05
+> Qwen2.5-7B Attention ratio 0.71 ±0.07 0.58 ±0.04 TOHA (ours) 0.79 ±0.05 0.69 ±0.03
+
+A.6 Comparison with Linear Probes under Matched Data Constraints 
+
+To ensure a fair comparison with supervised base-line approaches, we evaluated the performance Llama-2-7b Llama-2-13b 
+
+Models 
+
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> ROC-AUC
+
+Performance vs. Response Length       
+
+> Length = 1 Length > 1
+> Figure 7: Comparison of ROC-AUC scores (↑)for single-word versus multi-word model responses. Dataset: SQuAD.
+
+of linear probes trained on datasets with exactly 100 samples—matching the probe set size used by TOHA. We conducted these experiments across all five datasets (MS MARCO, CNN/DM, CoQA, SQuAD, and XSum) using the LLaMA-2-13B model. The corresponding results are detailed in Table 11. While linear probes achieve the second-best per-formance in two out of the five experiments, they are significantly outperformed by TOHA across the board. This highlights the superior sample efficiency and robustness of our topology-based method when operating under constrained data availability. 
+
+A.7 Performance Analysis on Out-of-Design Cases 
+
+Additionally, we analyzed TOHA’s performance on extremely short responses consisting of a sin-gle word. The results are presented in Figure 7. While its performance drops, as expected when the response graph degenerates to a single vertex, it remains non-random. This indicates that TOHA retains some predictive power even for these chal-lenging, out-of-design cases. As for the TOHA’s performance on longer responses, the results for the MS MARCO, CNN/DM, and XSum datasets demonstrate that as the response length grows, the hallucination signals become less distinguishable for all the considered methods, as hallucinated tokens comprise a very small part of the response. However, TOHA re-mains superior to baselines, confirming that our topology-based approach is more effective than ex-isting methods for complex long-form responses. 14 15462 Table 11: ROC AUC ( ↑) evaluation of a linear probe trained on exactly 100 samples alongside TOHA and other baseline methods. The best results for the model are highlighted in bold , and the second best are underlined. 
+
+Method Single generation MS MARCO CNN/DM + Recent News CoQA SQuAD XSum LLaMA-2-13B SelfCheckGPT [1] ✗ 0.58 ± 0.04 0.58 ± 0.05 0.77 ± 0.02 0.64 ± 0.03 0.60 ± 0.04 Semantic entropy [2] ✗ 0.57 ± 0.04 0.54 ± 0.03 0.76 ± 0.04 0.65 ± 0.03 0.60 ± 0.03 EigenScore [3] ✗ 0.56 ± 0.04 0.47 ± 0.04 0.57 ± 0.03 0.57 ± 0.02 0.52 ± 0.06 HaloScope [4] ✓ 0.54 ± 0.09 0.51 ± 0.04 0.57 ± 0.03 0.55 ± 0.02 0.55 ± 0.07 LLM-Check [5] ✓ 0.49 ± 0.06 0.56 ± 0.05 0.57 ± 0.05 0.57 ± 0.07 0.57 ± 0.07 Perplexity [6] ✓ 0.54 ± 0.04 0.46 ± 0.07 0.62 ± 0.03 0.45 ± 0.02 0.49 ± 0.05 Max entropy [7] ✓ 0.62 ± 0.03 0.53 ± 0.06 0.66 ± 0.03 0.78 ± 0.02 0.59 ± 0.04 ReDEEP [8] ✓ 0.62 ± 0.06 0.48 ± 0.05 0.73 ± 0.02 0.48 ± 0.07 0.58 ± 0.08 Linear probe ✓ 0.62 ± 0.03 0.55 ± 0.05 0.65 ± 0.03 0.78 ± 0.01 0.58 ± 0.05 TOHA (ours) ✓ 0.67 ± 0.04 0.56 ± 0.05 0.92 ± 0.02 0.88 ± 0.05 0.66 ± 0.03 A.8 Statistical Significance of the Results 
+
+To rigorously evaluate the robustness and consis-tency of our results, we conducted a statistical sig-nificance analysis of the performance differences across all experimental settings. Specifically, we applied a non-parametric Wilcoxon signed-rank test followed by Holm’s step-down procedure to correct for multiple comparisons. The outcomes of this post-hoc analysis are presented in Tables 12 and 13. As detailed in Table 12, the pairwise p-values confirm that TOHA yields a statistically significant difference against every single baseline evaluated. Furthermore, the aggregate rankings in Table 13 show that TOHA achieves the best overall average rank (1.67) and stands alone at the top of the hierar-chy, clearly distinguishable from all other methods. 
+
+A.9 T-test Analysis for Transferability Experiments 
+
+As previously noted, TOHA’s performance on the CNN/DM and XSum datasets in transfer settings falls within the method’s standard deviation. To statistically confirm this observation, we calculated 
+
+p-values using a t-test for the means of two inde-pendent samples. The results, provided in Table 14, fully support our claim: all p-values are well above the 0.05 threshold, confirming that the performance variations in transfer settings are not statistically significant. 
+
+B Topological Data Analysis: Background 
+
+Simplicial complexes. A simplicial complex S
+
+is a collection of simplices such that every face of 
+
+Table 12: Pairwise p-values from the Wilcoxon-Holm post-hoc analysis. Methods are considered statistically different after thresholding the p-value by the normal-ized Holm correction. Notice that TOHA yields a “True” significance against every single baseline evaluated. 
+
+Method 1 Method 2 p-value Stat. diff. Haloscope TOHA 9.5 × 10 −7 True LLM-Check SelfCK 9.5 × 10 −7 True LLM-Check TOHA 9.5 × 10 −7 True ReDEEP TOHA 9.5 × 10 −7 True Sem. Entropy TOHA 9.5 × 10 −7 True EigenScore TOHA 1.9 × 10 −6 True Perplexity TOHA 1.9 × 10 −6 True Entropy LLM-Check 5.2 × 10 −5 True ReDEEP SelfCK 6.7 × 10 −5 True LLM-Check Sem. Entropy 1.0 × 10 −4 True Perplexity SelfCK 2.9 × 10 −4 True Entropy TOHA 1.0 × 10 −3 True EigenScore Entropy 1.6 × 10 −3 True SelfCK TOHA 1.6 × 10 −3 True Entropy ReDeEP 2.5 × 10 −3 False Haloscope LLM-Check 2.9 × 10 −3 False EigenScore SelfCK 3.8 × 10 −3 False Entropy Perplexity 4.9 × 10 −3 False Haloscope Perplexity 1.8 × 10 −2 False EigenScore LLM-Check 1.9 × 10 −2 False ReDeEP Sem. Entropy 2.2 × 10 −2 False SelfCK Sem. Entropy 2.2 × 10 −2 False Haloscope SelfCK 2.6 × 10 −2 False Perplexity Sem. Entropy 4.6 × 10 −2 False Entropy Haloscope 5.0 × 10 −2 False Entropy Sem. Entropy 1.7 × 10 −1 False EigenScore Sem. Entropy 2.6 × 10 −1 False Haloscope Sem. Entropy 3.2 × 10 −1 False Haloscope ReDeEP 3.4 × 10 −1 False EigenScore Perplexity 3.7 × 10 −1 False EigenScore ReDeEP 3.9 × 10 −1 False LLM-Check ReDeEP 4.1 × 10 −1 False Perplexity ReDeEP 4.5 × 10 −1 False LLM-Check Perplexity 5.9 × 10 −1 False Entropy SelfCK 8.9 × 10 −1 False EigenScore Haloscope 1.0 × 10 0 False 
+
+15 15463 Table 13: Average rank of each method across evaluated settings and the number of baselines from which it is sta-tistically indistinguishable (derived from the Wilcoxon-Holm post-hoc analysis). Lower values ( ↓) indicate better performance. TOHA achieves the top rank and is statistically distinct from all other evaluated approaches.                       
+
+> Method Rank ↓# Indistinguishable ↓
+> TOHA (Ours) 1.67 0
+> SelfCK 3.00 3Entropy 3.62 3Semantic Entropy 4.95 3HaloScope 5.71 3EigenScore 5.74 3ReDEEP 6.38 2Perplexity 6.81 2LLM-Check 7.12 0
+
+Table 14: p-values of the independent two-sample t-test for the transferability experiments. 
+
+Probe Set CNN/DM XSum MS MARCO 0.272 1.000 CNN/DM 1.000 0.746 CoQA 0.499 0.134 SQuAD 0.373 0.346 XSum 0.515 1.000 a simplex σ ∈ S is also in S. Simplices are the higher-dimensional generalizations of triangles; a 0-simplex is a vertex, a 1-simplex is an edge, a 2-simplex is a triangle, and so forth. Formally, given a finite set X, an n-simplex σ is an (n+1) subset of 
+
+X. Simplicial complexes are fundamental objects in algebraic and combinatorial topology, serving as discrete analogs of topological spaces. 
+
+Vietoris-Rips simplicial complex. The Vietoris-Rips complex V R ε(X) of a weighted graph G =(VG, E G) with distance threshold ε > 0 is defined as follows: 
+
+VR ε(G) = 
+
+{
+
+σ ⊆ VG
+
+∣∣∣∣ ∀ vi, v j ∈ σ, w (eij ) ≤ ε
+
+}
+
+,
+
+where w is the edge weight function associated with G.
+
+Homology groups. Homology groups Hk are in-variants used in algebraic topology to study the topological properties of a space. Let Ck(S) denote vector space over Z/2Z, with the basis consisting of k-dimensional simplices of S. Elements of Ck
+
+are called chains. Formally, homology groups are derived from a chain complex (C•, ∂ •), which is a sequence of Ck connected by boundary maps ∂k:
+
+C• : · · · → Ck+1 
+
+> ∂k+1
+
+−−−→ Ck∂k
+
+−→ · · · ,∂k ◦ ∂k+1 = 0 .
+
+The k-th homology group Hk is defined as the quotient of the group of k-cycles (chains whose boundary is zero) by the group of k-boundaries (chains that are the boundary of a (k + 1) -chain). Mathematically, this is expressed as: 
+
+Hk(S) = Zk(S)/B k(S),
+
+where Zk = ker ∂k = {c ∈ Ck | ∂k(c) = 0 } and 
+
+Bk = im ∂k+1 = {∂k+1 (c) | c ∈ Ck+1 } is the group of k-boundaries. The elements of Hk(S) rep-resent various k-dimensional topological features in S. Elements of a basis in Hk(S) correspond to a set of basic topological features. 
+
+Filtrations. A filtration of simplicial complexes 
+
+F is a family of nested simplicial complexes: 
+
+F : ∅ ⊆ S1 ⊆ S2 ⊆ · · · ⊆ Sn = S, 
+
+where each Sk is a simplicial complex itself. In practice, the filtrations of simplicial complexes are usually obtained for sequences of increasing thresh-olds 0 < ε 1 < · · · < ε n. For example, simplicial complexes V R εi (X) form a filtration 
+
+FV R (X) : ∅ ⊆ V R ε1 (X) ⊆ V R ε2 (X) ⊆ . . . 
+
+⊆ V R εn (X) = V R (X).
+
+Persistent homology. As the threshold ε in-creases, new topological features (e.g., connected components, holes) can appear and disappear. The persistent homology tool tracks the dynamics of these topological features. Formally, the k-th per-sistent homology of S is the pair of sets of vector spaces {Hk(Si) | 0 ≤ i ≤ n} and maps fij , where 
+
+fij : Hk(Si) → Hk(Sj ) is a map induced by the embedding Si ⊆ Sj . Each persistent homology class in this sequence is “born” at some Si and “dies” at some Sj or never dies (Barannikov, 1994). This birth-death process of a basic set of indepen-dent topological features can be visualized as the set of intervals [εbirth , ε death ] called barcode (see Figure 8). The features with 0 lifespans are typi-cally excluded. The horizontal axis is a sequence of thresholds ε, and each horizontal bar corresponds to a single feature. We begin with |X| = m con-nected components (all of them are “born”), and 16 15464 as ε increases, their pairs are merged (each merge corresponds to a “death” of a feature). The 0−th barcode construction procedure is equivalent to Kruskal’s algorithm for minimum spanning tree (MST), the bars in the barcode correspond to the edges in the MST of X (Tulchinskii et al., 2023).    
+
+> Figure 8: H0barcode construction. As the threshold increases, the separate connected components merge, resulting in the death of topological features. The hor-izontal axis is a sequence of thresholds ε, and each horizontal bar corresponds to a single feature.
+
+C Properties of MTop-Div G(R, P )
+
+Proof of Proposition 3.1. The 0−th Cross-Barcode coincides with the set of edges in the min-imal spanning tree of the weighted graph G with all the weights within the P -vertex subset equal zero. Excluding the zero-weight edges, this edge set coincides with the minimal spanning forest that attaches the vertex set R to the P vertices. 
+
+Other properties of MTop-Div for attention graphs. Here we present some other properties of our proposed MTop-Div G(R, P ).
+
+Proposition C.1. The following holds for any at-tention graph G with vertex set VG and its comple-mentary vertex subsets P, R , where P ∪ R = VG
+
+and P ∩ R = ∅.
+
+• The divergence itself is bounded by 
+
+0 ≤ MTop-Div G(R, P ) ≤ | R|. (4) • (Stability.) If the weights of G change by no more than ε, then the corresponding 
+
+MTop-Div( R, P ) changes by no more than 
+
+δ = ε|R|.
+
+• (Exact sequence.) For any α, the following sequence of natural maps of homology groups is exact 
+
+(Z/2Z)|P | r2
+
+−→ H0(V R α(G)) r1
+
+−→
+
+> r1
+
+−→ H0(V R α(G, w (R∪P )/P )) r0
+
+−→ 0.
+
+• (Connection with hallucinations.) 
+
+The normalized divergence value  
+
+> 1
+> |R|
+
+MTop-Div( R, P ) = 0 iff the MSF attaches every response token to a prompt token by a subtree with attention weights = 1 .
+
+Proof of Proposition C.1. 
+
+1. This property is immediately obtained from the properties of an attention map: all its weights lie between 0 and 1.2. Denote by MSF( R, P ) the minimum spanning forest attaching R to P . Note that we have proper-ties C.1, so 
+
+MTop-Div( R, P ) = ∑ 
+
+> e∈MSF( R,P )
+
+w(e). (5) Therefore, we have to show that the weight of 
+
+MSF( R, P ) does not change significantly when all weights are changed by no more than ε.There are two possibilities: 1) after a change, all MSF edges remain the same, or 2) some edges are replaced with other edges. In the first case, it is obvious that the total sum of edge weights changes by no more than 
+
+δ = ε · #edges (MSF( R, P )) = ε · | R|.
+
+Consider the second case. Denote by MSF prev the original MSF, by MSF new — the MSF after the change; let w be the edge weight function before the change, ˆw — after the change. The following inequalities hold: 
+
+ˆw(MSF new ) ≤ ˆw(MSF prev ); (6) 
+
+w(MSF prev ) − δ ≤ ˆw(MSF prev ) ≤≤ w(MSF prev ) + δ; (7) 
+
+w(MSF new ) − δ ≤ ˆw(MSF new ) ≤≤ w(MSF new ) + δ; (8) 
+
+w(MSF new ) ≥ w(MSF prev ). (9) From (6)-(7) follows that ˆw(MSF new ) <w(MSF prev ) + δ; from (8)-(9) follows that 
+
+ˆw(MSF new ) ≥ w(MSF prev ) − δ.3. We have to check the definition of the exact sequence: Ker (ri) = Im (ri+1 ). For a pair r0, r 1,it is equivalent to the surjectivity of r1. The H0
+
+homology group of a graph corresponds to the connected components of the graph. The set of edges E≤α 
+
+> (G,w )
+
+= {e ∈ EG|we ≤ α} is always a subset in the analogous set of the weighted graph 
+
+(G, w (R∪P )/P ) with all weight edges between P
+
+vertices set to zero. Therefore, the map r1 between 17 15465 their connected components is surjective. Simi-larly, the kernel of the map r1 is spanned by the differences of two connected components, which are merged after adding some of the edges between 
+
+P vertices, and any such difference lies in the image of the map r2. Also, any two vertices from 
+
+P belong to the same connected component in the graph (G, w (R∪P )/P ≤ α), hence the image of r2
+
+is in the kernel of r1. Therefore, the considered sequence is exact indeed. 4. Follows obviously from the MSF formula for MTop-Div( R, P ) and attention map properties. 
+
+Intuition behind MTop-Div properties and hal-lucination detection. The stability property guar-antees that similar attention patterns yield similar hallucination scores, making the metric’s behav-ior consistent and predictable. The exact sequence property formalizes the geometric intuition behind our metric, which measures the strength of the re-sponse’s connection to the prompt through multi-scale topological features of the attention graph. In the last property, we present an “ideal” case: if a model “knows what to look at” — each token in the response attends to some token in the prompt with an attention weight equal to 1 — MTop-Div 
+
+would be equal to 0, indicating zero uncertainty. 
+
+D Datasets 
+
+SQuAD (Rajpurkar et al., 2016) and CoQA (Reddy et al., 2019) are widely used English question-answering benchmarks that have facilitated the development of hallucination detection datasets (Kuhn et al., 2023; Manakul et al., 2024). Similarly, XSum (Narayan et al., 2018), a dataset of news articles with one-sentence summaries, is commonly employed in hallucination detection research for abstractive summarization (Shi et al., 2024; Cao et al., 2022). To assess LLM perfor-mance, we used GPT-4o to annotate responses to questions sourced from SQuAD, CoQA, and summarization tasks from XSum dataset. 
+
+D.1 Data Generation & Annotation Generation. We generate responses from a lan-guage model (LLM) for the considered datasets, employing different prompting strategies for each dataset while keeping these strategies consistent across models (see prompt examples in Table 15). For SQuAD and XSum, responses are generated using a zero-shot approach. In contrast, for CoQA, we generate queries in a few-shot manner with-out providing specific instructions, following (Lin et al., 2024): each sample consists of a passage and a series of question-answer pairs, culminating in a final question that the model is expected to answer. 
+
+Annotation: automated vs human. We treat hallucination detection as a binary classification problem; our target indicates whether a hallucina-tion is present anywhere in the model’s response. Two approaches to annotating model generations were considered: 1) automated annotation using an LLM (in our case, GPT-4o), and 2) manual annota-tion by human experts. During the automated annotation process, we provide GPT-4o with an LLM’s output, preceded by an instruction (prompt). In this prompt, GPT-4o is asked to determine whether the output con-tains hallucinations, and we expect a single-word response of either “Yes” or “No.” An example of such an instruction for the question answering task is shown in Table 17. For human annotation, we asked three team members with at least upper-intermediate English proficiency to independently annotate approxi-mately 100 samples from each dataset. The hu-man annotation consistency metrics are provided in Table 19. We selected samples for which all annotators reached consensus and treated these an-notations as the ground-truth hallucination labels. To further evaluate GPT-4o, we conducted au-tomatic annotation using several variations of prompts, each reformulating the task for GPT-4o, including zero-shot and few-shot versions. We then compared these annotations to the actual halluci-nation labels. The results, presented in Table 18, demonstrate a consistent alignment between GPT-4o’s annotations and those made by humans, re-gardless of the specific prompt. This consistency confirms the robustness of our approach to the ex-act form of instruction. Based on these findings, we prefer automated an-notation as a cost-effective and efficient alternative to human experts. 
+
+Annotation: general pipeline. CoQA and SQuAD contain questions paired with ground-truth answers. To minimize false positives in labeling, we employed a two-step verification process: 1. Rouge-L scoring: we computed Rouge-L scores (using the evaluate library, v0.4.6) 18 15466 SQuAD CoQA Given the context, answer the question in a brief but complete sentence. Once upon a time, in a quiet village, there lived a kind old baker named Henry. Note that your answer should be strictly based on the given context. He was known for his delicious bread and warm smile. One day, a traveler arrived, In case the context does not contain the necessary information to answer the question, tired and hungry, Henry welcomed him with a fresh loaf. please reply with “Unable to answer based on given context”. Q: What was Henry known for?              
+
+> Context: A: Baking delicious bread. Once upon a time, in a quiet village, there lived a kind old baker named Henry. Q: What else? He was known for his delicious bread and warm smile. One day, a traveler arrived, A: Warm smile. tired and hungry, and Henry welcomed him with a fresh loaf. Q: How did the traveler feel when he arrived?
+> Question: Who was known for baking delicious bread? A: Tired and hungry.
+> Answer: Q: What did Henry give the traveler?
+
+Table 15: Examples of prompts used during generation for CoQA and SQuAD (we add additional delimiter spaces and formatting not present in actual prompts for better readability). SQuAD contains instructions followed by context and questions. In CoQA, the prompt has only a contextual passage followed by a question-and-answer series, with the last question being the actual one. 
+
+XSum Please annotate potentially hallucinated model-generated summaries in the following settings. I will provide a reference text and a model-generated summary of this text. You will judge whether the given model-generated summary contains hallucinations. Answer “Yes” if the summary contains hallucinations, “No” if it does not, and "N/A" if you cannot decide. Do NOT give any extra explanations. 
+
+Table 16: The prompt used during generation for the XSum dataset (we add additional delimiter spaces and formatting not present in actual prompts for better readability). 
+
+You are an AI assistant specialized in detecting hallucinations in question-answering tasks. Your job is to analyze the given context, question, and generated answer to identify whether the answer contains any hallucinations. Examples: Example 1. 
+
+Context :The city of Paris is the capital of France. It is known for its iconic landmarks like the Eiffel Tower and Notre Dame Cathedral. The city is situated in the northern part of the country, near the Seine River. 
+
+Question : Is Paris the capital of Germany? 
+
+Generated answer : Yes, Paris is the capital of Germany. 
+
+Hallucination : Yes. Example 2. 
+
+Context :The city of Paris is the capital of France. It is known for its iconic landmarks like the Eiffel Tower and Notre Dame Cathedral. The city is situated in the northern part of the country, near the Seine River. 
+
+Question : Is Paris the capital of Germany? 
+
+Generated answer : No, Paris is not the capital of Germany. According to the context, Paris is the capital of France. 
+
+Hallucination : No. You should determine if the answer contains hallucinations according to the hallucination types above. If you cannot decide if the generated answer is a hallucination, write “N/A.” as the answer. The answer you give MUST be ONLY “Yes.”, “No.” or “N/A.”; do NOT give ANY explanation. 
+
+Table 17: Example of annotation prompt passed to GPT-4o (we add additional delimiter spaces and formatting not present in actual prompts for better readability). 
+
+19 15467 Prompt number 1 2 3 4 5 Average CoQA Accuracy ( ↑) 0.809 ± 0.017 0.861 ± 0.015 0.742 ± 0.003 0.795 ± 0.009 0.831 ± 0.025 0.808 Precision ( ↑) 0.849 ± 0.021 0.911 ± 0.007 0.771 ± 0.003 0.828 ± 0.011 0.860 ± 0.012 0.844 Recall ( ↑) 0.871 ± 0.004 0.877 ± 0.019 0.877 ± 0.013 0.877 ± 0.005 0.893 ± 0.027 0.879 SQuAD Accuracy ( ↑) 0.831 ± 0.003 0.857 ± 0.018 0.857 ± 0.008 0.872 ± 0.003 0.854 ± 0.007 0.854 Precision ( ↑) 0.813 ± 0.002 0.831 ± 0.028 0.845 ± 0.021 0.850 ± 0.011 0.847 ± 0.007 0.837 Recall ( ↑) 0.796 ± 0.008 0.839 ± 0.010 0.823 ± 0.023 0.858 ± 0.018 0.813 ± 0.017 0.826 
+
+Table 18: Classification metrics of GPT-4o annotation for CoQA and SQuAD with human labels considered as true. The table shows metric scores for different prompt variants and the average score across all variants. 
+
+Pair Accuracy Pearson-r 1 vs 2 0.783 0.6 1 vs 3 0.812 0.631 2 vs 3 0.826 0.653 Mean 0.807 0.628 Std 0.022 0.027 
+
+Table 19: Cross-annotator consistency metrics. 
+
+between the model’s response and the ground-truth answers. 2. Substring matching: we checked whether any ground-truth answer was a substring of the response. Responses with a Rouge-L score of 1 (exact match) were labeled as grounded. Those meeting both of the following criteria were flagged as potential hallucinations: • Rouge-L score ≤ 0.3 (following (Kuhn et al., 2023)); • no ground-truth answer appears as a substring. These candidate hallucinations were then reviewed by GPT-4o, and only confirmed cases were finally labeled as hallucinations. For XSum, where reference summaries are more complex than the ground truth answers in SQuAD/CoQA, we bypassed Rouge-L filtering and relied solely on GPT-4o for annotation. Detailed statistics for each dataset are shown in Table 20. The number of samples in the datasets varies across models, as we sought to maintain a balance between hallucinated and grounded re-sponses, ensure sample cleanliness, and minimize mislabeling. The procedure outlined above selects a different number of objects in a sample depend-ing on the quality of the model’s responses. Ad-ditionally, we provide statistics on the response length distribution for each dataset we collected (Figure 9). Model CoQA SQuAD XSum Hal. Grounded Hal. Grounded Hal. Grounded Mistral-7B 776 776 311 389 301 448 LLaMA-2-7B 375 375 440 258 239 507 LLaMA-2-13B 279 384 314 436 208 522 LLaMA-3.1-8B 356 350 350 400 243 407 Qwen2.5-7B 171 218 423 423 194 556 
+
+Table 20: Datasets statistics. Number of hallucinated and grounded samples of each model. 
+
+E Implementation Details 
+
+In this section, we describe the key implementation choices. • For EigenScore, we used the last token rep-resentation to embed sentences, as suggested in (Chen et al., 2024). We took outputs from the 16th layer, since middle layers were shown to contain the most factual information (Sky et al., 2024; Azaria and Mitchell, 2023). • For SelfCheckGPT, we used its NLI-based version. • For LLM-Check, we considered its white-box attention score modification, as it works in a setting similar to ours. • The topological divergences were calculated using ripser library (Tralie et al., 2018), MIT license. • For the RAGTruth dataset, the model settings were aligned with the original paper. All experiments were carried out on an NVIDIA L40. 
+
+F Use of scientific artifacts & AI assistants 
+
+CoQA contains passages from seven domains under the following licenses: Literature and Wikipedia passages are shared under CC BY-SA 4.0 license; Children’s stories are collected from MCTest, which comes with the MSR-LA license; 20 15468 0 100 200 0500 1000 1500 
+
+> CoQA
+
+Median: 4.0 
+
+Mistral-7B 
+
+0 50 100 0200 400 600 Median: 6.0 
+
+LLama-2-7B 
+
+0 10 20 30 0100 200 300 Median: 5.0 
+
+LLama-2-13B 
+
+0 50 100 050 100 150 Median: 12.0 
+
+Qwen2.5-7B 
+
+0 100 200 0200 400 600 Median: 4.0 
+
+Llama-3.1-8B 
+
+0 20 40 60 0100 200 
+
+> SQuAD
+
+Median: 7.0 0 50 100 150 0200 400 Median: 13.0 0 50 100 0200 400 Median: 3.0 0 100 200 0200 400 600 Median: 13.0 0 25 50 75 0200 400 Median: 7.0 25 50 75 0100 200 
+
+> XSum
+
+Median: 34.0 50 100 0100 200 300 Median: 49.0 40 60 80 0100 200 Median: 54.0 25 50 75 0100 200 Median: 37.0 0 100 200 0200 400 Median: 35.0 Figure 9: The distributions of response lengths (in words). 0.10 0.05 0.00 0.05 0.10 0.15 0.20 0.25 0.4 
+
+> 0.2
+> 0.0 0.2 0.4
+> Mistral-7B-Instruct-v0.1
+
+Entropy, MS MARCO (A) vs CoQA (B)     
+
+> 0.0 0.2 0.4 0.6 0.8 1.5
+> 1.0
+> 0.5
+> 0.0 0.5 1.0
+
+Spectral norm, MS MARCO (A) vs CoQA (B)        
+
+> 2.5 5.0 7.5 10.0 12.5 15.0 17.5 20.0 0510 15 20 25
+
+Wasserstein distance, MS MARCO (A) vs CoQA (B)                
+
+> 0.05 0.00 0.05 0.10 0.15 0.20 0.3
+> 0.2
+> 0.1
+> 0.0 0.1 0.2
+> Llama-2-7b-chat-hf
+> 0.0 0.2 0.4 0.6 1.2
+> 1.0
+> 0.8
+> 0.6
+> 0.4
+> 0.2
+> 0.0 0.2 0.4
+> 2.5 5.0 7.5 10.0 12.5 15.0 17.5 20.0 12.5
+> 10.0
+> 7.5
+> 5.0
+> 2.5
+> 0.0 2.5 5.0 7.5
+
+Figure 10: ∆ij values for ij heads, MS MARCO and CoQA. Vertical axis corresponds to the difference in the dataset (B), horizontal axis to the difference in the dataset (A). The heads that separate samples best are highlighted in pink. 
+
+Middle/High school exam passages are collected from RACE which comes with its own license; News passages are collected from the DeepMind CNN dataset which comes with Apache license. The SQuAD dataset is licensed under CC BY-SA 4.0. The RAGTruth dataset comes under the MIT license. The XSum dataset comes under the MIT license. We used all the artifacts as it was intended by the corresponding licenses. No personal information or offensive content is contained in the considered datasets. The original text of this paper was spell- and grammar-checked and slightly smoothed using Grammarly. 21 15469 G Potential risks 
+
+1. Ethical risks from deployment: overcon-fidence in TOHA’s scores could lead to unchecked LLM outputs in high-stakes sce-narios (e.g., healthcare). TOHA should be framed as a “warning system” rather than a definitive filter, and advocate for human re-view. 2. Attention manipulation attacks: adversarial prompts could artificially alter attention pat-terns, evading detection. 22 15470
