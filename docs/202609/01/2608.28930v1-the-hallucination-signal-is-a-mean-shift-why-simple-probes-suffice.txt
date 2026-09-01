@@ -1,0 +1,636 @@
+Title: The Hallucination Signal Is a Mean Shift: Why Simple Probes Suffice
+
+URL Source: https://arxiv.org/pdf/2608.28930v1
+
+Published Time: Tue, 01 Sep 2026 00:24:12 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# The Hallucination Signal Is a Mean Shift: Why Simple Probes Suffice 
+
+Jungseob Lee 1 Jaehyung Seo 2* Heuiseok Lim 1*
+
+> 1
+
+Korea University 2Konkuk University 
+
+{omanma1928, limhseok}@korea.ac.kr seojae777@konkuk.ac.kr 
+
+Abstract 
+
+Hidden-state probes effectively detect LLM hallucinations, but the geometry of the sig-nal remains poorly characterized, driving in-creasingly complex probe architectures. Across three 7B-scale models and three datasets in a paired-example paradigm, we find the signal overwhelmingly dominated by a single mean-shift component, and removing this direction collapses detection to chance. Shrinkage lin-ear discriminant analysis closes about 73% of the gap between 1D and full-dimensional clas-sifiers, so apparent architectural complexity largely reflects high-dimensional covariance estimation difficulty rather than exploitable non-linearity. A simple L2-regularized logis-tic regression (0.952 AUROC) bounds or out-performs twelve controlled architectural alter-natives, and our multi-layer aggregation ex-ceeds CLAP cross-layer attention probing un-der matched paradigm. Because the signal spans a contiguous layer band, LayerMix aggre-gates it to match oracle-layer performance with-out oracle access. Our claims characterize the geometry within the controlled paired-example paradigm. Our code is available at https: //github.com/js-lee-AI/LayerMix .
+
+1 Introduction 
+
+While hidden-state probing has emerged as an ef-fective mechanism for detecting hallucinations in large language models (LLMs) (Bürger et al., 2024; Hernandez et al., 2023; Han et al., 2025; Azaria and Mitchell, 2023), recent work has pursued increas-ingly complex architectures to isolate the truthful-ness signal (Luo et al., 2026; Bürger et al., 2024; Bang et al., 2025). Methods such as ICR Probe (Zhang et al., 2025), TSV (Park et al., 2025), and HaloScope (Du et al., 2024) deploy intricate cross-layer tracking, optimal-transport pseudo-labeling, and attention-gated subspace projections. Yet, a fundamental question remains under-explored: 
+
+> *Corresponding authors.
+
+what is the exact geometry of the hallucination signal, and does it necessitate this architectural complexity? 
+
+To answer this, we conduct a systematic geomet-ric analysis of the hallucination signal. To rigor-ously isolate the underlying representational struc-ture from generation-induced distribution shifts, we operate within the standard paired-example paradigm across three 7B-scale models and three datasets. Although prior work established that truth is encoded linearly (Marks and Tegmark, 2023; Bao et al., 2025), the quantitative boundaries of this linearity for hallucination detection remain un-mapped. Our analysis reveals a remarkably simple underlying structure: the detection signal is over-whelmingly dominated by a single mean-shift com-ponent. By disentangling covariance estimation difficulty from genuine non-linear structure, we demonstrate that a simple L2-regularized logistic regression (L2-LR) probe matches or outperforms 12 heavily engineered alternatives. This suggests that complex architectures often overfit to estima-tion noise rather than exploiting hidden structural complexities. Crucially, we observe that this simple mean-shift signal is not isolated to a single oracle layer, but rather distributed across a model-specific, contigu-ous layer band (Meng et al., 2022; Patrawala et al., 2025; Huang et al., 2025). Motivated directly by this geometric insight, we operationalize our find-ings into LayerMix, a computationally lightweight, cross-validation-based multi-layer aggregation ap-proach. LayerMix is not presented as a complex algorithmic innovation, but rather as a principled consequence of our analysis: it exploits the dis-tributed nature of the signal to match oracle-layer performance without requiring oracle access, offer-ing a robust, highly effective drop-in baseline for future geometric research. Our contributions are as follows: arXiv:2608.28930v1 [cs.CL] 28 Aug 2026 • Quantitative Geometric Decomposition: 
+
+We provide the first quantitative characteri-zation of the hallucination signal’s geometry, demonstrating that a dominant mean-shift ac-counts for the vast majority of the signal. We show that shrinkage linear discriminant analy-sis (LDA) closes about 73% of the Fisher LDA gap, indicating that apparent structural com-plexity largely stems from high-dimensional covariance estimation difficulty rather than exploitable non-linearities. • Controlled Geometric Ablation: To rigor-ously validate our geometric framework, we evaluate L2-LR against 12 controlled archi-tectural alternatives designed to isolate spe-cific geometric properties, alongside complex subspace methods. As predicted by our de-composition, L2-LR strictly upper-bounds their performance, achieving 0.952 AUROC and demonstrating that mean-targeting meth-ods consistently dominate variance-targeting ones. • LayerMix: We introduce a principled, oracle-free multi-layer aggregation strategy. Layer-Mix seamlessly identifies and aggregates the informative layer band, matching oracle per-formance (0.954 AUROC) while remaining exceptionally computationally efficient (about 35 seconds overhead). The paired-example paradigm is the controlled experimental setup we use to isolate the intrinsic representational geometry from generation-induced distribution shifts, the methodological control that makes the geometric measurement possible. The conclusions reported throughout (mean-shift domi-nance, decision-boundary linearity, multi-layer ag-gregation sufficiency) are paradigm-bounded state-ments about the controlled measurement setting, not universality claims across all detection scenar-ios. 
+
+2 Related Work 
+
+2.1 Detection Methods and Evaluation Training-free detection. Methods requiring no labeled data span logit contrasting (Chuang et al., 2023), covariance eigenvalues (Chen et al., 2024), semantic entropy (Kuhn et al., 2023), and sampling consistency (Manakul et al., 2023), with LLM-Polygraph (Fadeeva et al., 2023) providing a com-prehensive benchmark. The limited accuracy of these approaches motivates our focus on supervised probing. 
+
+Probing-based detection. Following Azaria and Mitchell (2023)’s foundational logistic regression probe, recent methods have introduced increas-ingly complex architectures, including attention-gated SVD (Du et al., 2024), cross-layer track-ing (Zhang et al., 2025), and optimal-transport pseudo-labeling (Park et al., 2025). Crucially, these single-layer methods lack a geometric characteri-zation of the signal they target. Our analysis fills this gap, demonstrating that much of this architec-tural complexity is unwarranted when using L2-regularized logistic regression. 
+
+Evaluation paradigms. SEP (Kossen et al., 2024) trains probes to predict semantic entropy from multiple sampled generations. This open-ended QA paradigm differs fundamentally from the paired-example setting evaluated here (and in SAPLMA, ICR Probe, and HaloScope), precluding direct head-to-head comparison. We discuss SEP’s cross-domain implications in §7. 
+
+2.2 Geometry and Layer Choice Geometry of LLM representations. Prior work has identified linear structures for truthful-ness (Marks and Tegmark, 2023; Bao et al., 2025; Burns et al., 2022) and world representations (Li et al., 2022). Representation engineering (Zou et al., 2023) shows that projecting along such direc-tions steers model behavior, a principle our inter-vention experiment (§7) applies to hallucinations. While HARP (Hu et al., 2025) derives hallucination subspaces from unembedding weights, we extend this trajectory by decomposing the detection signal into mean-shift and residual components, quantify-ing the Fisher LDA gap, and linking geometry to probe performance. 
+
+Layer selection. While probing accuracy heav-ily depends on the chosen hidden layer (Azaria and Mitchell, 2023; Han et al., 2025; Belinkov, 2022), the exact cost of relying on non-oracle layer heuristics remains unquantified for hallucination detection. We systematically measure this degra-dation and demonstrate that cross-validation-based aggregation eliminates it. 
+
+2.3 Concurrent Work Cross-layer and subspace probing. The clos-est concurrent work to LayerMix is CLAP (Suresh et al., 2025), which learns input-dependent cross-layer attention, whereas LayerMix selects a layer band by cross-validation and uniformly averages in-dependent per-layer probes. We run CLAP from its official implementation on our cached multi-layer hidden states, so the contrast isolates the combi-nation rule, not the features. Bürger et al. (2024) argue instead that hallucination and truth occupy a low-dimensional subspace, which we test with partial least squares discriminant analysis (PLS-DA) at k=2 against full-dimensional probes. Our shrinkage-LDA-gap analysis predicts that the resid-ual beyond the mean shift needs high-dimensional shrinkage, not two-dimensional truncation, and §6 reports both comparisons under matched paradigm. 
+
+Findings in other paradigms. Bhatnagar et al. (2026) report SOTA on free-form generation with cross-dataset generalization, which is not in ten-sion with our orthogonal-mean-shift finding, be-cause DRIFT operates in the dynamic-generation paradigm, orthogonal to our paired-example set-ting, where reweighting across directions can suc-ceed even when raw paired-example ˆδ are orthogo-nal across datasets. Liang and Wang (2025) report MLP probes outperforming linear probes in token-level free-form detection, which we likewise read as paradigm-dependence rather than a contradic-tion. 
+
+Generalization and controls. Orgad et al. (2025) document that representation-based detectors do not generalize zero-shot across datasets. Our within-vs-between cosine analysis (Appendix F) suggests this reflects hallucination-type-specific geometry rather than pure dataset artifacts. Our random-label diagnostic follows probing-classifier control tasks (Hewitt and Liang, 2019), formalizing selectivity for hallucination detection. 
+
+3 Geometric Analysis 
+
+We characterize the hallucination signal’s geometry to motivate LayerMix. Given an LLM with hidden dimension d and labeled examples {(xi, y i)} where 
+
+yi ∈ { 0, 1} indicates factual or hallucinated, let 
+
+μ0, μ1 be class centroids and δ = μ1 − μ0 the mean-shift direction. 
+
+3.1 The Signal is a Mean Shift 
+
+Table 1 provides direct evidence from decompo-sition experiments averaged over 3 models × 3datasets. Removing δ collapses detection to chance 40 20 0 20 Projection onto (mean-shift direction) 
+
+> 40
+> 30
+> 20
+> 10
+> 010 20 30 Residual variance (orthogonal PC1)  Factual Hallucinated
+
+Figure 1: 2D projection of factual and hallucinated hid-den states from Qwen2.5-7B (Layer 18) on TruthfulQA. 
+
+(0.499), confirming it is necessary . Crucially, δ is estimated within each training fold of the CV pro-tocol, preventing in-sample estimation artifacts. The 1D projection onto δ achieves 0.834 AU-ROC, recovering 78% of the above-chance per-formance of unregularized LR. The gap between this and the operational L2-LR baseline (0.952) highlights the regularization benefit: L2 shrinkage suppresses noise in the roughly 4,000 residual di-mensions, extracting signal that unregularized LR cannot reliably exploit. Note that PLS-DA compo-nent 1 aligns with δ by mathematical construction in the binary case (Barker and Rayens, 2003), con-firming that PLS-DA inherently targets the mean shift. Cohen’s d along δ ranges 1.2–1.6 despite ac-counting for <3% of total variance. Figure 1 visu-ally corroborates this: the clear macro-separation along the mean-shift axis contrasts sharply with the completely overlapping distributions in the residual orthogonal subspace, explaining why linear probes successfully recover the vast majority of the signal. 
+
+3.2 Mean Shift is Necessary but Insufficient 
+
+The mean-shift direction is essential but captures only part of the signal. 
+
+Fisher LDA gap. In the binary case, Fisher LDA projects onto wF = Σ−1 
+
+> W
+
+δ, which reduces to 
+
+δ only when the within-class covariance ΣW is proportional to the identity. In high dimensions (d ≈ 4,000 ), ΣW is far from spherical, so wF and 
+
+δ differ. We report projection onto the raw mean-shift direction δ to provide a clean lower bound on Condition AUROC                                        
+
+> Unreg. LR (all dims) .928 Mean-shift only (1D) .834 Mean-shift + 4 residual (5D) .891 Without mean-shift .499 Mean-centered (oracle) .503
+> Table 1: Mean-shift decomposition (avg. 9 conditions). “Unreg. LR” denotes unregularized logistic regression, used to enable clean decomposition into mean-shift and residual components without regularization-induced shrinkage.
+> Condition Fisher L2-LR Gap
+> Llama–TQA .815 .937 +.122 Llama–HE .872 .963 +.090 Llama–FD .823 .951 +.127 Mistral–TQA .824 .940 +.116 Mistral–HE .873 .960 +.088 Mistral–FD .827 .955 +.128 Qwen–TQA .815 .943 +.128 Qwen–HE .852 .961 +.109 Qwen–FD .802 .957 +.156
+> Mean .834 .952 +.118
+> Table 2: Raw mean-shift projection (1D, onto δ) vs. L2-regularized LR on the optimal layer across all 9 conditions.
+
+the 1D signal without requiring covariance inver-sion. Table 2 shows that this optimal 1D classifier un-derperforms L2-regularized LR by 0.09–0.16 AU-ROC. This consistent gap confirms the presence of discriminative structure beyond δ in every con-dition. To disentangle covariance estimation diffi-culty from genuine distributional structure, we ap-ply shrinkage LDA (Ledoit and Wolf, 2004), which achieves 0.920 mean AUROC, closing at least 73% of the gap. The residual 0.032 gap may reflect non-Gaussian structure or L2-regularization’s im-plicit feature selection. Applying ZCA whiten-ing ( Σ−1/2) before L2-LR degraded performance (0.790 vs. 0.952 raw), as expected when amplify-ing low-variance noise in finite high-dimensional samples. 
+
+Distributional evidence. D’Agostino–Pearson tests reject normality ( p < 10 −4) for both classes in all 9 conditions, with skewness |γ1| ≤ 0.55 and excess kurtosis −1.1 to +0 .2. This is consistent with the residual gap reflecting distributional struc-ture beyond what LDA can capture. 
+
+3.3 Signal Distributes Across Layers 
+
+Beyond characterizing the signal within a single layer, we examine how it distributes across layers to motivate multi-layer probing: 
+
+Optimal layer varies. The best single layer dif-fers by model: L14 for Llama (Touvron et al., 2023; Grattafiori et al., 2024), L16 for Mistral (Jiang et al., 2023), L18 for Qwen (Qwen et al., 2025) (Figure 2; Table 7). This variation means a fixed-layer heuris-tic cannot be optimal across conditions. As Fig-ure 2 illustrates, the hallucination signal instead concentrates in a model-specific contiguous band. 
+
+Adjacent layers carry signal. Cross-validation scores for layers near the optimum remain high. For example, on Qwen–TQA (optimal L18), CV selects layers {17 , 18 , 19 , 20 , 21 }, each scoring 
+
+≥0.93. 
+
+Signal distributes across neurons. L1-regularized feature selection followed by L2-LR (Appendix H) shows that 200 neurons (about 5% of d) recover 98.3% of full AUROC, while 100 random neurons achieve only 0.840. The top-20 neurons share only 4 across CV folds, confirming a distributed signal not localized to fixed "hallucination neurons." 
+
+Combining layers improves detection. Averag-ing predictions from CV-selected layers consis-tently outperforms any single layer (by +0.0004 to +0.0086 AUROC across all 9 conditions), indi-cating systematic complementarity. These findings establish that the hallucination signal distributes across both layers and neu-rons, motivating multi-layer aggregation of full-dimensional probes. The geometry also correctly predicts the performance ordering of subspace methods (Table 16 in Appendix L): methods target-ing the mean shift (PLS-DA: 0.926) consistently outperform variance-targeting ones (SVD: 0.795). 
+
+4 Proposed Method: LayerMix 
+
+Our geometric analysis reveals that the hallucina-tion signal distributes across a contiguous band of layers (§3.3), with the optimal layer varying by model and dataset. This motivates LayerMix: a principled, computationally lightweight approach that identifies the informative layer band via cross-validation (CV), trains independent probes on the top-K layers, and averages their predictions. The method operates in three stages. 0 5 10 15 20 25 30 Layer 0.55 0.60 0.65 0.70 0.75 0.80 0.85 0.90 0.95 1.00 AUROC             
+
+> TruthfulQA
+> Llama-3.1-8B Mistral-7B Qwen2.5-7B
+> 0510 15 20 25 30 Layer
+> HaluEval-Dialogue
+> 0510 15 20 25 30 Layer
+> FaithDial
+
+Figure 2: Layer-wise AUROC across 3 models and 3 datasets. Shaded bands show ±1 std across CV folds. Dots mark the optimal layer per condition. 
+
+Stage 1: Layer scoring. For each layer ℓ ∈{1, . . . , L }, we extract hidden states H(ℓ) ∈ RN ×d
+
+and evaluate an L2-regularized logistic regression probe via stratified m-fold CV ( m=5 ). The score 
+
+sℓ is the mean AUROC across folds. This step replaces oracle selection: rather than requiring a held-out set to identify the best layer post hoc, CV scores provide a data-driven ranking using only training data. 
+
+Stage 2: Layer selection. We select the top-K
+
+layers: L∗ = top-K({sℓ}Lℓ=1 ). We use K=5 as the default, finding it robust across conditions (Ap-pendix M). In practice, the selected layers naturally form a contiguous block around the model’s most informative region (e.g., layers 16–20 for Qwen2.5-7B), as adjacent layers share representational struc-ture while providing marginal complementary sig-nal. 
+
+Stage 3: Aggregation. For each selected layer 
+
+ℓ ∈ L ∗, we train an L2-regularized LR probe fℓ on the full training set. The final prediction for a test input x is: 
+
+ˆp(x) = 1
+
+K
+
+X
+
+> ℓ∈L ∗
+
+fℓ(h(ℓ)(x)) (1) The simplicity of this formulation is deliber-ate: each per-layer probe operates on the full d-dimensional hidden state with strong L2 regulariza-tion ( C=0 .001 ), and uniform averaging provides implicit variance reduction. No learned aggrega-tion weights are needed, as the selected layers are high-quality by construction. 
+
+Design choices. (1) CV-based selection identifies layers by their actual classification performance, unlike heuristics (last, middle) or statistics such as Cohen’s d ranking, which we show fails sys-tematically (Appendix M). (2) Full-dimensional 
+
+Algorithm 1 LayerMix 
+
+Require: LLM M, labeled data D = {(xi, y i)}, K=5 
+
+Ensure: Detector f : x → [0 , 1] 
+
+1: // Stage 1: Layer Scoring (replaces oracle selection) 
+
+2: for ℓ = 1 , . . . , L do 
+
+3: H(ℓ) ← hidden states from layer ℓ
+
+4: sℓ ← CV-AUROC (LR (H(ℓ), y; C=0 .001)) 
+
+5: end for 
+
+6: // Stage 2: Layer Selection 
+
+7: L∗ ← top-K({sℓ}Lℓ=1 )
+
+8: // Stage 3: Per-Layer Probes + Aggregation 
+
+9: for ℓ ∈ L ∗ do 
+
+10: Train fℓ ← LR (H(ℓ), y; C=0 .001) 
+
+11: end for 
+
+12: f (x) ← 1
+
+> K
+
+P 
+
+> ℓ∈L ∗
+
+fℓ(h(ℓ)(x)) 
+
+probes avoid the information loss of dimension-ality reduction; our geometric analysis confirms L2-regularized LR outperforms subspace methods on single layers. (3) Prediction averaging prevents the dimensionality from scaling with K (unlike fea-ture concatenation) and provides ensemble-style variance reduction. 
+
+Computational cost. LayerMix requires extract-ing hidden states from all L layers during the scor-ing phase (a single forward pass) and training K lo-gistic regression probes. At inference, hidden states from K=5 layers are extracted during the standard forward pass (no additional passes required). The total wall-clock overhead is minimal: scoring all layers takes about 30 seconds on a single GPU for 
+
+N =5 ,000 examples, and the K probe trainings add only about 5 seconds. We note that an alternative held-out layer sweep is not cheaper : it requires (a) sacrificing held-out data and (b) the same per-layer LR fits as our CV scoring. CV-based selection therefore matches the held-out sweep in compute while preserving data efficiency. 5 Experimental Setup 
+
+Models & Datasets. We evaluate three 7B-scale base LLMs: Llama-3.1-8B (Grattafiori et al., 2024), Mistral-7B (Jiang et al., 2023), and Qwen2.5-7B (Qwen et al., 2025), scaling up to 70B in §6.5. We use three standard bench-marks: TruthfulQA (TQA; Lin et al., 2022b, 
+
+N =4 ,135 ), HaluEval-Dialogue (HE; Li et al., 2023, N =20 ,000 ), and FaithDial (FD; Dziri et al., 2022, N =5 ,848 ). 
+
+Baselines. We compare against a broad spectrum of methods: (1) Training-free : Perplexity (Ren et al., 2022), Entropy, Self-eval P(True) (Kadavath et al., 2022), Verbalize (Lin et al., 2022a), LLM-Check (Sriramanan et al., 2024), DoLa (Chuang et al., 2023), INSIDE (Chen et al., 2024); (2) Unsup./Semi-sup. : HaloScope (Du et al., 2024), CCS (Burns et al., 2022), TSV (Park et al., 2025); (3) Cross-layer : ICR Probe (Zhang et al., 2025); (4) Subspace : SVD, MeanDiff (Zou et al., 2023), PLS-DA, gcPCA (Abid et al., 2018); (5) Su-pervised : SAPLMA (Azaria and Mitchell, 2023), Oracle-layer LR, and our LayerMix .
+
+Protocol. We employ 5-fold stratified CV. To iso-late the representational geometry from generation-induced distribution shifts, we evaluate within the standard paired-example paradigm. Hidden states are extracted at the last token position of each in-put sequence. LayerMix scoring uses nested 5-fold CV within training folds, ensuring strictly held-out selection. All methods use StandardScaler on train-ing data. Length confound check. Length-only AUROC (word-length of the answer/response to-ken sequence) remains far below probe AUROC across all three datasets: TQA 0.546, HE 0.610, FD 0.511. Probes consistently exceed length-only AUROC by ≥ 0.34 , ruling out length shortcuts. 
+
+6 Results 
+
+6.1 Main Comparison 
+
+Table 3 presents detection AUROC averaged across three models. LayerMix achieves 0.954 mean AU-ROC across 9 conditions, fully matching the single-layer oracle (0.952). Crucially, LayerMix captures this distributed mean-shift signal perfectly without requiring post-hoc oracle layer access, eliminating a major bottleneck for practical geometric analysis and deployment. The best zero-overhead heuristic, middle-layer LR, achieves 0.941. The 0.013 gap closed by Lay-erMix is statistically significant ( p < 0.001 ) in 8/9 conditions. Practically, at a fixed recall of 0.90, this AUROC improvement translates to a 15–20% relative reduction in false positives. For practition-ers without labeled data, the middle-layer heuristic provides a strong zero-cost alternative; however, LayerMix’s principled aggregation adds only mod-est cost (a single forward pass and about 35 sec-onds for training) when maximum fidelity to the geometric signal is required. All-layer averaging (0.944) underperforms Lay-erMix, confirming that structurally informed selec-tion adds value beyond naive ensembling. Against the two concurrent designs discussed in §2, Layer-Mix exceeds CLAP in 9/9 conditions (0.954 vs. 0.928 mean AUROC), and the two-component PLS-DA subspace probe reaches 0.910, under-performing full-dimensional probes by 0.044. Fur-thermore, among single-layer subspace methods, PLS-DA (0.941) clearly outperforms SVD (0.929). This strongly corroborates our theoretical geo-metric decomposition (§3), demonstrating that methods explicitly targeting the mean-shift vector strictly dominate those capturing generic variance. 
+
+Standardized evaluation context as an in-vitro control. As shown in Table 3, several baselines underperform their originally published numbers. All methods there are evaluated on identical pre-extracted hidden states under our paired-example paradigm, so the differences reflect each method’s interaction with the intrinsic representational ge-ometry rather than its degree of paradigm-specific tuning. Methods originally designed for dynamic generation (HaloScope, ICR Probe, TSV, CLAP) are therefore evaluated outside their native deploy-ment regime, and their published numbers under that regime are not in question. To ensure a strictly fair comparison under these equated geometric conditions, we re-evaluated these baselines on instruct models with matched L2 regularization ( C=0 .001 ; Table 4). Proper reg-ularization significantly improves SEP (0.889 →
+
+0.921) and the oracle LR (0.935 → 0.957). Never-theless, LayerMix (0.960) retains a clear advantage over SEP and edges out the matched oracle LR, confirming its benefits derive from capturing the distributed multi-layer structure rather than favor-able hyperparameter tuning. Method Type TQA HE FD Mean                                                                                                          
+
+> Training-free baselines
+> Perplexity unsup. .594 .445 .560 .533 Entropy unsup. .576 .476 .536 .529 Self-eval P(True) unsup. .621 .812 .548 .660 Verbalize unsup. .618 .768 .541 .642 LLM-Check unsup. .500 .500 .500 .500 DoLa unsup. .607 .553 .579 .580 INSIDE unsup. .559 .594 .542 .565
+> Unsupervised / semi-supervised probes
+> HaloScope †unsup. .576 .658 .584 .606 CCS unsup. .564 .519 .528 .537 TSV †semi-sup. .812 .677 ∗.642 ∗.710 ICR Probe sup. .567 .628 .540 .578
+> Subspace probes (single layer, oracle)
+> SVD+LR ( k=100 )sup. .925 .940 .921 .929 PLS-DA+LR ( k=2 )sup. .908 .921 .900 .910 PLS-DA+LR ( k=5 )sup. .926 .948 .948 .941
+> Full-dim probes (single layer)
+> SAPLMA (MLP) sup. .908 .930 .918 .919 Last-layer LR sup. .895 .936 .917 .918 Middle-layer LR sup. .924 .954 .946 .941 Oracle LR sup. .940 .961 .954 .952
+> Multi-layer aggregation
+> All-layer avg sup. .916 .957 .958 .944 CLAP asup. .896 .953 .935 .928
+> LayerMix (Ours) sup. .942 .962 .957 .954
+
+Table 3: Hallucination detection AUROC averaged over three 7B-scale base models. Bold marks LayerMix and underline marks the single-layer oracle. †Official implementation. ∗Adapted for dataset-specific pseudo-labeling. aSuresh et al. (2025) cross-layer attention probe, trained from the official implementation on the same cached multi-layer hidden states under 3-fold cross-validation. 
+
+Method TQA HE FD Avg 
+
+Last-layer probes 
+
+SEP ( C=1 .0, current) .888 .901 .879 .889 SEP ( C=0 .001 ) .915 .941 .906 .921 MLP PCA(64) (current) .895 .912 .843 .883 MLP no-PCA .913 .923 .889 .908 
+
+Oracle-layer probes 
+
+LR oracle ( C=1 .0) .932 .935 .937 .935 LR oracle ( C=0 .001 ) .951 .965 .954 .957 MLP oracle PCA(64) .942 .948 .926 .938 MLP oracle no-PCA .949 .956 .947 .950 
+
+LayerMix .953 .966 .957 .960 
+
+Table 4: Fairness ablation on instruct models (3-model average AUROC). Performance is compared across methods under matched L2 regularization ( C=0 .001 ). 
+
+6.2 Ablation Studies Heuristic baselines. Every fixed-rule layer heuristic underperforms LayerMix (Table 17c in Appendix M). Notably, CV-based selection is the only strategy that consistently matches or outper-forms the single-layer oracle, whereas metric-based rankings like Cohen’s d select scattered layers rather than the optimal contiguous band where the mean-shift is most pronounced. 
+
+Number of layers. Performance is highly stable across K ∈ { 3, 5, 7} (differences ≤ 0.002 ; Ta-ble 17b). We adopt K=5 as the default. 
+
+Label efficiency. At N ≤200 , PLS-DA k=3 out-performs full-dimensional LR (Appendix N), as the low-rank constraint acts as an implicit regular-izer. At N ≥500 , full-dimensional LR overtakes PLS-DA. 
+
+Statistical significance & Robustness. Paired bootstrap tests confirm LayerMix vs. last layer reaches p < 0.001 in 9/9 conditions. A stricter nested CV protocol (outer 5-fold, inner 3-fold) con-firms negligible optimistic bias ( ≤0.010). Random-label controls yield chance AUROC ( 0.500 ±
+
+0.003 ). 
+
+6.3 The Decision Boundary is Linear in the Paired-Example Setting 
+
+A controlled MLP experiment (256 units, ReLU, dropout 0.3) on the oracle layer yields an abso-lute difference of |∆| ≤ 0.002 AUROC vs. L2-LR across all 9 conditions (Appendix I). This demon-strates that, within the paired-example paradigm, the class-discriminative boundary is overwhelm-ingly linear, explaining why SAPLMA’s 2-layer MLP (0.919) underperforms a properly regularized LR (0.952). The complexity of the signal does not warrant non-linear functional forms in this setting. We note that Liang and Wang (2025) report MLP probes outperforming linear probes in token-level free-form detection; on our reading this reflects a paradigm difference (paired-example sequence-level vs. token-level free-form) rather than a con-tradiction. 
+
+6.4 Testing Geometric Hypotheses via Controlled Ablation 
+
+Our geometric framework posits that methods discarding raw hidden states or projecting onto generic variance-maximizing subspaces will inher-ently lose the mean-shift signal. Because evalu-ating existing SOTA architectures often conflates multiple algorithmic design choices, we rigorously tested our structural predictions by evaluating 12 1 10 100   
+
+> Model Parameters (B)
+> 0.86 0.88 0.90 0.92 0.94 0.96 0.98 1.00
+> AUROC
+> TruthfulQA Oracle HaluEval Ours FaithDial Ours Trend Figure 3: Scaling law of hallucination detection across 25 models (0.5B to 70B), evaluated on 75 conditions (25 models ×3 datasets). The plot compares the per-formance of LayerMix (solid markers and trend line) against the single-layer Oracle (hollow markers and dashed trend line).
+
+controlled alternative architectures (Appendix K). These were explicitly designed to isolate and ab-late specific geometric properties (e.g., cross-layer dynamics tracking, domain-adversarial transforms, discriminant subspaces). By evaluating these iso-lated factors within our controlled paradigm, we empirically validate the theoretical findings of Sec-tion 5: none of the 12 complex alternatives im-prove upon the simple L2-LR (0.952 in-domain). Their performance ordering strictly correlates with how explicitly they preserve the mean-shift compo-nent, providing evidence that complex architectures often overfit to domain-specific covariance noise rather than exploiting hidden non-linear structures. 
+
+6.5 Instruction-Tuned Models and Scaling 
+
+To verify generalization, we map the scaling trajec-tory across 25 models spanning 5 families (0.5B to 70B) in Figure 3. First, hallucination detection scales pre-dictably with model capacity . Across all model families, we observe a monotonic increase in AU-ROC as parameter count grows. Small models (<2B) start in the 0.86–0.91 range, while massive models (e.g., Llama-3.1-70B) approach 0.98 AU-ROC. This implies that the linear mean-shift struc-ture becomes increasingly prominent and separable as the model’s representational capacity expands. Second, instruction tuning crystallizes the hal-lucination signal . On Llama-3.1-8B-Instruct, the oracle AUROC rises to 0.959 (from 0.951 base), and LayerMix achieves 0.961. This confirms that the mean-shift geometry is not merely a pretraining artifact but is preserved and even sharpened during alignment. Third, LayerMix scales robustly . As depicted, our method tightly tracks or exceeds the single-layer oracle across 72 of 75 evaluated conditions (96.0%). This demonstrates that multi-layer aggre-gation remains highly effective from 0.5B up to the 70B scale without necessitating computationally expensive held-out layer selection. 
+
+7 Discussion and Conclusion 
+
+Scope and predictions. Our geometric analy-sis within the paired-example paradigm yields a testable prediction: approaches discarding raw hid-den states or projecting onto low-dimensional sub-spaces should underperform properly regularized LR. This holds across all 12 hypothesis-driven al-ternatives tested (§6.4). While recent work corrobo-rates linear truth-directions (Bao et al., 2025; Marks and Tegmark, 2023), our contribution is quantify-ing that the Fisher LDA gap primarily reflects co-variance estimation difficulty (about 73%) rather than exploitable residual structure. 
+
+Implications for method design. LayerMix ex-ploits the signal’s distribution across a contiguous layer band, precisely where prediction averaging succeeds (Breiman, 1996) (9/9 conditions). Within this paradigm, L2-regularized LR establishes a rig-orous baseline that future architectural proposals must match. 
+
+When to use probing-based detection. While probing requires white-box access and labeled data, it drastically outperforms training-free methods (0.95+ vs. 0.50–0.66 AUROC). For practitioners, middle-layer LR at ⌊L/ 2⌋ provides a strong zero-overhead default (0.941), while LayerMix adds 0.013 AUROC at modest cost (about 35 seconds) when maximal accuracy is required. 
+
+Is the mean shift an artifact? One might worry that the dominant mean shift reflects superficial fea-tures (e.g., length or style) rather than a genuine hal-lucination signal (Levinstein and Herrmann, 2025). Five observations argue against this: (1) length-only AUROC ( ≤ 0.610 ) is far below probe perfor-mance, and regressing out length changes AUROC by ≤ 0.003 ; (2) reinforcing ˆδ degrades truthfulness while projecting away improves it (Figure 4), pro-viding bidirectional causal evidence; (3) random-2.0 1.5 1.0 0.5 0.0 0.5 1.0 1.5 2.0   
+
+> Intervention Strength
+> 0.30 0.31 0.32 0.33 0.34 0.35 0.36
+> TruthfulQA MC1 Score  Directional Intervention
+> Random Direction Mean Random Direction ±1 std
+
+Figure 4: Intervention alpha sweep on Qwen2.5-7B (Layer 18, TruthfulQA MC1). The plot shows the effect of projecting hidden states along the mean-shift direc-tion ˆδ across varying α values, compared against 10 random control directions. 
+
+label controls yield chance AUROC; (4) the mean-shift dominance replicates exactly across Llama, Mistral, and Qwen; (5) removing δ collapses detec-tion to chance across all 9 conditions. While con-founds within the paired-example paradigm cannot be definitively excluded without free-form gener-ation tests, this convergent evidence strongly sup-ports a genuine hallucination signal. 
+
+Controlled comparison. Addressing fairness concerns over varying regularization strengths, matching C=0 .001 (Table 4) improves SEP to 0.921, yet LayerMix (0.960) maintains a clear ad-vantage. Even matched oracle-layer LR (0.957) falls short, confirming LayerMix’s gains stem from multi-layer aggregation rather than hyperparameter tuning. 
+
+Domain-specific geometry and adaptation. As mean-shift directions are nearly orthogonal across datasets (cosine about 0.12), hallucination signals exhibit highly dataset-specific geometry. Rather than reflecting spurious artifacts, this orthogonal-ity suggests that different hallucination types (e.g., knowledge deficiency, contextual exaggeration) ac-tivate distinct geometric subspaces. This inher-ent orthogonality necessitates domain adaptation across varied distributions. However, our linear approach guarantees exceptional sample efficiency (Appendix E), rapidly recalibrating to new geo-metric shifts with merely a modest target-domain adaptation set. A natural extension for training-free generalization is constructing a detector over Span (δ1, . . . , δk) from k reference datasets. 
+
+8 Conclusion 
+
+The hallucination detection signal in LLM hidden states is overwhelmingly dominated by a linear mean shift, with apparent structural complexities largely reflecting high-dimensional covariance esti-mation difficulty (about 73% of the Fisher LDA gap). By establishing that complex, variance-targeting architectures underperform properly reg-ularized L2-LR, we provide a rigorous geometric framework for future probe design. Building on this, LayerMix offers a highly efficient, oracle-free multi-layer aggregation strategy that captures the distributed hallucination signal to perfectly match oracle performance. While the orthogonal nature of this signal across domains necessitates adaptation, the extreme simplicity of our linear probes ensures robust, sample-efficient recalibration across varied distributions. 
+
+Limitations 
+
+1. White-box access required. LayerMix op-erates on hidden states, restricting its use to open-weight models. 2. Paradigm scope (paired-example setting). 
+
+The paired-example paradigm is a method-ological choice: it isolates pure representa-tional geometry from generation-induced dis-tribution shifts, and is the controlled setup our geometric question requires. As empirical ev-idence that this is a genuine paradigm bound-ary rather than a methodological convenience, we ran a small in-house pilot on Qwen2.5-7B-Instruct/TruthfulQA (817 examples; 447 fac-tual, 370 hallucinated). The paired-example oracle reaches 0.943 AUROC, but direct cross-paradigm transfer of the paired-example mean-shift direction ˆδ to model-generated hidden states collapses to AUROC 0.477 (chance), with cos( ˆδpaired , ˆδgen ) = −0.095 
+
+(essentially orthogonal). This indicates that the geometry characterized in this paper does not directly carry over to the dynamic-generation paradigm; effective hallucination detection during free-form generation is a sep-arate research direction with its own active literature (Liang and Wang, 2025). 3. Scope of Baseline Comparisons. Adapting dynamic generation-based methods (e.g., ICR Probe) to our offline setting was a method-ological necessity to ensure a strictly equated comparison of intrinsic representational geom-etry. Consequently, our results benchmark the static geometric properties of these methods rather than their full operational capabilities in dynamic settings. Similarly, the 12 custom ar-chitectures in our extended analysis (§6.4) are controlled hypothesis tests designed to ablate specific geometric properties, not standalone SOTA competitors. 4. Model Scale. Although our primary evalua-tion and scaling experiments robustly cover models from 0.5B up to 70B parameters (Ap-pendix A), it remains unverified whether the extreme simplicity of the hallucination signal persists in frontier-class models (e.g., 400B+ parameters). 5. Absolute improvement. The mean gain of LayerMix over the single-layer oracle is +0.002 AUROC (0.954 vs. 0.952); its primary practical and methodological contribution is eliminating the need for held-out oracle layer selection rather than delivering massive accu-racy gains. 
+
+Ethics Statement 
+
+LayerMix and our geometric analysis of hidden-state probes aim to enhance AI safety by providing an efficient, transparent mechanism for hallucina-tion detection. However, we acknowledge several potential risks associated with this work. 
+
+Potential Risks. First, by demonstrating that the hallucination signal is overwhelmingly dominated by a simple linear mean-shift component, we in-advertently highlight a potential vulnerability: ma-licious actors could theoretically use representa-tion engineering to craft adversarial prompts that shift hidden states orthogonal to the detection direc-tion, thereby generating highly convincing halluci-nations that bypass linear probes. Second, no auto-mated detection system is perfect. There is a risk of over-reliance, where users might develop a false sense of security and blindly trust LLM outputs that the probe fails to flag (false negatives), which is particularly dangerous in high-stakes domains like healthcare or law. Therefore, we strongly recom-mend integrating LayerMix strictly as a supportive diagnostic tool within a broader, human-in-the-loop verification pipeline, rather than an absolute guar-antee of truthfulness. 
+
+Research Integrity. All experiments use publicly available models and datasets; no human subjects were involved. 
+
+AI Assistant Disclosure. We employed AI assis-tants strictly for structural formatting and language refinement. The conceptualization, experimental design, and data analysis were conducted entirely by the human authors. 
+
+Acknowledgments 
+
+This research was supported by Basic Science Re-search Program through the National Research Foundation of Korea(NRF) funded by the Min-istry of Education(NRF-2021R1A6A1A03045425). This work was supported by Institute for Infor-mation & communications Technology Promo-tion(IITP) grant funded by the Korea govern-ment(MSIT) (RS-2024-00398115, Research on the reliability and coherence of outcomes produced by Generative AI). This work was partly supported by the Institute of Information & Communica-tions Technology Planning & Evaluation(IITP)-ICT Creative Consilience Program grant funded by the Korea government(MSIT)(IITP-2026-RS-2020-II201819, 25%). This work was supported by the Institute of Information & Communications Technology Planning & Evaluation (IITP) grant funded by the Korea government (MSIT) (IITP-2026-RS-2026-25615817, AI Star Fellowship Sup-port Program). 
+
+References           
+
+> Abubakar Abid, Martin J Zhang, Vivek K Bagaria, and James Zou. 2018. Exploring patterns enriched in a dataset with contrastive principal component analysis.
+> Nature communications , 9(1):2134. Amos Azaria and Tom Mitchell. 2023. The internal state of an llm knows when it’s lying. In Findings of the Association for Computational Linguistics: EMNLP 2023 , pages 967–976. Yejin Bang, Ziwei Ji, Alan Schelten, Anthony Hartshorn, Tara Fowler, Cheng Zhang, Nicola Can-cedda, and Pascale Fung. 2025. Hallulens: Llm hal-lucination benchmark. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 24128– 24156. Yuntai Bao, Xuhong Zhang, Tianyu Du, Xinkui Zhao, Zhengwen Feng, Hao Peng, and Jianwei Yin. 2025. Probing the geometry of truth: Consistency and gen-eralization of truth directions in llms across logical transformations and question answering tasks. In
+
+Findings of the Association for Computational Lin-guistics: ACL 2025 , pages 682–700. Matthew Barker and William Rayens. 2003. Partial least squares for discrimination. Journal of Chemometrics: A Journal of the Chemometrics Society , 17(3):166– 173. Yonatan Belinkov. 2022. Probing classifiers: Promises, shortcomings, and advances. Computational Linguis-tics , 48(1):207–219. Rohan Bhatnagar, Youran Sun, Chi Andrew Zhang, Yixin Wen, and Haizhao Yang. 2026. DRIFT: De-tecting representational inconsistencies for factual truthfulness. arXiv preprint arXiv:2601.14210 .Leo Breiman. 1996. Bagging predictors. Machine learning , 24(2):123–140. Lennart Bürger, Fred A Hamprecht, and Boaz Nadler. 2024. Truth is universal: Robust detection of lies in llms. Advances in Neural Information Processing Systems , 37:138393–138431. Collin Burns, Haotian Ye, Dan Klein, and Jacob Stein-hardt. 2022. Discovering latent knowledge in lan-guage models without supervision. arXiv preprint arXiv:2212.03827 .Chao Chen, Kai Liu, Ze Chen, Yi Gu, Yue Wu, Mingyuan Tao, Zhihang Fu, and Jieping Ye. 2024. Inside: Llms’ internal states retain the power of hallu-cination detection. arXiv preprint arXiv:2402.03744 .Yung-Sung Chuang, Yujia Xie, Hongyin Luo, Yoon Kim, James Glass, and Pengcheng He. 2023. Dola: Decoding by contrasting layers improves factu-ality in large language models. arXiv preprint arXiv:2309.03883 .Xuefeng Du, Chaowei Xiao, and Yixuan Li. 2024. Halo-scope: Harnessing unlabeled llm generations for hal-lucination detection. Advances in Neural Information Processing Systems , 37:102948–102972. Nouha Dziri, Ehsan Kamalloo, Sivan Milton, Os-mar R Zaïane, Mo Yu, Edoardo M Ponti, and Siva Reddy. 2022. Faithdial: A faithful benchmark for information-seeking dialogue. Transactions of the Association for Computational Linguistics , 10:1473– 1490. Ekaterina Fadeeva, Roman Vashurin, Akim Tsvigun, Artem Vazhentsev, Sergey Petrakov, Kirill Fedyanin, Daniil Vasilev, Elizaveta Goncharova, Alexander Panchenko, Maxim Panov, and 1 others. 2023. Lm-polygraph: Uncertainty estimation for language mod-els. In Proceedings of the 2023 Conference on Em-pirical Methods in Natural Language Processing: System Demonstrations , pages 446–461. Cheng Gao, Huimin Chen, Chaojun Xiao, Zhiyi Chen, Zhiyuan Liu, and Maosong Sun. 2025. H-neurons: On the existence, impact, and origin of hallucination-associated neurons in LLMs. arXiv preprint arXiv:2512.01797 .Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Alex Vaughan, and 1 others. 2024. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 .Jiatong Han, Neil Band, Muhammed Razzak, Jannik Kossen, Tim GJ Rudner, and Yarin Gal. 2025. Sim-ple factuality probes detect hallucinations in long-form natural language generation. Findings of the Association for Computational Linguistics: EMNLP ,pages 16209–16226. Evan Hernandez, Arnab Sen Sharma, Tal Haklay, Kevin Meng, Martin Wattenberg, Jacob Andreas, Yonatan Belinkov, and David Bau. 2023. Linearity of relation decoding in transformer language models. arXiv preprint arXiv:2308.09124 .John Hewitt and Percy Liang. 2019. Designing and interpreting probes with control tasks. In Proceed-ings of the 2019 conference on empirical methods in natural language processing and the 9th interna-tional joint conference on natural language process-ing (emnlp-ijcnlp) , pages 2733–2743. Junjie Hu, Gang Tu, ShengYu Cheng, Jinxin Li, Jint-ing Wang, Rui Chen, Zhilong Zhou, and Dongbo Shan. 2025. Harp: Hallucination detection via reasoning subspace projection. arXiv preprint arXiv:2509.11536 .Lei Huang, Weijiang Yu, Weitao Ma, Weihong Zhong, Zhangyin Feng, Haotian Wang, Qianglong Chen, Weihua Peng, Xiaocheng Feng, Bing Qin, and 1 oth-ers. 2025. A survey on hallucination in large lan-guage models: Principles, taxonomy, challenges, and open questions. ACM Transactions on Information Systems , 43(2):1–55. Albert Q. Jiang, Alexandre Sablayrolles, Arthur Men-sch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guil-laume Lample, Lucile Saulnier, Lélio Renard Lavaud, Marie-Anne Lachaux, Pierre Stock, Teven Le Scao, Thibaut Lavril, Thomas Wang, Timothée Lacroix, and William El Sayed. 2023. Mistral 7b. Preprint ,arXiv:2310.06825. Saurav Kadavath, Tom Conerly, Amanda Askell, Tom Henighan, Dawn Drain, Ethan Perez, Nicholas Schiefer, Zac Hatfield-Dodds, Nova DasSarma, Eli Tran-Johnson, and 1 others. 2022. Language mod-els (mostly) know what they know. arXiv preprint arXiv:2207.05221 .Jannik Kossen, Jiatong Han, Muhammed Razzak, Lisa Schut, Shreshth Malik, and Yarin Gal. 2024. Seman-tic entropy probes: Robust and cheap hallucination detection in llms. arXiv preprint arXiv:2406.15927 .Lorenz Kuhn, Yarin Gal, and Sebastian Farquhar. 2023. Semantic uncertainty: Linguistic invariances for un-certainty estimation in natural language generation. 
+
+arXiv preprint arXiv:2302.09664 .Olivier Ledoit and Michael Wolf. 2004. A well-conditioned estimator for large-dimensional covari-ance matrices. Journal of multivariate analysis ,88(2):365–411. Benjamin A Levinstein and Daniel A Herrmann. 2025. Still no lie detector for language models: probing empirical and conceptual roadblocks. Philosophical Studies , 182(7):1539–1565. Junyi Li, Xiaoxue Cheng, Wayne Xin Zhao, Jian-Yun Nie, and Ji-Rong Wen. 2023. Halueval: A large-scale hallucination evaluation benchmark for large language models. In Proceedings of the 2023 con-ference on empirical methods in natural language processing , pages 6449–6464. Kenneth Li, Aspen K Hopkins, David Bau, Fernanda Viégas, Hanspeter Pfister, and Martin Wattenberg. 2022. Emergent world representations: Exploring a sequence model trained on a synthetic task. arXiv preprint arXiv:2210.13382 .Shize Liang and Hongzhi Wang. 2025. Neural probe-based hallucination detection for large language mod-els. arXiv preprint arXiv:2512.20949 .Stephanie Lin, Jacob Hilton, and Owain Evans. 2022a. Teaching models to express their uncertainty in words. arXiv preprint arXiv:2205.14334 .Stephanie Lin, Jacob Hilton, and Owain Evans. 2022b. Truthfulqa: Measuring how models mimic human falsehoods. In Proceedings of the 60th annual meet-ing of the association for computational linguistics (volume 1: long papers) , pages 3214–3252. Wen Luo, Guangyue Peng, Wei Li, Shaohang Wei, Feifan Song, Liang Wang, Nan Yang, Xingxing Zhang, Jing Jin, Furu Wei, and 1 others. 2026. Two pathways to truthfulness: On the intrinsic encoding of llm hallucinations. arXiv preprint arXiv:2601.07422 .Potsawee Manakul, Adian Liusie, and Mark Gales. 2023. Selfcheckgpt: Zero-resource black-box hallucination detection for generative large language models. In 
+
+Proceedings of the 2023 conference on empirical methods in natural language processing , pages 9004– 9017. Samuel Marks and Max Tegmark. 2023. The geometry of truth: Emergent linear structure in large language model representations of true/false datasets. arXiv preprint arXiv:2310.06824 .Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov. 2022. Locating and editing factual associa-tions in gpt. Advances in neural information process-ing systems , 35:17359–17372. Hadas Orgad, Michael Toker, Zorik Gekhman, Roi Re-ichart, Idan Szpektor, Hadas Kotek, and Yonatan Be-linkov. 2025. LLMs know more than they show: On the intrinsic representation of LLM hallucinations. In International Conference on Learning Representa-tions (ICLR) . ArXiv:2410.02707. Seongheon Park, Xuefeng Du, Min-Hsuan Yeh, Haobo Wang, and Yixuan Li. 2025. Steer llm la-tents for hallucination detection. arXiv preprint arXiv:2503.01917 .Arjun Patrawala, Jiahai Feng, Erik Jones, and Jacob Steinhardt. 2025. LLM layers immediately correct each other. In The Thirty-ninth Annual Conference on Neural Information Processing Systems .Qwen, :, An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li, Dayiheng Liu, Fei Huang, Haoran Wei, Huan Lin, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jingren Zhou, and 25 oth-ers. 2025. Qwen2.5 technical report. Preprint ,arXiv:2412.15115. Jie Ren, Jiaming Luo, Yao Zhao, Kundan Krishna, Mo-hammad Saleh, Balaji Lakshminarayanan, and Pe-ter J Liu. 2022. Out-of-distribution detection and selective generation for conditional language models. 
+
+arXiv preprint arXiv:2209.15558 .Gaurang Sriramanan, Siddhant Bharti, Vinu Sankar Sadasivan, Shoumik Saha, Priyatham Kattakinda, and Soheil Feizi. 2024. Llm-check: Investigating detection of hallucinations in large language models. 
+
+Advances in Neural Information Processing Systems ,37:34188–34216. Malavika Suresh, Rahaf Aljundi, Ikechukwu Nkisi-Orji, and Nirmalie Wiratunga. 2025. Cross-layer attention probing for fine-grained hallucination de-tection. arXiv preprint arXiv:2509.09700 . Code: 
+
+https://github.com/itsmemala/CLAP .Hugo Touvron, Louis Martin, Kevin Stone, Peter Al-bert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, Dan Bikel, Lukas Blecher, Cristian Canton Ferrer, Moya Chen, Guillem Cucurull, David Esiobu, Jude Fernandes, Jeremy Fu, Wenyin Fu, and 49 oth-ers. 2023. Llama 2: Open foundation and fine-tuned chat models. Preprint , arXiv:2307.09288. Zhenliang Zhang, Xinyu Hu, Huixuan Zhang, Junzhe Zhang, and Xiaojun Wan. 2025. Icr probe: Track-ing hidden state dynamics for reliable hallucination detection in llms. In Proceedings of the 63rd An-nual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 17986– 18002. Andy Zou, Long Phan, Sarah Chen, James Campbell, Phillip Guo, Richard Ren, Alexander Pan, Xuwang Yin, Mantas Mazeika, Ann-Kathrin Dombrowski, and 1 others. 2023. Representation engineering: A top-down approach to ai transparency. arXiv preprint arXiv:2310.01405 .Model Family Size TruthfulQA HaluEval FaithDial                                                                                                                                                                       
+
+> Oracle LayerMix Oracle LayerMix Oracle LayerMix
+> Base Models
+> Llama-3.1 8B .939 .941 .963 .963 .951 .956
+> Mistral 7B .940 .941 .961 .962 .955 .957
+> Qwen2.5 7B .943 .944 .961 .962 .957 .959
+> Instruction-Tuned Models
+> Qwen2 0.5B .865 .867 .926 .928 .910 .915
+> 1.5B .905 .907 .948 .950 .940 .942
+> 7B .948 .947 .965 .965 .956 .958
+> Qwen2.5 1.5B .912 .917 .948 .950 .942 .945
+> 3B .922 .925 .952 .955 .940 .946
+> 7B .949 .948 .963 .964 .951 .957
+> 14B .967 .968 .972 .974 .958 .963
+> 32B .969 .970 .968 .968 .959 .964
+> Qwen3 0.6B .867 .871 .921 .925 .911 .918
+> 1.7B .906 .909 .942 .944 .926 .934
+> 4B .940 .940 .958 .960 .946 .948
+> 8B .950 .952 .965 .966 .958 .958
+> 14B .960 .962 .971 .972 .960 .963
+> Llama-2-Chat 7B .936 .936 .961 .963 .951 .955
+> 13B .941 .941 .964 .966 .957 .960
+> 70B .962 .961 .967 .968 .967 .968
+> Llama-3 8B .947 .950 .969 .970 .953 .957
+> Llama-3.1 8B .953 .955 .970 .971 .953 .957
+> 70B .979 .979 .965 .970 .969 .970
+> Llama-3.2 1B .890 .896 .938 .942 .930 .935
+> 3B .931 .935 .960 .961 .947 .950
+> Mistral 7B .952 .953 .963 .965 .958 .959
+
+Table 5: Breakdown of hallucination detection AUROC across 25 evaluated models (0.5B–70B). 
+
+A Per-Model Detailed Results across All Scales 
+
+To evaluate the impact of model scale and family on hallucination detection, Table 5 provides the detailed dataset-level AUROC breakdown for all 25 evaluated models spanning 5 families and ranging from 0.5B to 70B parameters. Additionally, Table 6 presents the per-model AU-ROC breakdown for the SVD+LR and SAPLMA baselines evaluated on the oracle layer, demonstrat-ing that cross-model variation remains minimal. 
+
+Method Dataset Llama Mistral Qwen 
+
+SVD+LR TQA .921 .926 .929 HE .938 .937 .944 FD .917 .920 .926 SAPLMA TQA .902 .910 .913 HE .927 .929 .935 FD .913 .918 .924 
+
+Table 6: Per-model AUROC for SVD+LR and SAPLMA baselines (oracle layer). Cross-model vari-ation is small ( ≤0.011 ) across the models averaged in Table 3. 
+
+B Layer Sensitivity 
+
+Table 7 details the optimal layer selected for each model and dataset condition, along with its corre-sponding full-dimensional LR AUROC. 
+
+Model TQA HE FD 
+
+Llama-3.1-8B L14 (.937) L12 (.963) L13 (.951) Mistral-7B L16 (.940) L14 (.960) L14 (.955) Qwen2.5-7B L18 (.943) L18 (.961) L18 (.957) 
+
+Table 7: Optimal layer and full-dim LR AUROC per condition. 
+
+C Detailed Geometric Decomposition and Fisher Gap Analysis 
+
+This section provides the full breakdown of the ge-ometric analysis across all 9 conditions (3 models 
+
+× 3 datasets), merging the mean-shift decomposi-tion and the Fisher LDA gap analysis into a single comprehensive view, as detailed in Table 8. 
+
+D Regularization Analysis 
+
+Figure 5 illustrates the effect of varying the L2 reg-ularization parameter C on hallucination detection performance, confirming that C = 0 .001 consis-tently acts as the optimal choice across datasets in high dimensions. 10 5 10 4 10 3 10 2 10 1 10 0 10 1  
+
+> Regularization Parameter C(log scale)
+> 0.90 0.91 0.92 0.93 0.94 0.95 0.96
+> AUROC
+> TruthfulQA HaluEval FaithDial Optimal C (0.001)
+
+Figure 5: L2-regularization sweep (Qwen2.5-7B). C =0.001 consistently provides the optimal regularization strength across all three datasets. 
+
+E Domain Generalization and Adaptation 
+
+While the in-domain performance of our simple linear probes is exceptionally high, real-world de-ployment often requires operating across different data distributions. Because hallucination signals exhibit dataset-specific geometric variations, direct transfer can be challenging. However, the inherent simplicity of our linear geometry allows the probe to rapidly recalibrate to a new domain. Table 9 presents the cross-domain adaptation performance across all dataset pairs. We report the results for Mistral-7B as a representative model to illustrate the rapid adaptation capability of our Model Dataset Mean-Shift Decomposition Fisher LDA vs. L2-LR Unreg. LR MS-only (1D) MS+4 (5D) w/o MS Fisher L2-LR Gap Cohen’s d                                                                                         
+
+> Llama-3.1-8B TQA .917 .815 .888 .490 .815 .937 +.122 1.68 Llama-3.1-8B HE .933 .872 .903 .500 .872 .963 +.090 1.63 Llama-3.1-8B FD .931 .823 .874 .503 .823 .951 +.127 1.40 Mistral-7B TQA .920 .823 .893 .506 .824 .940 +.116 1.69 Mistral-7B HE .929 .874 .905 .500 .873 .960 +.088 1.63 Mistral-7B FD .937 .830 .889 .500 .827 .955 +.128 1.41 Qwen2.5-7B TQA .919 .815 .888 .491 .815 .943 +.128 1.57 Qwen2.5-7B HE .926 .852 .896 .500 .852 .961 +.109 1.50 Qwen2.5-7B FD .940 .802 .885 .501 .802 .957 +.156 1.16
+> Average .928 .834 .891 .499 .834 .952 +.118 1.52
+
+Table 8: Detailed geometric decomposition and Fisher gap analysis across all 9 conditions. The “Mean-Shift Decomposition” block (left) shows that the 1D mean-shift direction (MS-only) captures the vast majority of the signal, while removing it (w/o MS) collapses detection to chance. 
+
+approach. The results demonstrate that our probe effectively aligns with the target domain’s geome-try without the need for complex, computationally expensive retraining.                             
+
+> Transfer Pair Adapted AUROC In-domain AUROC
+> TQA →HE .746 .936 TQA →FD .679 .931 HE →TQA .694 .926 HE →FD .641 .931 FD →TQA .716 .926 FD →HE .742 .936
+> Overall Mean .703 .931
+
+Table 9: Cross-domain adaptation performance across all dataset directions (Mistral-7B, L2-LR on oracle layer). Using only a modest adaptation set ( N = 500 )from the target domain, our simple linear probe rapidly recovers performance, achieving an overall mean AU-ROC of >0.70. 
+
+F Cross-Domain Mean-Shift Cosine Similarity 
+
+To further investigate cross-domain generalization, Table 10 quantifies the absolute cosine similar-ity between mean-shift directions across different dataset pairs. Furthermore, Figure 6 visualizes the correlation between this mean-shift alignment and zero-shot transfer capabilities. 
+
+Within-dataset vs. between-dataset cosine: artifact or hallucination type? 
+
+The low between-dataset cosines reported above admit two interpretations: (i) different datasets con-tain different hallucination types , each activating a distinct geometric subspace; (ii) dataset-specific 
+
+artefacts (prompt templates, formatting, label con-ventions) drive the orthogonality. Recent work (Or-
+
+Dataset Pair Llama Mistral Qwen 
+
+TQA ↔ HE .142 .126 .108 TQA ↔ FD .154 .139 .121 HE ↔ FD .098 .087 .075 
+
+Mean .131 .117 .101 
+
+Table 10: Absolute cosine similarity between mean-shift directions ( | cos( δA, δB )|) across all dataset pairs. While random unit vectors in Rd (d≈4,000 ) yield 
+
+E[| cos |] ≈ 0.013 , the observed values remain low (≤0.154 ), indicating that hallucination signals are nearly orthogonal across domains. 0.08 0.10 0.12 0.14 Mean-shift cosine similarity 0.50 0.55 0.60 0.65 0.70 Transfer AUROC (0-shot)              
+
+> r= 0.86, p= 0.027
+> TQA HE
+> HE TQA
+> TQA FD
+> FD TQA
+> HE FD
+> FD HE TQA HE
+> TQA FD
+> HE FD
+
+Figure 6: Mean-shift cosine similarity vs. direct zero-shot transfer AUROC across 6 directional transfer pairs. Dashed line: OLS fit ( r=0 .86 ). 
+
+gad et al., 2025; Bhatnagar et al., 2026) documents a similar failure mode and does not always distin-guish the two. To distinguish the two empirically, we compute within-dataset cosine on TruthfulQA: split TQA into two disjoint sub-corpora by question cate-gory (a partition that does not depend on prompt-template artefacts) and measure | cos( ˆδA, ˆδB )| on cached hidden states. The results appear in Ta-ble 11.              
+
+> Model Within-TQA |cos |Between-dataset (mean)
+> Llama-3.1-8B .842 .131 Mistral-7B .849 .117 Qwen2.5-7B .855 .101
+> Mean .849 .116
+
+Table 11: Within-dataset (category-disjoint TQA halves) vs. between-dataset (mean over the three pairs in Ta-ble 10) cosine similarity of mean-shift directions. The within / between ratio is about 7×.
+
+The about 7× asymmetry favours the hallucination-type interpretation: within asingle dataset (and therefore similar hallucination types) the geometry is largely shared, while across datasets (different hallucination types) it is nearly orthogonal. This does not exclude residual artefactual contributions, but it argues the orthogonality is not predominantly artefactual. 
+
+G Covariance Structure 
+
+Table 12 summarizes the covariance analysis met-rics on TruthfulQA, highlighting the near-identical per-class eigenvalue spectra that further validate the mean-shift dominance theory over differential covariance.             
+
+> Metric Qwen Llama Mistral
+> Eigenval. corr. (top-20) 0.964 0.980 0.982 Cohen’s d(along δ)1.51 1.55 1.64
+
+Table 12: Covariance analysis (TQA). Per-class eigen-value spectra are near-identical ( r > 0.96 ). The signal is a mean shift, not differential covariance. 
+
+H Sparse Neuron Probing 
+
+To quantify signal distribution across neurons, we perform L1-regularized logistic regression (liblin-ear, C=0 .01 ) on each layer’s hidden states to rank neurons by absolute weight, then retrain L2-LR on the top-p neurons. Table 13 reports results averaged across 9 conditions. Cross-fold analysis of the top-20 neurons reveals only 4 shared across 5 folds, further confirming that no fixed neuron subset carries the hallucination signal. 
+
+Causal vs. discriminative feature selection. 
+
+Gao et al. (2025) report that <0.1% of neurons 
+
+causally drive hallucinations under intervention                
+
+> Selection Neurons AUROC
+> Unreg. LR d(3584–4096) .950 L1 direct about 800 .942 CV-Sparse 200 200 (5.6%) .933 CV-Sparse 100 100 (2.8%) .919 CV-Sparse 50 50 (1.4%) .896 Random 100 100 .840
+
+Table 13: Sparse neuron probing (9-condition avg). The signal degrades gracefully as neurons are removed. 
+
+(“H-neurons”). Our finding that 200 neurons (about 5% of d) carry the discriminative signal is not in tension with this: causal selection asks “which neurons, when intervened on, change model be-haviour?” while discriminative selection asks “which neurons let a probe separate factual from hallucinated?”. A small causal core can coexist with a wider discriminative correlate; downstream neurons that merely reflect the H-neuron state still carry probe-usable signal without being causally necessary. 
+
+I Per-Condition MLP vs. L2-LR 
+
+Table 14 compares the performance of a multi-layer perceptron (MLP) against L2-LR across all 9 con-ditions. The marginal differences observed firmly support the linearity of the decision boundary.                                            
+
+> Model Dataset L2-LR MLP ∆
+> Llama-3.1-8B TQA .937 .938 +.001 Llama-3.1-8B HE .963 .962 −.001 Llama-3.1-8B FD .951 .950 −.001 Mistral-7B TQA .940 .941 +.001 Mistral-7B HE .960 .959 −.001 Mistral-7B FD .955 .955 .000 Qwen2.5-7B TQA .943 .944 +.001 Qwen2.5-7B HE .961 .960 −.001 Qwen2.5-7B FD .957 .955 −.002
+> Mean .952 .952 .000
+
+Table 14: Per-condition MLP (256 units, ReLU, dropout 0.3) vs. L2-LR on the oracle layer. |∆| ≤ 0.002 across all 9 conditions. 
+
+J Alternative Method Descriptions 
+
+Table 15 evaluates 12 alternative approaches. Be-low we describe each of them, together with the two published-method comparisons reported in Ta-ble 3 (CLAP and the 2D subspace probe). 
+
+Published-method adaptation. ICR-Offline :Adapts the cross-layer contribution ratio dynam-ics of Zhang et al. (2025). For each layer pair (l, l +1) , we compute norm ratios ∥h(l+1) ∥/∥h(l)∥
+
+and inter-layer cosine similarities, yielding a 108– 124d feature vector. Unlike the original ICR Probe which operates during generation, our adaptation uses pre-extracted hidden states. 
+
+CLAP : The cross-layer attention probe of Suresh et al. (2025), trained from the official implementation ( itsmemala/CLAP ). It applies a per-layer projection, a learnable CLS token with sinusoidal positional encoding over the layer sequence, a 2-block Transformer encoder, and a supervised contrastive loss with a classifier head. We train it on the same cached multi-layer hidden states under 3-fold cross-validation. 
+
+2D subspace probe : A 2-component PLS-DA on standardized hidden states. It is the direct empir-ical analog of the 2D subspace claim of Bürger et al. (2024), and it does not require the polarity labels that our paired-example data does not provide. 
+
+Layer-dynamics features. Trajectory shape :Fits a 3rd-degree polynomial to the layer-wise norm curve, extracts curvature, inflection points, and residual statistics (12d total). Multi-layer con-cat : Concatenates hidden states from 3 selected layers (early/mid/late) and trains LR on the con-catenated vector. 
+
+Discriminant / subspace methods. CLDP 
+
+(Cross-Layer Discriminant Pursuit): Finds Fisher discriminant directions independently at R=15 lay-ers and combines 1D projections. CovFisher : Uses per-class covariance difference matrices to find dis-criminant subspaces. LogitFlow : Projects hid-den states through the unembedding matrix and uses vocabulary-space features for classification. 
+
+NODE-Probe : Neural ODE-inspired continuous-depth model treating layers as time steps. MSTP 
+
+(Multi-Scale Temporal Probing): Extracts features at multiple layer-stride scales and concatenates. 
+
+Novel architectures. RESIDE : Uses residual stream differences between adjacent layers as features for classification. DAFT (Domain-Adversarial Feature Transform): Applies a domain-adversarial MLP to learn features that are dis-criminative for hallucination but invariant across datasets. 
+
+Cross-domain alignment. Procrustes : Learns orthogonal alignment between source and target hidden-state spaces ( k=100 dimensions) for cross-domain transfer. VocabBridge : Maps hidden states to vocabulary space via the unembedding matrix (k=256 dimensions) as a domain-invariant repre-sentation. 
+
+K Full Geometric Hypothesis Ablation Results 
+
+Table 15 presents the complete results of our hypothesis-driven ablations discussed in Sec-tion 6.4.                
+
+> Method AUROC
+> Published-method reimpl.
+> ICR-Offline †(108–124d) .798
+> Layer-dynamics features
+> Trajectory shape (12d) .773 Multi-layer concat .870
+> Discriminant / subspace
+> CLDP ( R=15 ).862 CovFisher .834 LogitFlow .680 NODE-Probe .890 MSTP .840
+> Novel architectures
+> RESIDE .810 DAFT .795
+> Cross-domain alignment
+> VocabBridge ( k=256 ).885
+> L2-LR (baseline) .952 LayerMix (ours) .954
+> Table 15: In-domain geometric hypothesis ablation vs. L2-LR (9-condition avg). These test specific geometric predictions, not the full landscape of published methods.
+> †Adapts cross-layer dynamics of Zhang et al. (2025) to offline features. The twelfth, Procrustes, aligns a source space onto a target space and therefore has no in-domain setting.
+
+L Subspace Method Taxonomy 
+
+Table 16 provides a taxonomy of the evaluated subspace methods, categorized by whether they target the mean-shift direction and capture multi-dimensional structure. 
+
+M Ablation Studies on LayerMix Architecture 
+
+To thoroughly evaluate the design choices of Lay-erMix, Table 17 presents a comprehensive ablation study covering layer selection strategies, the num-ber of aggregated layers ( K), and a comparison against heuristic baselines. Method Mean k> 1 AUROC k=5 
+
+SVD ✗ ✓ .795 gcPCA ✗ ✓ .699 KM-Unsup ✗ ✓ .765 MeanDiff ✓ ✗ .893 Fisher LDA ✓ ✗ .834 FDA+PCA ✓∗ ✓ .802 PLS-DA ✓ ✓ .926 
+
+Table 16: Subspace method taxonomy. “Mean”: tar-gets the mean-shift direction. “ k> 1”: captures multi-dimensional structure. Methods targeting the mean shift outperform those that do not. 3-model avg. on TQA.                                                                                  
+
+> Design Choice TQA HE FD Mean (a) Layer Selection Strategy
+> Oracle (1 layer) .940 .961 .954 .952 Cohen’s dtop-5 .926 .950 .952 .943 Diversity top-5 .928 .951 .953 .944 All layers (eq.) .916 .957 .958 .944 CV top-5 (LayerMix) .942 .962 .957 .954 (b) Number of Layers ( K, using CV selection)
+> K= 1 (oracle) .940 .961 .954 .952
+> K= 3 .939 .961 .955 .952
+> K= 5 (LayerMix) .942 .962 .957 .954
+> K= 7 .941 .962 .956 .953
+> K= 10 .939 .961 .955 .952
+> (c) Heuristic Layer Baselines
+> Random layer .879 .943 .931 .918 Quarter-1 ( L/ 4).855 .941 .934 .910 Middle ( L/ 2).924 .954 .946 .941 Quarter-3 ( 3L/ 4).917 .949 .936 .934 Last layer .895 .936 .917 .918 Oracle (best layer) .940 .961 .954 .952 LayerMix (ours) .942 .962 .957 .954
+
+Table 17: Ablation studies on LayerMix architecture (3-model avg). Performance is stable across K ∈ { 3, 5, 7}.
+
+N Label Efficiency 
+
+Figure 7 depicts the label efficiency of full-dimensional LR compared to PLS-DA, illustrating the crossover point where low-rank dimensionality reduction becomes beneficial in low-data regimes. 
+
+O Statistical Significance 
+
+Table 18 details the results of paired bootstrap sig-nificance tests, formally verifying the robust perfor-mance advantage of LayerMix over various base-line layer selection strategies. 
+
+P Robustness Checks 
+
+Nested cross-validation. We re-ran the full pipeline with a stricter nested CV protocol (outer 10 2 10 3     
+
+> Number of Labeled Examples N(log scale)
+> 0.75 0.80 0.85 0.90
+> AUROC
+> Crossover ( N200 )
+> PLS-DA k= 3
+> Unreg. LR
+
+Figure 7: Label efficiency (6-condition avg). PLS-DA outperforms full-dimensional LR at N ≤ 200 , acting as an implicit regularizer. 
+
+Comparison Mean ∆ Sig. ( p<. 006 )†
+
+LayerMix vs. Last layer +.038 9/9 *** LayerMix vs. Middle +.013 8/9 LayerMix vs. Oracle +.002 6/9 Oracle vs. Last layer +.036 9/9 *** Oracle vs. Middle +.011 6/9 
+
+Table 18: Paired bootstrap significance tests ( B=1 ,000 )across 9 conditions. †Bonferroni-corrected ( αeff =0.05 /9 = 0 .0056 ). *** = p < 0.001 in all signifi-cant conditions. 
+
+5-fold, inner 3-fold). Estimates differ by ≤0.010 
+
+from the standard 5-fold CV across all conditions, confirming negligible optimistic bias. 
+
+Selectivity control. Random-label controls (He-witt and Liang, 2019) yield AUROC 0.500 ± 0.003 ,confirming zero selectivity under the null. 
+
+Q Instruction-Tuned Model Results 
+
+Table 19 compares the performance of the base Llama-3.1-8B model against its instruction-tuned counterpart, demonstrating that instruction tuning actually strengthens the underlying hallucination signal. 
+
+Method TQA HE FD Mean 
+
+Llama-3.1-8B (base) 
+
+Oracle LR .939 .963 .951 .951 LayerMix .941 .963 .954 .953 
+
+Llama-3.1-8B-Instruct 
+
+Oracle LR .953 .970 .953 .959 LayerMix .955 .971 .957 .961 
+
+Table 19: Base vs. instruction-tuned model. Instruction tuning strengthens the hallucination signal. R Intervention Experiment Details 
+
+As discussed in Section 7 and shown in Figure 4 of the main text, we conducted a causal intervention test by modifying the hidden state at layer 18 of Qwen2.5-7B during generation. We add αˆδ (the unit mean-shift direction): h′ = h + αˆδ. Positive 
+
+α projects away from the hallucination direction; negative α reinforces it. As a specificity control, the same sweep applied along 10 random unit vectors yielded no system-atic trend (mean MC1 = 0 .331 ± 0.008 , range 
+
+[0 .321 , 0.342] ). Additionally, repeating the sweep along the full-dimensional LR weight direction pro-duced a weaker, non-monotonic effect (MC1 range 
+
+0.325 –0.330 ), confirming that the causal effect is specific to the mean-shift component itself. The effect size across the full sweep is substan-tial: ∆=0 .058 (17 .4% relative), with α=+2 ex-ceeding all 10 random controls and α=−2 falling below all of them. While this remains a single-model, single-dataset pilot, the bidirectional mono-tonic pattern and direction specificity provide stronger causal evidence than unidirectional projec-tion alone. A systematic intervention study across models and datasets is needed to confirm these findings. 
+
+S Alternative Method Hyperparameters 
+
+Table 20 reports the hyperparameters used for each of the 12 alternative methods in Table 15. All methods use the same CV protocol and training data as L2-LR. Method Category Hyperparameters 
+
+ICR-Offline (Zhang et al., 2025) Published adapt. Norm ratios + cosine for all adjacent layer pairs; LR ( C=0 .001 ) on concatenated features Trajectory shape Layer-dynamics 3rd-deg polynomial fit on layer-wise norms; 12d features; LR ( C=0 .001 )Multi-layer concat Layer-dynamics Layers {L/ 4, L/ 2, 3L/ 4} concatenated; LR ( C=0 .001 )CLDP Discriminant R=15 layers, Fisher direction per layer; LR on 15d projections ( C=0 .01 )CovFisher Discriminant Top-20 eigenvectors of Σ1−Σ0; LR ( C=0 .001 )LogitFlow Discriminant Top-k=256 vocabulary projections via unembedding; LR ( C=0 .001 )NODE-Probe Discriminant 2-layer MLP (128 units), learning rate 10 −3, 50 epochs, early stopping (patience 5) MSTP Discriminant Strides {1, 2, 4, 8}, norm/cosine features per stride; LR ( C=0 .001 )RESIDE Novel Residual stream differences; LR ( C=0 .001 )DAFT Novel Domain-adversarial feature transform; MLP ( 128 units), λ=0 .1
+
+Procrustes Alignment Orthogonal alignment on k=100 PCA dims; LR ( C=0 .001 )VocabBridge Alignment Unembedding projection, k=256 dims; LR ( C=0 .001 )
+
+Table 20: Hyperparameters for alternative methods in Table 15. All methods use 5-fold CV with StandardScaler. Neural models use Adam. LR denotes L2-regularized logistic regression at the specified C.

@@ -1,0 +1,267 @@
+Title: SpanCalib-VLM: Calibrated Hallucination Span Detection in Vision-Language Models
+
+URL Source: https://arxiv.org/pdf/2608.29974v1
+
+Published Time: Tue, 01 Sep 2026 01:37:46 GMT
+
+Number of Pages: 7
+
+Markdown Content:
+# SpanCalib-VLM: Calibrated Hallucination Span Detection in Vision-Language Models 
+
+Amanuel Gizachew Abebe 
+
+Shaggar Institute of Technology Shaggar City, Ethiopia 
+
+> amanuel.g.abebe1@gmail.com
+
+Yasmin Moslem 
+
+Trinity College Dublin Dublin, Ireland 
+
+> yasmin.moslem@adaptcentre.ie
+
+Abstract 
+
+Detecting hallucinations in Large Vision-Language Models (LVLMs) requires both accurate span localization and well-calibrated confidence scores. Fine-tuned generative VLMs excel at identifying hallu-cinated text spans but suffer from overcon-fidence and high inference latency. Dis-criminative sequence taggers offer deter-ministic speed and superior calibration but exhibit conservative span recall. We present SpanCalib-VLM , a hybrid dual-system for the SHROOM-Visions Shared Task that combines a multimodal sequence tagger, consisting of XLM-RoBERTa-Large 
+
+fused with a SigLIP vision encoder via cross-attention, with our fine-tuned gener-ative VLM ( Qwen3.5-4B-SHROOM-SFT ). Through a Union-Calibrated Fusion strat-egy, candidate spans from the generative model are re-scored with calibrated proba-bilities from the sequence tagger. On the SHROOM-Visions English evaluation split, our ensemble achieves a Pearson calibra-tion correlation of 0.413 and an overall IoU of 0.391 , with a clean-response IoU of 0.913 and overall detection accuracy of 
+
+70.7% . We make our model weights and code publicly available. 
+
+1 Introduction 
+
+Large Vision-Language Models (LVLMs) such as GPT-4V, Qwen-VL (Bai et al., 2023), and MiniCPM-V (Yao et al., 2024; Yu et al., 2025) have made remarkable progress in visual question answering and multimodal reasoning. However, they regularly produce visual halluci-nations : text that misdescribes scenes, invents objects, or mischaracterizes attributes (Li et al., 2023; Liu et al., 2024). The SHROOM-Visions shared task (Mickus et al., 2024; Vazquez et al., 2025) targets fine-grained hallucination detection, requiring sys-tems to (i) identify character-level span bound-aries of hallucinated segments and (ii) provide well-calibrated probability scores evaluated via Pearson correlation. Existing approaches fall into two paradigms. 
+
+Generative VLM fine-tuning trains autoregres-sive models to output structured span annota-tions; these achieve high span IoU but suffer from overconfidence and high latency (up to 23 s per sample with chain-of-thought). Dis-criminative sequence tagging applies token-level classifiers that run in a single forward pass with well-calibrated outputs, but produce conserva-tive span boundaries. SpanCalib-VLM bridges this gap through four contributions: 1. A multimodal sequence tagger combin-ing XLM-RoBERTa-Large with SigLIP-2 
+
+vision features via cross-attention, equipped with multi-task heads for span detection, probability calibration, and error categoriza-tion. 2. Union-Calibrated Fusion , an ensemble algorithm that uses generative VLM spans as candidate proposals and re-calibrates them with the tagger’s probability distri-bution. 3. Competitive results on SHROOM-Visions: 
+
+Pearson 0.413 , IoU 0.391 , and 91.3% 
+
+clean detection accuracy. 4. Public release of model weights, code, and evaluation artifacts. 1
+
+2 Related Work 
+
+Hallucination in VLMs. Benchmarks such as POPE (Li et al., 2023), CHAIR (Rohrbach et al., 2018), and MME (Fu et al., 2025) eval-uate hallucination at the sentence or object level. The SHROOM series (Mickus et al., 2024; Vazquez et al., 2025) raises the bar by requir-ing token-level span identification paired with probability calibration, a joint localization-and-uncertainty problem. 
+
+> 1https://github.com/Aman-byte1/ Hallucination-Detection-in-LVLMs arXiv:2608.29974v1 [cs.CV] 30 Aug 2026
+
+Calibration. Modern neural networks and pretrained language models exhibit severe mis-calibration and overconfidence, particularly un-der domain or distribution shift (Desai and Durrett, 2020; Ovadia et al., 2019; Guo et al., 2017; Kadavath et al., 2022). Standard post-hoc calibration methods like temperature scal-ing and Platt scaling adjust global logit tem-perature but fail to capture fine-grained, token-dependent span uncertainty. Rather than rely-ing on uncalibrated autoregressive generation probabilities, our approach equips the discrim-inative tagger with a dedicated MSE regres-sion head to directly supervise token-level con-fidence against continuous human consensus ratios. 
+
+3 Methodology 
+
+In this section we elaborate on our approach. Figure 1 illustrates the overall architecture of our SpanCalib-VLM system. 
+
+3.1 Task Formalization 
+
+Given an image I, prompt Tp, and LVLM response Tr of length L, the gold stan-dard provides character-level annotations G =
+
+{(si, e i, c i, p i)}Mi=1 where si, e i ∈ [0 , L ] are char-acter offsets, ci is a hallucination category, and 
+
+pi ∈ [0 , 1] is a target probability representing human annotator consensus confidence. Sys-tems must predict matching character-level span boundaries paired with well-calibrated continuous probability scores. 
+
+3.2 System 1: Multimodal Sequence Tagger Text encoder. We use XLM-RoBERTa-Large (Conneau et al., 2020) (24 layers, dh =1024). The input concatenates the prompt and response as “ Question: Tp \nResponse: Tr”and is tokenized to a maximum of N = 512 tokens, yielding hidden states Htext ∈ RN ×dh .
+
+Vision encoder & cross-attention fusion. 
+
+Image features are extracted with SigLIP 2
+
+(Zhai et al., 2023), producing patch embeddings 
+
+V ∈ R196 ×768 , which are linearly projected into the text hidden space ( Vproj ∈ R196 ×dh ). Cross-attention then fuses visual context into language representations:    
+
+> Hfused = LayerNorm
+> 
+> Htext + Softmax
+> QK ⊤
+> √dh
+> 
+> U
+> 
+> (1)
+> 2https://hf.co/google/siglip-base-patch16-224
+
+Multi-task heads. Three parallel heads op-erate on each token hi:1. Span classifier (Head span ): 2-layer MLP 
+
+→ σ(·), predicting binary hallucination probability ˆ yi ∈ [0 , 1]. 2. Probability calibrator (Head calib ): 2-layer MLP → σ(·), predicting continuous calibration score ˆ pi ∈ [0 , 1]. 3. Category classifier (Head cat ): 2-layer MLP → softmax( ·), predicting error type among five categories. 
+
+Training objective. The composite multi-task loss is: 
+
+L = LBCE (ˆ y, y ) + λ1LMSE (ˆ p, p ) + λ2LCE (ˆ c, c)(2) with λ1 = 1 .0 and λ2 = 0 .5. The MSE term di-rectly supervises probability calibration against annotator agreement scores p. The auxiliary classification loss LCE acts as a multi-task regularizer, forcing shared encoder representa-tions to capture fine-grained semantic category boundaries. 
+
+3.3 System 2: Generative VLM 
+
+We fine-tune Qwen3.5-4B (Yang et al., 2025; Qwen Team, 2026) via supervised fine-tuning (SFT) on SHROOM-Visions training data (Mickus et al., 2026) to produce structured JSON spans. From System 2’s output, candi-date spans SVLM are converted into a binary character mask MVLM (k) ∈ { 0, 1}.
+
+3.4 Union-Calibrated Fusion 
+
+Neither system alone optimizes both localiza-tion and uncertainty estimation: System 2 pro-vides high span recall through deliberative gen-eration but outputs uncalibrated scores, while System 1 provides well-calibrated probabilities but conservative span boundaries. Our fusion algorithm operates as follows: 1. Extract candidate span boundaries SVLM 
+
+from System 2. 2. Map System 1’s token probabilities to a character-level array PSC (k) via subtoken offset alignment across the full response se-quence. 3. Compute the probability-guided ensemble score: 
+
+Pens (k) = w1 · PSC (k) + w2 · MVLM (k) (3) with w1 = 0 .55, w2 = 0 .45. The weights 
+
+w1 and w2 were selected via hyperparam-eter grid search on the validation set: as-signing slightly higher weight to System 1 Input: Image I + Prompt Tp + Response Tr         
+
+> System 1: XLM-R-Large + SigLIP-2 Head span Head calib Head cat
+> PSpanCalib (k) (prob. distribution)
+> System 2: Qwen3.5-4B-SFT
+> MVLM (k) (binary mask)
+> Union-Calibrated Fusion: Pens (k) = 0 .55 ·PSC (k) + 0 .45 ·MVLM (k)Calibrated Spans + Probabilities + Categories
+
+Figure 1: SpanCalib-VLM architecture. System 1 (discriminative tagger) produces calibrated token probabilities; System 2 (generative VLM) proposes candidate spans. Union-Calibrated Fusion combines both into final predictions. 
+
+(w1 = 0 .55) anchors score magnitudes to its superior calibration baseline (Pearson 0.369 vs. 0.285), while w2 = 0 .45 allows System 2’s binary mask MVLM (k) ∈ { 0, 1} to act as a spatial proposal weight for candidate span positions. 
+
+4 Experimental Setup 
+
+Data. We fine-tune models on 15,102 sam-ples of a multilingual dataset in EN, FR, IT, and ZH (cf. Table 8), evaluating main baselines on the English validation split and cross-lingual performance across all four languages on vali-dation (cf. Table 7) and test sets (cf. Table 2). 
+
+Training. SpanCalib-VLM is trained for 5 epochs on NVIDIA A40 GPUs with AdamW (η = 1 .5×10 −5), linear warmup (10%), batch size 16, and max sequence length 512. Table 5 summarizes key hyperparameters. 
+
+Training Dynamics Table 9 tracks valida-tion metrics across epochs. Pearson correlation peaks at epoch 2 (0.3688); subsequent epochs exhibit overfitting, with training loss continu-ing to fall while validation loss rises. The best-checkpoint strategy based on validation Pear-son successfully preserves the optimal state. 
+
+5 Results 
+
+5.1 Main Results 
+
+Table 1 compares standalone baselines and our full system. SpanCalib-VLM achieves the highest Pearson correlation ( 0.413 ) and overall IoU ( 0.391 ) on the English evaluation split ( N = 379), with a clean-response IoU of 0.913 and a detection accuracy of 70.7% .While 0.413 Pearson represents validation per-formance, official shared task leaderboard re-sults on the blind test set are reported in Ta-ble 2. Several patterns emerge. First, discrimina-tive taggers consistently outperform generative VLMs on Pearson calibration (SpanCalib 0.369 vs. Qwen 0.285), confirming that the MSE cali-bration head learns better-calibrated probabili-ties than autoregressive decoding. Second, the generative VLM achieves higher hallucinated-sample IoU (0.182 vs. 0.155), reflecting its supe-rior span recall through deliberative reasoning. Third, the ensemble exploits both strengths: Qwen’s span proposals raise IoU while Span-Calib’s probabilities improve calibration. 
+
+5.2 Multilingual Evaluation & Official Task Submissions 
+
+We evaluate SpanCalib-VLM across four lan-guage splits: English ( EN ), French ( FR ), Ital-ian ( IT ), and Chinese ( ZH ). Table 2 reports official shared task submission scores evaluated on the hidden test set. Table 7 provides a de-tailed cross-lingual breakdown comparing base models against SpanCalib-VLM. SpanCalib-VLM demonstrates strong cross-lingual generalization. On Chinese (ZH), the model achieves an impressive 0.437 Over-all IoU and 0.958 Clean IoU , outperform-ing base Qwen-3.5-4B by +0.169 IoU. This higher Chinese performance stems from to-kenization granularity: ideographic Chinese Table 1: Performance on the SHROOM-Visions English validation split. Our full hybrid system (SpanCalib-VLM ) achieves the highest Pearson calibration correlation and overall IoU, outperforming standalone baselines and individual subsystems across all metrics at optimal decision thresholds.                                         
+
+> System Pearson Overall IoU Halluc. IoU Clean IoU Det. Acc.
+> Baselines
+> BLIP baseline 0.124 0.210 0.082 0.650 42.1% MiniCPM-V (fine-tuned) 0.245 0.298 0.121 0.740 51.5%
+> Standalone Subsystems (Ours)
+> System 1: Tagger (Text-only, XLM-R Base) 0.342 0.295 0.101 0.882 52.1% System 1: Tagger (Text-only, XLM-R Large) 0.368 0.312 0.115 0.901 56.4% System 1: Tagger (Multimodal, XLM-R + SigLIP-2) 0.369 0.326 0.155 0.903 58.0% System 2: Generative VLM (Qwen3.5-4B SFT) 0.285 0.375 0.182 0.885 68.2%
+> Full Hybrid System
+> SpanCalib-VLM (System 1 + System 2 Hybrid) 0.413 0.391 0.196 0.913 70.7%
+
+Table 2: Official shared task test set results: SpanCalib-VLM (SIT) vs. the task-provided base-line across all languages.                                    
+
+> Lang System Cor+Lbl ↑Cor ↑IoU ↑
+> EN Task Baseline 0.1549 0.1549 0.1549
+> SpanCalib-VLM 0.2418 0.3212 0.2549
+> FR Task Baseline 0.1679 0.1679 0.1679
+> SpanCalib-VLM 0.2885 0.3600 0.2994
+> IT Task Baseline 0.1635 0.1635 0.1635
+> SpanCalib-VLM 0.2918 0.3832 0.3109
+> ZH Task Baseline 0.2554 0.2554 0.2554
+> SpanCalib-VLM 0.3347 0.3752 0.3425
+
+characters provide dense token representations where subtoken offsets align directly with char-acter boundaries, reducing edge misalignment present in space-delimited European text. On French and Italian, SpanCalib-VLM achieves massive gains in Hallucinated IoU (+0.182 on FR, +0.180 on IT) over base models which suf-fer from severe under-detection on non-English hallucinated spans. 
+
+5.3 Threshold Sensitivity 
+
+Table 3 shows that ensemble performance is re-markably stable across τ ∈ [0 .25 , 0.45], all yield-ing IoU 0.391. This robustness arises because the fusion score distribution is bimodal: char-acters inside VLM-proposed spans receive high ensemble scores while others receive low scores, with few samples near the decision boundary. 
+
+5.4 Inference Speed 
+
+Sequence tagging is dramatically faster than generative decoding (Table 4). SpanCalib-VLM processes 5.25 samples/s—4 .5× faster than standard Qwen inference and 120 × faster than chain-of-thought mode. 
+
+Table 3: Threshold grid search for the ensemble. 
+
+τ IoU H-IoU C-IoU Det. Acc. 
+
+0.20 0.390 0.217 0.854 71.8% 
+
+0.25 0.391 0.196 0.913 70.7% 0.30 0.391 0.196 0.913 70.7% 0.40 0.391 0.196 0.913 70.7% 0.50 0.317 0.065 0.990 43.8% 
+
+Table 4: Inference latency (s/sample) and output throughput (samples/s) on NVIDIA A40 (48GB).           
+
+> System s/sample ↓samples/s ↑
+> SpanCalib-VLM (tagger) 0.19 5.25
+> Qwen-4B (standard) 0.85 1.18 Qwen-4B (chain-of-thought) 23.10 0.04
+
+5.5 Ablation Study 
+
+Table 10 isolates the contribution of each com-ponent. Union-Calibrated Fusion outperforms weighted averaging (+0.032 Pearson) and inter-section (+0.061). Removing the MSE calibra-tion loss causes the largest drop ( −0.095 Pear-son), confirming that direct probability super-vision is essential. The vision tower provides a modest IoU improvement (+0.003) while main-taining identical ensemble calibration. 
+
+6 Conclusion 
+
+We presented SpanCalib-VLM , a hybrid framework that combines a multimodal dis-criminative tagger with a generative VLM via Union-Calibrated Fusion. On SHROOM-Visions, the ensemble achieves Pearson 0.413 and IoU 0.391 with 91.3% clean accuracy, demonstrating that principled fusion of fast calibration with deliberative span detection is an effective strategy for hallucination detection in LVLMs. 7 Limitations 
+
+In this section, we explore some limitations that our setup might have. First, SpanCalib-VLM produces false positives on complex but cor-rect language : elaborate descriptions, idioms, and rare but accurate visual details are some-times flagged as hallucinations, particularly by the sequence tagger which relies on surface-level distributional patterns rather than visual grounding. Second, the 512-token input limit causes the system to miss hallucinations in long responses entirely; any hallucinated content be-yond the truncation boundary is undetectable. Third, while calibration is strong overall (Pear-son 0.413), hallucinated-span IoU remains low 
+
+(0.196), indicating that the system still strug-gles to precisely localize hallucination bound-aries at the character level. Fourth, while our model is trained on a joint multilingual dataset (EN, FR, IT, ZH), hyperparameter selection and ensemble fusion thresholds were optimized primarily on the English validation split. Fi-nally, the ensemble cannot detect hallucinations that both subsystems miss ; if neither the tag-ger nor the generative VLM identifies a span, fusion cannot recover it. 
+
+References 
+
+Jinze Bai, Shuai Bai, Shusheng Yang, Shijie Wang, Sinan Tan, Peng Wang, Junyang Lin, Chang Zhou, and Jingren Zhou. 2023. Qwen-VL: A ver-satile vision-language model for understanding, localization, text reading, and beyond. Preprint ,arXiv:2308.12966. Grady Booch, Francesco Fabiano, Lior Horesh, Kiran Kate, Jon Lenchner, Nick Linck, An-drea Loreggia, Keerthiram Murugesan, Nicholas Mattei, Francesca Rossi, and Biplav Srivastava. 2020. Thinking fast and slow in ai. Preprint ,arXiv:2010.06002. Alexis Conneau, Kartikay Khandelwal, Naman Goyal, Vishrav Chaudhary, Guillaume Wenzek, Francisco Guzm´ an, Edouard Grave, Myle Ott, Luke Zettlemoyer, and Veselin Stoyanov. 2020. Unsupervised cross-lingual representation learn-ing at scale. In Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics , pages 8440–8451, Online. Associa-tion for Computational Linguistics. Shrey Desai and Greg Durrett. 2020. Calibration of pre-trained transformers. In Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP) , pages 295–302, Online. Association for Computational Linguistics. Chaoyou Fu, Peixian Chen, Yunhang Shen, Yulei Qin, Mengdan Zhang, Xu Lin, Jinrui Yang, Xi-awu Zheng, Ke Li, Xing Sun, Yunsheng Wu, Rongrong Ji, Caifeng Shan, and Ran He. 2025. Mme: A comprehensive evaluation benchmark for multimodal large language models. Preprint ,arXiv:2306.13394. Chuan Guo, Geoff Pleiss, Yu Sun, and Kilian Q. Weinberger. 2017. On calibration of modern neural networks. Preprint , arXiv:1706.04599. Saurav Kadavath, Tom Conerly, Amanda Askell, Tom Henighan, Dawn Drain, Ethan Perez, Nicholas Schiefer, Zac Hatfield-Dodds, Nova Das-Sarma, Eli Tran-Johnson, Scott Johnston, Sheer El-Showk, Andy Jones, Nelson Elhage, Tristan Hume, Anna Chen, Yuntao Bai, Sam Bowman, Stanislav Fort, and 17 others. 2022. Language models (mostly) know what they know. Preprint ,arXiv:2207.05221. Yifan Li, Yifan Du, Kun Zhou, Jinpeng Wang, Xin Zhao, and Ji-Rong Wen. 2023. Evaluating object hallucination in large vision-language models. In 
+
+Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 292–305, Singapore. Association for Computa-tional Linguistics. Zhong-Zhi Li, Duzhen Zhang, Ming-Liang Zhang, Jiaxin Zhang, Zengyan Liu, Yuxuan Yao, Haotian Xu, Junhao Zheng, Pei-Jie Wang, Xiuyi Chen, Yingying Zhang, Fei Yin, Jiahua Dong, Zhiwei Li, Bao-Long Bi, Ling-Rui Mei, Junfeng Fang, Xiao Liang, Zhijiang Guo, and 2 others. 2025. From system 1 to system 2: A survey of reasoning large language models. Preprint , arXiv:2502.17419. Hanchao Liu, Wenyuan Xue, Yifei Chen, Dapeng Chen, Xiutian Zhao, Ke Wang, Liping Hou, Rongjun Li, and Wei Peng. 2024. A survey on hallucination in large vision-language models. 
+
+Preprint , arXiv:2402.00253. Timothee Mickus, Claudio Savelli, Eduardo Cal` o, Emilio Raimond, Stella Frank, Hengyu Luo, Flavio Giobergia, Vincent Segonne, Chuyuan Li, Aman Sinha, Lorenzo Vaiani, J¨ org Tiede-mann, and Ra´ ul V´ azquez. 2026. Can humans dream of electric sheep? human-written samples for fine-grained vision-and-language hallucina-tion benchmarking. Preprint , arXiv:2608.01021. Timothee Mickus, Elaine Zosa, Raul Vazquez, Teemu Vahtola, J¨ org Tiedemann, Vincent Segonne, Alessandro Raganato, and Mari-anna Apidianaki. 2024. SemEval-2024 task 6: SHROOM, a shared-task on hallucinations and related observable overgeneration mistakes. In 
+
+Proceedings of the 18th International Workshop on Semantic Evaluation (SemEval-2024) , pages 1979–1993, Mexico City, Mexico. Association for Computational Linguistics. Yaniv Ovadia, Emily Fertig, Jie Ren, Zachary Nado, D Sculley, Sebastian Nowozin, Joshua V. Dil-lon, Balaji Lakshminarayanan, and Jasper Snoek. 2019. Can you trust your model’s uncertainty? evaluating predictive uncertainty under dataset shift. Preprint , arXiv:1906.02530. Qwen Team. 2026. Qwen3.5: Towards native mul-timodal agents. Anna Rohrbach, Lisa Anne Hendricks, Kaylee Burns, Trevor Darrell, and Kate Saenko. 2018. Object hallucination in image captioning. In 
+
+Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing , pages 4035–4045, Brussels, Belgium. Association for Computational Linguistics. Raul Vazquez, Timothee Mickus, Elaine Zosa, Teemu Vahtola, J¨ org Tiedemann, Aman Sinha, Vincent Segonne, Fernando Sanchez-Vega, Alessandro Raganato, Jindˇ rich Libovick´ y, Jussi Karlgren, Shaoxiong Ji, Jindˇ rich Helcl, Liane Guillou, Ona De Gibert, Jaione Bengoetxea, Joseph Attieh, and Marianna Apidianaki. 2025. SemEval-2025 task 3: Mu-SHROOM, the multi-lingual shared-task on hallucinations and related observable overgeneration mistakes. In Proceed-ings of the 19th International Workshop on Se-mantic Evaluation (SemEval-2025) , pages 2472– 2497, Vienna, Austria. Association for Computa-tional Linguistics. An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, Chujie Zheng, Day-iheng Liu, Fan Zhou, Fei Huang, Feng Hu, Hao Ge, Haoran Wei, Huan Lin, Jialong Tang, and 41 others. 2025. Qwen3 technical report. Preprint ,arXiv:2505.09388. Yuan Yao, Tianyu Yu, Ao Zhang, Chongyi Wang, Junbo Cui, Hongji Zhu, Tianchi Cai, Haoyu Li, Weilin Zhao, Zhihui He, Qianyu Chen, Huarong Zhou, Zhensheng Zou, Haoye Zhang, Shengding Hu, Zhi Zheng, Jie Zhou, Jie Cai, Xu Han, and 4 others. 2024. Minicpm-v: A gpt-4v level mllm on your phone. Preprint , arXiv:2408.01800. Tianyu Yu, Zefan Wang, Chongyi Wang, Fuwei Huang, Wenshuo Ma, Zhihui He, Tianchi Cai, Weize Chen, Yuxiang Huang, Yuanqian Zhao, Bokai Xu, Junbo Cui, Yingjing Xu, Liqing Ruan, Luoyuan Zhang, Hanyu Liu, Jingkun Tang, Hongyuan Liu, Qining Guo, and 15 others. 2025. Minicpm-v 4.5: Cooking efficient mllms via architecture, data, and training recipe. Preprint ,arXiv:2509.18154. Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and Lucas Beyer. 2023. Sigmoid loss for language image pre-training. In 2023 IEEE/CVF Interna-tional Conference on Computer Vision (ICCV) ,pages 11941–11952. 
+
+A Related Work (Continued) 
+
+Hybrid architectures. Dual-process cog-nitive theory distinguishes fast, intuitive pat-tern recognition (System 1) from slow, deliber-ative reasoning (System 2), a paradigm increas-ingly operationalized to combine complemen-tary strengths in artificial intelligence (Booch et al., 2020; Li et al., 2025). In sequence pro-cessing and multimodal detection, generative VLMs excel at open-ended contextual reason-ing and span proposal generation (System 2), but incur high computational latency and poor probability calibration. Conversely, discrim-inative sequence taggers evaluate representa-tions in a single deterministic forward pass (System 1), providing low latency and well-calibrated token probabilities. SpanCalib-VLM operationalizes this hybrid synergy by pairing a discriminative tagger for probability calibra-tion with a generative VLM for candidate span proposal generation. 
+
+B Training configuration 
+
+Table 5: Training configuration.                      
+
+> Parameter Value
+> Text backbone xlm-roberta-large (355 M) Vision encoder siglip-base-patch16-224 (86 M) Optimizer AdamW ( β1= 0 .9, β2= 0 .999) Learning rate 1.5×10 −5
+> LR schedule Linear decay + 10% warmup Weight decay 0.01 Batch size 16 Epochs 5 (best at epoch 2) Max seq. length 512 tokens Loss weights λ1= 1 .0, λ2= 0 .5
+
+Table 6: Training configuration for Qwen3.5-4B (Generative VLM).                     
+
+> Parameter Value
+> Base model Qwen3.5-4B (4.4 B) Finetuning method LoRA ( r= 16, α= 16, all-linear) Precision BF16 Optimizer 8-bit AdamW Learning rate 2.0×10 −4
+> LR schedule Linear decay + 5% warmup Batch size 8 (batch 2 ×4 grad accum) Epochs 3Max seq. length 2048 tokens Modules saved lm head ,embed tokens
+
+C Detailed Performance 
+
+Table 7: Cross-lingual detailed performance breakdown comparing base zero-shot models with SpanCalib-VLM across English, French, Italian, and Chinese evaluation sets.                                                        
+
+> Lang System Overall IoU ↑H-IoU C-IoU Det. Acc. Calibration Pearson
+> EN Qwen-3.5-4B (Base) 0.226 0.173 0.369 74.4% —SpanCalib-VLM (Tagger) 0.345 ——61.5% 0.406
+> SpanCalib-VLM + Qwen4B (Ensemble) 0.391 0.196 0.913 70.7% 0.413
+> FR Qwen-3.5-4B (Base) 0.268 0.020 0.969 42.3% —
+> SpanCalib-VLM (Tagger) 0.367 0.202 0.837 66.2% —IT Qwen-3.5-4B (Base) 0.268 0.027 0.912 37.2% —
+> SpanCalib-VLM (Tagger) 0.375 0.207 0.824 58.6% —ZH Qwen-3.5-4B (Base) 0.268 0.096 0.556 56.2% —
+> SpanCalib-VLM (Tagger) 0.437 0.126 0.958 56.7% —
+
+Table 8: SHROOM-Visions dataset split breakdown across all languages, detailing sample counts for 90% training sets, 10% validation sets (used for evaluation in Table 7), and unlabeled test sets. 
+
+Language Train (90%) Validation (10%) Test (Unlabeled) Total 
+
+English (EN) 3,420 379 1,201 5,000 French (FR) 3,391 376 1,233 5,000 Italian (IT) 3,372 374 1,254 5,000 Chinese (ZH) 3,411 379 1,210 5,000 
+
+Total 13,594 1,508 4,898 20,000 
+
+D Training History 
+
+Table 9: Training history for SpanCalib-VLM (multimodal). 
+
+Epoch Train L Val L Val Pearson Saved? 
+
+1 1.068 0.949 0.345 ✓
+
+2 0.873 0.923 0.369 ✓✓ 
+
+3 0.783 0.939 0.330 —4 0.694 0.988 0.345 —5 0.613 1.042 0.353 —
+
+E Ablation Study Results 
+
+Table 10: Ablation study. 
+
+Configuration Pearson IoU 
+
+Full ensemble (ours) 0.413 0.391 
+
+− Union → Weighted avg. 0.381 0.345 
+
+− Union → Intersection 0.352 0.310 
+
+− SigLIP-2 vision tower 0.413 0.388 
+
+− MSE calib. loss ( λ1 = 0) 0.318 0.330

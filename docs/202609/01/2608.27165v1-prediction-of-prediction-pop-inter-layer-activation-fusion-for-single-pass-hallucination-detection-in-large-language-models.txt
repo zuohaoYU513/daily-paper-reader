@@ -1,0 +1,400 @@
+Title: Prediction of Prediction (PoP): Inter-Layer Activation Fusion for Single-Pass Hallucination Detection in Large Language Models
+
+URL Source: https://arxiv.org/pdf/2608.27165v1
+
+Published Time: Fri, 28 Aug 2026 01:25:30 GMT
+
+Number of Pages: 7
+
+Markdown Content:
+> Himal Badu Prediction of Prediction (PoP)
+
+# Prediction of Prediction (PoP) 
+
+## Inter-Layer Activation Fusion for Single-Pass Hallucination Detection in Large Language Models 
+
+## Himal Badu Abstract 
+
+Autoregressive large language models (LLMs) rou-tinely generate factually incorrect outputs with high decoding confidence, limiting their deployment in high-stakes workflows. Existing output-stage uncertainty met-rics can fail when models are overconfident on false assertions, while multi-sample verification pipelines in-troduce substantial memory and latency overhead. This work evaluates whether internal hidden-state transition dynamics during generation can signal factual errors without auxiliary decoding calls. We introduce Predic-tion of Prediction (PoP), a mechanism that captures layer-transition uncertainty by fusing intermediate hid-den representations across depth during a single forward pass. Evaluated on the TruthfulQA benchmark using autoregressive transformer backbones, PoP achieves an area under the receiver operating characteristic curve (AUROC) of 75.5% for factual-correctness classification. The mechanism operates within the base forward pass, adding less than 1.2% runtime latency and requiring zero additional generation passes. The numerical results are reported from the author-verified experimental im-plementation and are bounded by the evaluation scope described below. 
+
+Keywords: large language models; hallucination detec-tion; hidden states; layer dynamics; uncertainty estima-tion; reliability; efficient inference 
+
+## 1 Introduction 
+
+The integration of large language models (LLMs) into automated reasoning systems, medical synthesis, and legal analysis is constrained by their tendency to produce syntactically plausible yet factually false statements. In enterprise settings, unmonitored hallucinations introduce operational risks and may require human verification that reduces the efficiency of automation. A practical verification system should detect hallucination events during generation without materially reducing model throughput or incurring prohibitive GPU-memory costs. Existing detection paradigms predominantly operate at the output-logit boundary or through post-hoc verifi-cation pipelines. Output-stage metrics, including token-logit entropy, sequence perplexity, and final-layer atten-tion distributions, often assume that factual uncertainty correlates with vocabulary-level uncertainty. However, an LLM may generate an incorrect entity with low logit variance, while benign stylistic choices can produce high entropy. Post-hoc approaches rely on multi-sample con-sistency checking, cross-prompting, retrieval, or auxiliary natural-language-inference (NLI) classifiers. Although such approaches can improve precision, they require mul-tiple candidate completions or additional model calls, increasing latency and compute cost. A central unresolved question is whether factual valid-ity is continuously encoded in the internal representation trajectory as hidden states propagate through interme-diate transformer layers. Static internal probing can demonstrate that specific layers contain predictive in-formation, but an isolated layer check does not capture how the representation changes from shallow syntactic processing to deeper contextual commitment. A single-pass detector therefore needs to characterize layer-wise transitions during the same forward execution used for generation. We present Prediction of Prediction (PoP), an internal detection framework that estimates sequence-level hallu-cination risk through layer-transition activation fusion. The contributions are as follows. • Layer-transition uncertainty statistic and fu-sion. We study a mechanism that intercepts inter-mediate activations h(l) 
+
+> t
+
+and computes a cross-depth fusion state to track uncertainty propagation during generation. • Single-pass operational detector. We design a lightweight scoring head Φmeta that evaluates sequence-level risk during autoregressive generation without auxiliary decoding runs or external verifiers. • Empirical benchmark validation. We report an AUROC of 75.5% on the TruthfulQA evaluation set-ting, with additional latency below 1.2% relative to unhooked generation. The broader literature already contains hidden-state probes, layer-selection methods, spectral trajectory mod-els, attention-based detectors, and graph-based dy-namics. Accordingly, we present PoP as a specific uncertainty-propagation and fusion mechanism, not as the first internal-state or single-pass hallucination detec-tor. 
+
+## 2 Related Work 
+
+Output-level methods estimate reliability from token probabilities, predictive entropy, semantic entropy, self-consistency, or external evidence. Semantic entropy detects uncertainty over the meaning of multiple sampled generations, while semantic-entropy probes approximate that signal from hidden states of a single generation. These methods provide essential baselines but differ from PoP because PoP estimates a signal from ordered changes across internal layers rather than from multiple meanings or a single static representation. Internal-state approaches include unsupervised real-time detectors, hidden-state and attention-based single-response methods, linear residual-stream probes, and cross-layer contribution probes. More recent work stud-ies spectral activation trajectories, layer-wise semantic dynamics, automatic layer selection, attention sinks, mul-1arXiv:2608.27165v1 [cs.CL] 27 Aug 2026 Himal Badu Prediction of Prediction (PoP) 
+
+Table 1: Mechanism families and the comparison bound-ary for PoP.        
+
+> Family Signal source PoP comparison question
+> Output-only Logits, entropy, perplexity Do transitions add information beyond output uncertainty? Multi-sample Multiple meanings/completions Does one-pass inference reduce the cost fairly? Static probe One hidden layer Do ordered transitions beat the best single layer? Dynamic inter-nal Layer or temporal trajectories Is the transition statistic mathematically distinct? Attention/ graph Attention, spectra, routing, graphs Does PoP improve the matched-cost frontier?
+
+tiplex graphs, and full hidden-state trajectories. These papers make the relevant novelty boundary strict: PoP must show that its uncertainty-propagation statistic con-tributes beyond a best single-layer probe, an existing dynamic detector, attention-derived features, and an equally sized prediction head. 
+
+Closest comparison: ICR Probe. ICR Probe quantifies the contribution of modules to residual-stream updates and then probes cross-layer hidden-state evo-lution [10]. PoP instead computes cosine divergence between adjacent normalized layer states, aggregates those transitions with depth weights, applies cross-layer attention to the retained state matrix, and incorporates temporal drift before scoring. The methods therefore share white-box access and a high-level interest in in-ternal dynamics, but differ in their transition statistic, fusion operation, and scoring representation; we treat ICR Probe as a direct conceptual comparator rather than as an equivalent implementation. Production-oriented systems such as token-level NLI cascades and log-probability time-series detectors pro-vide complementary black-box or context-grounded base-lines. They emphasize latency, span localization, cali-bration, and the difference between intrinsic factual con-fabulation and contextual contradiction. We distinguish these access assumptions explicitly in the evaluation. 
+
+## 3 Problem Definition and Scope 
+
+3.1 Hallucination target 
+
+This paper studies factual correctness in generated answers. The terms intrinsic hallucination , contextual contradiction , unsupported generation , citation error , and 
+
+reasoning error should not be treated as interchangeable. The present study focuses primarily on factual correct-ness and does not claim that PoP detects every form of hallucination. 
+
+3.2 Generation setting 
+
+Let an autoregressive transformer have L sequential hidden layers and model dimension d. At decoding step 
+
+t, the model generates token yt and produces an internal state at each layer. PoP is intended to operate during the normal autoregressive process, one generator forward 
+
+Figure 1: Compact top-to-bottom architecture of PoP. The base LLM processes input tokens in one forward pass per decoding step while hooks retain hidden states. PoP computes adjacent-layer transition divergence, performs cross-layer fusion with temporal drift, and produces step-level and calibrated sequence-level hallucination scores. pass per decoding step, while retaining the activations required for the detector. 
+
+3.3 White-box access and cost model 
+
+PoP requires access to intermediate hidden states. It therefore applies to open-weight or instrumentable mod-els and does not directly apply to closed APIs that ex-pose only text or token probabilities. In this manuscript, “single pass” means one forward execution of the gen-erator for each autoregressive decoding step and zero auxiliary generation passes for the same response. We report activation memory, detector parameters, addi-tional floating-point operations (FLOPs), and wall-clock latency. 
+
+3.4 Task output 
+
+The detector produces a step-level hallucination prob-ability Ut and a calibrated sequence-level score SPoP (Y ). The evaluation includes both response-level classification and an online early-warning analysis. These are separate evaluation targets and are reported separately. 
+
+## 4 Layer-Transition Uncertainty Method 
+
+4.1 Overview 
+
+PoP intercepts and fuses hidden-state dynamics across intermediate transformer layers during generation. It does not operate as a post-hoc text analyzer and does not require additional candidate completions. 
+
+Reading Figure 1. The compact top-to-bottom schematic groups the method into three operational stages. The first box shows ordinary generator execu-tion and activation capture. The second box computes adjacent-layer divergence, cross-layer fusion, and tem-poral drift; the final box maps the assembled features to Ut and the calibrated sequence score. The detailed equations below define each operation precisely. 2Himal Badu Prediction of Prediction (PoP) 
+
+4.2 Internal representation 
+
+Let the unnormalized hidden state at decoding step 
+
+t and layer l be h(l) 
+
+> t
+
+∈ Rd, where l ∈ { 1, 2, . . . , L }. To reduce scale variation across depth, PoP applies layer normalization: ˆh(l) 
+
+> t
+
+= LayerNorm( h(l) 
+
+> t
+
+) = 
+
+ h(l) 
+
+> t
+
+− μ(l) 
+
+> t
+
+1
+
+√
+
+(σ(l) 
+
+> t
+
+)2 + ϵ
+
+⊙γ +β, (1) where μ(l) 
+
+> t
+
+and σ(l) 
+
+> t
+
+are the layer-wise mean and standard deviation, ϵ is a numerical stabilizer, and γ, β ∈ Rd are learned normalization parameters. The retained hidden-state matrix is 
+
+Ht = [ ˆh(1)  
+
+> t
+
+; ˆh(2)  
+
+> t
+
+; . . . ; ˆh(L) 
+
+> t
+
+] ∈ RL×d. (2) Activations are extracted with forward hooks without mutating the base-model weights or altering the standard key-value-cache execution graph. 
+
+4.3 Transition uncertainty statistic 
+
+PoP computes directional state changes between ad-jacent layers. The layer-to-layer representation shift is ∆h(l) 
+
+> t
+
+= ˆh(l) 
+
+> t
+
+− ˆh(l−1)  
+
+> t
+
+, l ∈ { 2, 3, . . . , L }. (3) The scalar transition divergence is the cosine distance between successive normalized states: 
+
+δ(l) 
+
+> t
+
+= 1 − ˆh(l) 
+
+> t
+
+· ˆh(l−1) 
+
+> t
+
+∥ˆh(l) 
+
+> t
+
+∥2∥ˆh(l−1)  
+
+> t
+
+∥2
+
+, δ(l) 
+
+> t
+
+∈ [0 , 2] . (4) The step-level transition vector is 
+
+ut = [ δ(2)  
+
+> t
+
+, δ (3)  
+
+> t
+
+, . . . , δ (L) 
+
+> t
+
+]⊤ ∈ RL−1. (5) The central trajectory-divergence statistic aggregates the layer transitions with learnable depth weights: 
+
+Dt = 1
+
+L − 1
+
+> L
+
+∑
+
+> l=2
+
+wlδ(l) 
+
+> t
+
+. (6) The depth weights wl are initialized to 1. The normal-ization by L − 1 keeps the scale comparable across model depths. We evaluate whether Dt adds information be-yond a static state, a best single layer, attention entropy, spectral features, and output entropy. 
+
+4.4 Inter-layer fusion and calibration 
+
+To combine layer-wise features with global depth con-text, PoP projects Ht into a lower-dimensional query, key, and value space: 
+
+Q = HtWQ, K = HtWK , V = HtWV ,WQ, W K , W V ∈ Rd×dk .
+
+(7) The corrected scaled dot-product attention equations are 
+
+At = softmax 
+
+( QK ⊤
+
+√dk
+
+)
+
+, Zt = AtV. (8) The scaling term √dk is included in the attention logits. The fused state is computed by mean-pooling the cross-layer value output and adding the final normalized layer state: 
+
+zt = LayerNorm(MeanPool( Zt) + ˆh(L) 
+
+> t
+
+). (9) The meta-representation concatenates the fused state, transition vector, and temporal drift: 
+
+xt = [ zt∥ut∥∆zt], ∆zt = zt − zt−1, ∆z1 = 0 . (10) The step-level hallucination probability is produced by a two-layer multilayer perceptron (MLP): 
+
+Ut = σ (W2 GELU( W1xt + b1) + b2) . (11) The sequence-level score uses a calibrated aggregate: 
+
+SPoP (Y ) = σ
+
+(
+
+α
+
+(
+
+1
+
+T
+
+> T
+
+∑
+
+> t=1
+
+Ut
+
+)
+
++ β
+
+)
+
+, σ(a) = 11 + e−a .
+
+(12) The calibration coefficients α, β ∈ R are learned on a validation split to reduce expected calibration error. We use Platt scaling for calibration; temperature scaling and Platt scaling are distinct procedures and are not used interchangeably. 
+
+4.5 Online inference and complexity Algorithm 1: Online single-pass PoP hallucina-tion scoring. 
+
+Input: prompt X, base LLM M , layer hooks Lh,scoring head Φ meta .
+
+Output: generated sequence Y , risk score SPoP .1. Initialize Y as an empty sequence. 2. For each autoregressive step t = 1 , . . . , T : exe-cute one generator forward pass with hooks; cap-ture Ht and generate yt.3. Compute ut in O(Ld ). 4. Compute zt through inter-layer fusion in 
+
+O(L2dk + Ld ). 5. Concatenate zt, ut, and ∆ zt; compute Ut with Φmeta .6. Append yt to Y .7. Return Y and the calibrated aggregate of U1: T .
+
+The implementation uses exactly one generator for-ward pass per token, zero auxiliary generation passes, temporary activation memory of O(Ld ) per step, and transition-feature computation of O(Ld ). Inter-layer at-tention adds O(L2dk + Ld ). With dk = 64 and d = 4096, the scoring head adds fewer than 1.4 million trainable parameters and less than 1.2% runtime latency under the stated hardware, batch size, sequence length, precision, and warm-up protocol. 
+
+## 5 Experimental Setup 
+
+5.1 Models and decoding 
+
+We evaluate Llama-3-8B-Instruct, Qwen2.5-7B-Instruct, and Mistral-7B-Instruct-v0.2. Base models are described as running in native 16-bit precision on NVIDIA A100-80GB GPUs. The decoding settings are greedy decoding with temperature 0.0 and nucleus sam-pling with temperature 0.7 and p = 0 .9. Maximum output length is 256 tokens. 
+
+5.2 Datasets and labels TruthfulQA. We use 817 questions designed to elicit common human false beliefs, with factual correctness determined using the official target-evaluation procedure. 3Himal Badu Prediction of Prediction (PoP) 
+
+Table 2: Model and evaluation configuration.            
+
+> Component Specification
+> Model families Llama-3-8B-Instruct; Qwen2.5-7B-Instruct; Mistral-7B-Instruct-v0.2 Precision FP16 or BF16 native precision Decoding Greedy, temperature 0.0; nucleus, temperature 0.7, p= 0 .9Maximum length 256 generated tokens Datasets TruthfulQA; HaluEval 2.0; FaithDial Split 70% train, 15% validation, 15% test, stratified by factual label Context Closed-book QA and retrieval-augmented generation context Labeling Automated NLI verification cross-checked by human annotators
+
+Table 3: Baseline families included in the manuscript.     
+
+> Family Methods included
+> Output-only heuristics Token-logit entropy; sequence predictive perplexity; final-layer vocabulary-logit margin Multi-sample and post-hoc Semantic entropy with K= 5 generations; external DeBERTa-v3-large NLI entailment scoring Static internal probing LDA and logistic regression on isolated mid-layer and final-layer hidden states Dynamic internal and spectral Residual-stream norm growth; attention-head entropy dispersion; layer-wise spectral geometry distance
+
+HaluEval 2.0. We use 10,000 paired sequences across general question answering and dialogue, containing fac-tual ground truths and explicitly generated hallucina-tions. 
+
+FaithDial. We use 5,000 conversational turns evalu-ating faithfulness against grounded knowledge snippets. The exact dataset names, versions, licenses, sample counts, split construction, and annotation procedure are recorded in the author-verified experimental implemen-tation. The HaluEval version and the role of automated NLI labels are fixed by that implementation. 
+
+5.3 Baselines 
+
+The comparison set includes output-only, multi-sample, static internal, and dynamic internal baselines. We do not claim superiority over methods that are not evaluated under the same model-access and experimen-tal conditions; the novelty claim is restricted to the uncertainty-propagation and fusion mechanism studied here. 
+
+5.4 Evaluation metrics 
+
+AUROC and AUPRC measure threshold-agnostic sep-aration. Precision at fixed recall, including P at R90, reflects high-reliability deployment. Expected calibra-tion error (ECE) measures agreement between predicted risk and empirical frequency across ten equal-width bins. Also report Brier score, precision and recall at the op-erating threshold, response-level or span-level F1 where applicable, milliseconds per token, VRAM overhead, ex-tra FLOPs, and throughput impact. 
+
+## 6 Main Results 
+
+6.1 Detection performance 
+
+The following author-verified results are reported on Llama-3-8B-Instruct under the stated evaluation proto-col. PoP reports the highest separation accuracy among the methods shown in this table, including 75.5% AU-ROC on TruthfulQA and 74.6% on HaluEval, and a 9.4 percentage-point improvement over the static l = 32 probe on TruthfulQA. These point estimates are inter-preted within the stated evaluation protocol and model-access conditions. 
+
+6.2 Calibration and operating points 
+
+Calibration reduces ECE from 0.142 to 0.031. The cal-ibration coefficients and operating threshold are selected on the validation split, while the test set is reserved for final evaluation. 
+
+6.3 Cost and latency 
+
+PoP adds 0.3 ms/token and 18.4 MB of temporary activation memory under the stated benchmark protocol. The measurement is interpreted with the declared warm-up, repeated-trial, synchronization, hardware, and batch-size conditions. 
+
+6.4 Cross-model and cross-domain transfer 
+
+PoP loses less than 3.5 percentage points of AUROC in the reported transfer settings. This claim is explicitly bounded to English-language generation; multilingual transfer is outside the scope of this version. 
+
+6.5 Perturbation robustness 
+
+We evaluate paired perturbations intended to separate factual status from surface style. Entity swaps preserve syntax while changing validity. Style transformations change register while preserving factual status. Para-phrases preserve meaning, distractor-context insertion adds irrelevant facts, and temperature scaling increases decoding variation. PoP loses at most 2.4 percentage points of AUROC across these conditions, while output entropy is more sensitive to style and temperature. This interpretation is bounded to the tested perturbations. 
+
+6.6 Early warning and token-level behavior 
+
+Because PoP computes Ut during generation, it sup-ports an online early-warning monitor. In the illustra-tive example, the risk score spikes near the generated entity “Zurich” in the sentence “The capital of France is Zurich.” The reported Ut crosses a threshold of 0.70 within 1 .2 ± 0.4 tokens of the initial factual-error onset, prevents an average of 18.4 downstream decoding steps on hallucinated completions, and achieves token-level precision of 71.8% and recall of 68.4% for hallucinated entity spans. The token-level interpretation is bounded by the an-notation protocol used for the reported entity spans. Deployment as a stopping rule additionally requires mon-itoring false interruptions, restart or revision cost, and user-visible response quality. 
+
+## 7 Analysis and Ablations 
+
+We report ablations on Llama-3-8B-Instruct and TruthfulQA. 4Himal Badu Prediction of Prediction (PoP) 
+
+Table 4: Detection performance comparison. TQ denotes TruthfulQA and HE denotes HaluEval.                                                                
+
+> Method Type TQ AUC TQ AP TQ P@R90 HE AUC HE AP HE P@R90
+> Logit entropy Output 54.2% 51.8% 22.4% 52.1% 49.3% 18.7% Perplexity Output 56.1% 53.4% 24.1% 55.0% 52.6% 21.0% Static probe, l= 16 Static 63.8% 61.2% 35.6% 61.4% 58.9% 31.2% Static probe, l= 32 Static 66.1% 64.0% 39.8% 64.2% 62.1% 36.5% Spectral geometry Dynamic 68.4% 66.7% 43.1% 67.0% 65.2% 40.8% Semantic entropy, K= 5 Multi-sample 74.1% 72.8% 51.3% 72.8% 71.0% 48.6% DeBERTa-v3 NLI Post-hoc 74.8% 73.5% 52.0% 73.9% 72.4% 50.1%
+> PoP (ours) Single-pass 75.5% 74.6% 54.2% 74.6% 73.1% 51.8%
+
+Figure 2: Step-wise uncertainty trajectory during entity hallucination. Table 5: Calibration and operating-point results.                   
+
+> Configuration ECE Brier Pre-cision Recall F1
+> Uncalibrated PoP 0.142 0.188 68.4% 76.2% 0.721 Platt-calibrated PoP, α=1.24,
+> β=−0.12 0.031 0.124 73.1% 74.5% 0.738
+
+The reported ablations suggest that ordered layer transitions and layer normalization contribute to PoP’s performance. The strongest interpretation is that the transition representation is predictive under the tested setup. The ablations do not, by themselves, prove that the internal transition is a causal driver of hallucina-tion. Causal language should be reserved for experi-ments involving activation patching, steering, or another intervention. The reported ablations establish the contribution of the evaluated transition representation, normalization, layer order, and fusion components. Comparisons with additional transition statistics and alternative fusion heads are outside the scope of this version. 
+
+## 8 Limitations and Broader Impact 
+
+8.1 Technical limitations White-box access. PoP requires intermediate hid-den states and therefore cannot directly operate on closed-source APIs that expose only text or token prob-abilities. Table 6: Cost and latency under the stated benchmark protocol.                
+
+> Method Extra calls Latency VRAM overhead Through-put penalty
+> Unhooked base LLM 024.1 ms/token 0.0 MB 0.0% PoP (ours) 024.4 ms/token 18.4 MB 1.2% Spectral geome-try 031.8 ms/token 142.0 MB 31.9% Semantic en-tropy, K= 5 4 auxiliary generations 120.5 ms/token 0.0 MB 400.0% External De-BERTa NLI 1 auxiliary pass 48.2 ms/token 1740.0 MB 100.0%
+
+Activation memory. Retaining Ht ∈ RL×d requires temporary GPU memory. Large batches and very deep models may constrain throughput even when the incre-mental latency is small. 
+
+Scope. This study evaluates English-language gen-eration in closed-book question answering, dialogue, and short-context retrieval-augmented settings. Cross-lingual performance, long-form document generation, and reasoning-chain reliability remain unverified. 
+
+Benchmark currency. The present study evaluates the model and dataset configuration listed in Table 2; it does not claim state-of-the-art performance over every newer model or benchmark. The reported conclusions should therefore be read as conditional on the stated evaluation scope. 
+
+Supervised calibration. The scoring head and cali-5Himal Badu Prediction of Prediction (PoP) 
+
+Figure 3: Layer-transition divergence across transformer depth. Table 7: Cross-model and cross-domain transfer.          
+
+> Backbone Dataset/ domain Zero-shot AUROC ∆
+> Llama-3-8B-Instruct TruthfulQA, in-domain 75.5% –Llama-3-8B-Instruct FaithDial, dia-logue 72.1% -3.4% Qwen2.5-7B-Instruct TruthfulQA 73.8% -1.7% Mistral-7B-Instruct-v0.2 TruthfulQA 72.4% -3.1% Mistral-7B-Instruct-v0.2 HaluEval, QA/dialogue 71.2% -4.3%
+
+Table 8: Perturbation robustness.                          
+
+> Pertur-bation Control Base Pert. ∆
+> Entity swap Factual valid-ity flips; syntax retained 75.5% 74.8% -0.7% Style trans-formation Register changes; factual status constant 75.5% 75.2% -0.3% Paraphrase Surface form changes; meaning constant 75.5% 74.9% -0.6% Distractor context Irrelevant facts ap-pended 75.5% 73.8% -1.7% Temperature 0.7 Nucleus sampling increases variation 75.5% 73.1% -2.4%
+
+bration procedure require labeled validation data. Severe distribution shifts may degrade calibration. 
+
+Predictive versus causal interpretation. The current experiments analyze standard forward execution without active causal intervention. The reported quan-tities therefore represent predictive correlations with factual errors rather than proved causal mechanisms. 
+
+8.2 Broader impact and risks 
+
+Automated hallucination detectors can create automa-tion bias. A low risk score should not be interpreted as a guarantee of truth, especially in legal, clinical, or other high-stakes settings. Aggressive thresholds may also suppress valid but unusual linguistic responses or rare factual assertions. Human review, domain-specific ver-ification, and clear uncertainty communication remain necessary. 
+
+## 9 Conclusion 
+
+This manuscript studies whether factual hallucinations in autoregressive LLMs leave detectable signals in in-ternal layer-transition dynamics before final vocabulary projection. It introduces PoP, a lightweight framework that intercepts hidden-state trajectories across trans-former depth, computes normalized transition diver-gence, fuses cross-layer information, and produces a calibrated hallucination-risk score during standard gen-eration. We report 75.5% AUROC on TruthfulQA, less than 1.2% runtime latency overhead, and zero auxiliary generation passes under the stated evaluation protocol. The contribution is a specific combination of adjacent-layer transition divergence, cross-layer activation fusion, temporal drift, and calibration rather than a general claim that internal activations can detect hallucinations. 
+
+## 10 References References            
+
+> [1] Z. Ji, N. Lee, R. Frieske, et al. ., “Survey of hallucination in natural language generation,” ACM Computing Surveys ,55(12), 2023. [2] L. Huang, W. Yu, W. Ma, et al. ., “A survey on hallucination in large language models: Principles, taxonomy, and open challenges,” arXiv:2311.05232, 2023. [3] S. Farquhar, K. Konyushkova, L. Kurth, et al. ., “Detect-ing hallucinations in large language models using semantic entropy,” Nature , 630, 625–630, 2024. [4] L. Kuhn, Y. Gal, and S. Farquhar, “Semantic uncertainty: Linguistic invariances for uncertainty estimation in natural language generation,” ICLR, 2023. [5] P. Manakul, A. Liusie, and M. Gales, “SelfCheckGPT: Zero-resource black-box hallucination detection for generative large language models,” EMNLP, 2023. [6] A. Azaria and T. Mitchell, “The internal state of an LLM knows when it is lying,” Findings of EMNLP, 2023.
+
+6Himal Badu Prediction of Prediction (PoP) 
+
+Table 9: Ablation results on Llama-3-8B-Instruct and TruthfulQA. 
+
+Configuration AUROC ∆
+
+Full PoP framework 75.5% –Best single layer, l = 24 66.8% -8.7% Static features only 67.2% -8.3% Transition features only 70.1% -5.4% No layer normalization 68.9% -6.6% Shuffled layer order 58.3% -17.2% Random-feature control 50.1% -25.4% Matched final-layer MLP 66.4% -9.1% Attention-only control 59.2% -16.3% Output-entropy control 55.8% -19.7% [7] J. Kossen, J. Han, M. Razzak, et al. ., “Semantic Entropy Probes: Robust and Cheap HallucinationDetection in LLMs,” arXiv:2406.15927, 2024. [8] G. Sriramanan, S. Bharti, V. S. Sadasivan, et al. ., “LLM-Check: Investigating Detection of Hallucinations in Large Language Models,” NeurIPS, 2024. [9] J. Su, and colleagues, “Unsupervised Real-Time Hallucina-tion Detection based on the Internal States of Large Language Models,” arXiv:2403.06448, 2024. [10] Z. Zhang, X. Hu, H. Zhang, J. Zhang, and X. Wan, “ICR Probe: Tracking Hidden State Dynamics for Reliable Hal-lucination Detection in LLMs,” in Proceedings of the 63rd Annual Meeting of the Association for Computational Lin-guistics , pp. 17986–18002, 2025; arXiv:2507.16488. [11] C. O’Neill, S. Chalnev, C. C. Zhao, and colleagues, “A Sin-gle Direction of Truth: An Observer Model’s Linear Resid-ual Probe Exposes and Steers Contextual Hallucinations,” arXiv:2507.23221, 2025. [12] A. Ettori, and colleagues, “EigenTrack: Spectral Activation Feature Tracking for Hallucination and Out-of-Distribution Detection in LLMs and VLMs,” arXiv:2509.15735, 2025. [13] M. Mir, “The Geometry of Truth: Layer-wise Se-mantic Dynamics for Hallucination Detection in LLMs,” arXiv:2510.04933, 2025. [14] X. Wang, W. X. Cao, A. G. Wilson, and Z. Zeng, “Automatic Layer Selection for Hallucination Detection,” ICML, 2026; arXiv:2605.26366. [15] R. Alvi, N. L. Sayeedi, and M. F. A. Sayeedi, “MultiHaluDet: Multilingual Hallucination Detection via LLM Hidden State Probing,” MeLLM, 2026. [16] J. Binkowski, K. Adamczewski, and T. Kajdanowicz, “At-tention Sinks as Internal Signals for Hallucination Detec-tion in Large Language Models,” Accepted at ICML 2026; arXiv:2604.10697. [17] K. Cherukuri and L. R. Varshney, “Hallucination Basins: A Dynamic Framework for Understanding and Controlling LLM Hallucinations,” arXiv:2604.04743, 2026. [18] A. Alansari, M. Alkhorasani, and H. Luqman, “CrossHallu: Do Hallucination Signals Generalize Across Languages and Domains in Large Language Model’s Internals?” arXiv:2607.04029, 2026. [19] A. Shapiro, K. Taneja, and A. Goel, “HALT: Hallucination Assessment via Log-probs as Time series,” arXiv:2602.02888, 2026. [20] D. Wilson and M. Akrout, “Low-Cost Black-Box Detection of LLM Hallucinations via Dynamical System Prediction,” arXiv:2605.05134, 2026. [21] I. Itkin, “Temporal Multi-Signal Fusion for Token-Level Hal-lucination Detection,” Research Square preprint, posted July 10, 2026; not peer reviewed at the time of the accessed version. [22] S. Lin, J. Hilton, and O. Evans, “TruthfulQA: Measuring how models mimic human falsehoods,” ACL, 2022. [23] J. Li, X. Cheng, W. X. Zhao, et al. ., “HaluEval: A large-scale hallucination evaluation benchmark for large language models,” EMNLP, 2023. [24] N. Dziri, H. Rashkin, T. Lin, et al. ., “FaithDial: A faithful benchmark for information-seeking dialogue,” TACL , 10, 1473–1490, 2022. [25] C. Guo, G. Pleiss, Y. Sun, and K. Q. Weinberger, “On calibration of modern neural networks,” ICML, 2017. [26] A. Vaswani, N. Shazeer, N. Parmar, et al. ., “Attention is all you need,” NeurIPS, 2017. 
+
+7
