@@ -1,0 +1,530 @@
+Title: LOOMSUM:Weaving Quantitative and Narrative Evidence for Faithful Long Text-Table Summarization
+
+URL Source: https://arxiv.org/pdf/2609.00241v1
+
+Published Time: Wed, 02 Sep 2026 00:17:56 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# LOOM SUM : Weaving Quantitative and Narrative Evidence for Faithful Long Text–Table Summarization 
+
+Meng Zhou 1, Wenhao You 2, Wei Yuan 31University of Toronto, 2University of Waterloo, 3Independent Researcher 
+
+simonzhou@cs.toronto.edu , w22you@uwaterloo.ca 
+
+Abstract 
+
+Long documents often distribute important information across extensive narrative pas-sages and multiple tables, making faithful sum-marization particularly challenging. Exist-ing methods may generate individually sup-ported quantitative facts and analytical state-ments yet associate them incorrectly, produc-ing quantitatively plausible yet analytically un-faithful summaries. In this work, we propose LOOM SUM , a training-free framework that ex-tracts source-grounded atomic evidence, ex-plicitly links table-derived facts with support-ing narrative analyses, and plans the discourse structure before generation. We also intro-duce Table-Grounded Faithfulness (TGF), a claim-level metric that separately evaluates Nu-meric Grounding, Analysis Support, and Re-lation Consistency. Experiments on the text– table summarization benchmarks FINDSum and USTT show that L OOM SUM improves an-alytical faithfulness while maintaining strong summarization quality. Human evaluation finds positive component-level associations with the corresponding human judgments. Our Rela-tion Consistency metric further shows stronger agreement with human relation judgments than generic factuality metrics, indicating that ex-plicit cross-modal linking helps reduce errors in which supported quantities are paired with incorrect narrative interpretations. Together, these findings show that faithful long text–table summarization requires not only grounding in-dividual facts, but also preserving the relations between them. 
+
+1 Introduction 
+
+Faithful summarization of long, heterogeneous doc-uments remains challenging despite rapid progress in long-context large language models (LLMs). Access to longer inputs reduces the need for ag-gressive truncation, but does not guarantee that all source regions are used effectively (Ravaut et al., 2024). Long-context Faithful summarization of long, heterogeneous documents remains challeng-ing despite rapid progress in long-context large language models (LLMs). Although longer context windows reduce the need for aggressive truncation, they do not ensure that information from all source regions is used effectively (Ravaut et al., 2024). Long-context models exhibit systematic positional biases (Liu et al., 2024; Cao et al., 2024), unevenly represent evidence from different parts of the in-put (Ravaut et al., 2024), and become more prone to factual errors when supporting evidence appears in the middle of a document (Wan et al., 2025). Faithful long-document summarization therefore requires not only selecting salient information, but also integrating related evidence distributed across distant and heterogeneous source regions. This challenge is particularly pronounced in financial re-ports, where quantitative results are often presented in tables, while their causes, implications, and un-certainties are discussed in narrative passages else-where (Zhang et al., 2026). Prior work studies this setting through long text–multi-table summa-rization in FINDSum (Liu et al., 2022) and joint table–text financial summarization in USTT (Wang et al., 2023). However, access to both modalities does not guarantee that evidence from them is cor-rectly associated. Indeed, Cao et al. (2024) identify 
+
+context mismatch as a prominent form of numeri-cal hallucination in financial-report summaries: a number may be supported by the source but used in an incorrect semantic context. We focus on a specific cross-modal form of this problem : a model may correctly reproduce a quantitative fact and a source-supported analytical statement, yet incor-rectly associate the two. For example, a reported revenue increase may be attributed to an explana-tion that actually concerns a different metric, entity, or reporting period. We refer to this failure as 
+
+quantitative–narrative misalignment : the quantita-tive and narrative components of a generated claim may each be supported, while the relation asserted 1arXiv:2609.00241v1 [cs.CL] 31 Aug 2026 TABLE FACT            
+
+> Net interest income 2015: $634.3M; 2014: $620.2M Change: +$14.1M (+2.3%)
+> TEXT FACT
+> Total revenue increased $25.7M, due to +$11.6M non-interest income and +$14.1M net interest income.
+> DIRECT SUMMARY (LINK OMITTED)
+> Total revenue increased $25.7 million. Net interest income was $634.3 million (tax-equivalent $664.0 million ); non-interest income was $447.6 million (increase of $11.6 million).
+> • Unsupported analysis, wrong number!
+> PROPOSED METHOD (LINK PRESERVED)
+> Total revenue in 2015 increased $25.7 million over 2014 due to growth in non-interest income of $11.6 million and growth in net interest income of $14.1 million comparing $634.3M in 2015 and $620.2M in 2014.
+> Omitted Wrong Unsupported
+> 020 40
+> Failure (%)
+> 32.3 6.2 6.9 34.4 5.8 7.7
+> 24.5 4.3 1.7
+> (b) Link failures ↓
+> Direct GCG Loom
+> 050 100
+> 71.4 73.8
+> 82.5
+> (c) TGF ↑
+
+(a) Evidence-to-summary comparison   
+
+> Direct GCG LoomSum
+
+Figure 1: Motivation and main results on cross-modal quantitative-narrative relation modeling. (a) : A quali-tative FINDS UM -ROO example in which direct gen-eration combines supported table and narrative facts incorrectly, whereas L OOM SUM preserves their rela-tion. (b) : Rates of omitted links, incorrect links, and unsupported analyses on a FINDS UM -ROO subset. (c) :Comparison of TGF scores across different methods. 
+
+between them is not. Figure 1 illustrates this failure and summarizes our main empirical finding: explic-itly modeling cross-modal links reduces omitted and incorrect quantitative–narrative associations, as well as unsupported analyses, while improving the TGF score. 
+
+Related Works. Existing approaches only par-tially address this failure. Hierarchical, extract-then-abstract, and retrieval-based methods reduce long inputs by selecting salient sentences, table records, or relational facts before generation (Chen and Bansal, 2018; Gehrmann et al., 2018; Zhu et al., 2021; Cho et al., 2024; Kirstein et al., 2025). For financial summarization, FINDSum selects textual segments and table tuples separately (Liu et al., 2022), while Wang et al. (2023) model in-teractions between sentence and table representa-tions. These methods improve content selection, but do not maintain the quantitative–narrative rela-tion as an explicit, traceable unit throughout gener-ation. Many also require task-specific fine-tuning, which introduces adaptation costs when transfer-ring to new datasets or domains. Existing eval-uation metrics expose a related limitation (Sun et al., 2026). Reference-based and general factu-ality metrics measure summary similarity or over-all source–claim consistency (Fabbri et al., 2022; Zha et al., 2023; Laban et al., 2022), while attri-bution frameworks identify supporting evidence for generated claims (Song et al., 2024; Wu et al., 2024; Chu et al., 2025). Recent work further evalu-ates structured factuality and coverage: Jeong et al. (2025) uses agent-based evaluation for long nar-ratives, Elaraby and Litman (2026) measures the preservation of salient argument roles, and Samari-nas et al. (2025) combines atomic-claim verifica-tion with aspect-level coverage. Numerical and table-aware metrics additionally assess consistency with structured records or the selection of quanti-tative content (Dhingra et al., 2019; Wang et al., 2020; Chen et al., 2020; Liu et al., 2022). However, these methods do not specifically evaluate whether a table-derived quantity is associated with its cor-rect narrative interpretation. Consequently, a claim may receive a favorable evaluation when both com-ponents are independently grounded, even though their combination is unsupported. To address these limitations, we propose L OOM -SUM , a training-free claim-to-discourse frame-work for long text–table summarization. L OOM -SUM first represents narrative passages and table records as source-grounded atomic claims. It then aligns quantitative claims with narrative evidence that explains, compares, qualifies, or contextual-izes them, producing linked cross-modal claims with explicit provenance. Related evidence is sub-sequently consolidated and organized into a dis-course plan (Puduppully and Lapata, 2021), from which an off-the-shelf LLM generates the final sum-mary. This representation is designed to preserve quantitative–narrative relations from evidence se-lection through surface realization without task-specific parameter updates. We further introduce 
+
+Table-Grounded Faithfulness (TGF) , a claim-level evaluation framework that separately assesses Numeric Grounding, Analysis Support, and Rela-tion Consistency. This decomposition distinguishes errors in quantitative facts, narrative interpretations, and the relations between them. Experiments on FINDSum and USTT show that LOOM SUM improves analytical faithfulness while maintaining competitive summary quality and con-tent coverage. A claim-level human evaluation fur-2Stage V: TGF Scoring                  
+
+> Stage III: Evidence-Grounded Discourse Plan Stage II: Cross-modal Alignment
+> Analysis
+> Fact
+> Linked Claim
+> e.g., Operating revenue rose $17.1M (3.2%) to $545.7M in 2012, driven by higher fuel surcharge and line-haul revenue.
+> fuse
+> Select Assign Roles Order
+> e.g., L1: Revenue rose $17.1M ...
+> e.g., L1 …
+> Primary
+> Result… L2…
+> e.g., Summary prioritizes
+> …
+> Stage IV: ICL-guided Generation
+> Current
+> Claims Plan
+> combine
+> result + driver → analytic sentence
+> comparison → contrast sentence
+> trend + qualifier → qualified sentence
+> retrieved 3-shot examples
+> Stage I: LLM Extraction
+> I: Source Document
+> Text Claims
+> e.g., Higher fuel surcharge and line-haul revenue drove
+> the increase…
+> Table Claims
+> e.g., Operating revenue: $528.6M to $545.7M (+$17.1M, +3.2%).
+> input narrative input table
+> Retrieve
+> Frozen LLM
+> O: Generated Summary
+> generate
+> Decompose
+> Numeric Grounding
+> Analysis Support
+> Relation Consistency
+> atomic claims
+> text &table evidence
+> Idea : Faithful text –table summarization requires explicit fact –interpretation linking.
+
+Figure 2: Overall view of our proposed method L OOM SUM . The framework constructs atomic claims from narrative text and tables, explicitly aligns quantitative facts with their narrative interpretations, consolidates the resulting evidence into a discourse plan, and generates the final summary. 
+
+ther shows that TGF correlates with human judg-ments, particularly for Numeric Grounding and Relation Consistency. In summary, our contributions are as follows: • We identify and formalize quantitative– narrative misalignment , and empirically char-acterize how existing long text–table summa-rizers omit or mismatch relations between quantitative facts and narrative interpretations. • We propose L OOM SUM , a training-free claim-to-discourse framework that constructs source-grounded atomic claims, explicitly aligns quantitative and narrative evidence, and or-ganizes the claims through discourse planning for better summarization. • We introduce and human-validate TGF ,a reference-summary-free, source-grounded metric that separately evaluates Numeric Grounding, Analysis Support, and Relation Consistency, capturing relation-level errors overlooked by existing factuality and numeri-cal metrics. • We conduct extensive experiments on FIND-Sum and USTT datasets, demonstrating im-provements in analytical faithfulness and sum-mary quality through automatic evaluation, ablation studies, and qualitative analyses. 
+
+2 Method 
+
+2.1 Overview 
+
+In this section, we present L OOM SUM , a training-free framework for long text–table summarization that explicitly links and organizes textual and tabu-lar evidence before generation. Given a source doc-ument D, the proposed method constructs source-grounded text and table claims, aligns quantitative facts with their narrative interpretations, consol-idates redundant claims, organizes the resulting evidence into a discourse plan, and generates the final summary from this structured representation. The following subsections describe each stage in detail. 
+
+2.2 Claim Construction and Cross-Modal Alignment Claim Construction. Inspired by claim-level de-composition used in FineSurE (Song et al., 2024), LOOM SUM converts the source into short, in-dependently verifiable claims before generation: 
+
+Ctext , Ctable = LLM con 
+
+ Dtext , D table . For text claims , the LLM extracts atomic propositions while preserving entities, quantities, units, report-ing periods, and stated relations. Each claim re-tains its supporting source span and document po-sition, enabling subsequent alignment and prove-nance tracking without relying solely on the model-generated reformulation. For table claims , the model constructs atomic quantitative propositions from serialized table records that preserve the ta-3ble title, row and column headers, value, unit, and reporting period. Each claim retains a pointer to its original table record, allowing the quantitative content to remain traceable to the structured source. 
+
+cross-modal Alignment. Quantitative facts and their narrative interpretations may appear in distant regions of a long document. LOOM SUM there-fore aligns table claims with text claims that ex-plain, compare, qualify, attribute, or contextualize them: Calign = LLM align (Ctext , Ctable ). Each cross-modal analytic claim retains the quantitative component, the narrative component, their asserted relation, and the provenance of both. The align-ment stage is constrained to link existing source-derived claims rather than introduce new factual content, making the resulting quantitative–narrative relations explicit and traceable. 
+
+2.3 Claim Consolidation and Planning 
+
+Long documents may repeat the same information across tables, narrative passages, and sections. To reduce redundancy, L OOM SUM conservatively con-solidates claims: C = LLM conso (Ctext ∪Ctable ∪
+
+Calign ). The LLM is instructed to merge claims only when they express the same proposition and agree on the associated entity, metric, reporting period, direction, and numerical value. Claims with conflicting values, temporal scopes, or trends are retained separately. When several equivalent representations exist, a cross-modal analytic claim is preferred because it preserves both the quanti-tative fact and its narrative interpretation. Prove-nance from all consolidated instances is retained so that their original supporting evidence remains traceable. Finally, following prior work on con-tent planning (Puduppully and Lapata, 2021), we organize the consolidated claims into an ordered discourse plan: P = LLM plan (C). The planner specifies which claims should be realized, their discourse roles, their supporting evidence, and the quantitative–narrative relations to preserve. Sepa-rating planning from surface realization promotes coherent information ordering and reduces the risk of omitting or separating linked evidence during generation. 
+
+2.4 Summary Generation 
+
+The summary generator is guided by a small set of K demonstrations, {Xi}Ki=1 , retrieved from the 
+
+training split through in-context learning. Demon-strations are selected according to structural prop-erties such as table density, cross-modal relation patterns, and source-summary length. Each demon-stration contains source-derived claims, their dis-course organization, and the corresponding refer-ence summary. These examples illustrate how ev-idence should be compressed, ordered, and com-bined while preserving quantitative–narrative rela-tions. Given the discourse plan P and the retrieved demonstrations, the generator produces the final summary: Y = LLM gen (P, {Xi}). Each gen-erated sentence is also accompanied by the identi-fiers of its supporting claims, providing lightweight sentence-level provenance and facilitating subse-quent inspection. 
+
+3 Table-Grounded Faithfulness Score 
+
+Existing metrics assess reference similarity, nu-merical content, or general claim–source consis-tency, but do not explicitly determine whether a quantitative fact is associated with the correct narrative interpretation. We therefore introduce 
+
+Table-Grounded Faithfulness (TGF) , a reference-summary-free, source-grounded metric with three dimensions: Numeric Grounding(NG) , Analysis Support(AS) , and Relation Consistency(RC) to eval-uate whether generated quantitative analyses are supported by the input document. Following the atomic-fact evaluation paradigm of FActScore (Min et al., 2023), TGF decomposes an LLM-generated summary S into a set of independently verifiable claims, {ci}Mi=1 , and retrieves an evi-dence packet Ei from the corresponding source document D for each claim. Claims with multi-ple independent propositions are split, except when a quantitative premise and its interpretation must remain together to evaluate their relation. 
+
+LLM-based Scoring. For each dimension d ∈
+
+N G, AS, RC , an LLM judge evaluates ci against 
+
+Ei using a five-point rubric. A score of 1 denotes unsupported or contradicted content, whereas 5
+
+denotes full support; intermediate scores indicate increasing degrees of partial support. Because the judge does not provide calibrated probabilities over the five ratings, we repeat each judgment L times. Let ˆs(d) 
+
+> i,ℓ
+
+∈ { 1, . . . , 5} denote the rating assigned to claim ci for dimension d in the ℓ-th judgment. We compute the normalized dimension score as 
+
+s(d) 
+
+> i
+
+= 1
+
+L
+
+> L
+
+X
+
+> ℓ=1
+
+ˆs(d) 
+
+> i,ℓ
+
+− 14 , d ∈ { N G, AS, RC }.
+
+(6) This maps each rating to a [0 , 1] scale. We further 4set Ni = s(N G ) 
+
+> i
+
+, Ai = s(AS ) 
+
+> i
+
+, and Ri = s(RC ) 
+
+> i
+
+.
+
+Evaluation dimensions. Numeric Grounding eval-uates whether the quantitative content of ci is sup-ported by Ei together with its semantic context. The judge considers the value, metric, entity, unit, and direction of change. Numerical surface forms are normalized only to resolve equivalent formats. A correct value associated with the wrong met-ric, entity, unit, or reporting period therefore does not receive full credit. Analysis Support evalu-ates whether trends, comparisons, interpretations, and explanations are licensed by the evidence Ei.Plausible but unstated interpretations receive lower scores than analyses explicitly supported by the source. Relation Consistency applies to claims combining quantitative and narrative components and evaluates whether the source supports their asserted association. Relation Consistency is de-signed to capture this quantitative–narrative mis-alignment. 
+
+Aggregation. Each claim contributes once to TGF. We set Fi = Ni for numeric-only claims, 
+
+Fi = Ai for analysis-only claims, and Fi =min {Ni, A i, R i} for cross-modal analytic claims. For a cross-modal analytical claim to be faithful, its quantitative fact, analytical explanation, and the relation connecting them must all be supported. We therefore adopt a non-compensatory aggrega-tion in which the claim score is determined by its least-supported required component (the min() op-erator). This prevents strongly supported individual facts from compensating for an unsupported ana-lytical link. Then, the summary-level score can be written as TGF( S) = 1
+
+> M
+
+PMi=1 Fi, and the overall score across the test set is the document macro-average TGF test = 1
+
+> |D|
+
+P 
+
+> i
+
+TGF( Si).
+
+4 Experiments 
+
+We organize our experiments around three research questions we aim to answer. RQ1: Overall effec-tiveness. Does L OOM SUM improve summary qual-ity, numeric content coverage, and table-grounded faithfulness over existing summarization methods? 
+
+RQ2: Component contributions. How do cross-modal alignment and planning contribute to the performance of L OOM SUM ? RQ3: Metric valid-ity. Does TGF align with human judgments and capture relation-level errors that are overlooked by generic factuality metrics? TextRank Table-RAG GCG Direct-LC RAG-Sum       
+
+> LoomSum
+> 68 59 68 73 80
+> 74
+> 66 45 65 69 71
+> 72
+> 63 42 59 64 65
+> 69
+> FINDSum-ROO
+> TextRank Table-RAG GCG Direct-LC RAG-Sum
+> LoomSum
+> 63 51 66 72 74
+> 82
+> 61 40 63 66 70
+> 80
+> 56 38 58 62 66
+> 77
+> FINDSum-Liquidity
+> 025 50 75 100 TextRank Table-RAG GCG Direct-LC RAG-Sum
+> LoomSum
+> 69 43 66 64 69
+> 67
+> 66 32 61 62 64
+> 65
+> 62 30 57 58 58
+> 62
+> USTT
+> TGF dimension score
+> NG AS RC
+
+Figure 3: Component-wise TGF scores on three datasets. Higher is better. All scores are on a 0–100 scale. 
+
+4.1 Settings 
+
+In this work, we evaluate L OOM SUM on two com-plementary table–text summarization benchmarks that differ in language and input scale. FINDS UM 
+
+is an English long-document, multi-table financial summarization dataset (Liu et al., 2022). It con-tains two subsets: ROO , which focuses on changes in revenue, expenses, and profitability, and Liq-uidity , which covers liquidity, cash flows, debt, and capital resources. We additionally evaluate on USTT , a Chinese financial table–text summa-rization dataset (Wang et al., 2023), in which each instance contains a table, an associated narrative passage, and a human-written summary grounded 5in both modalities. We use the official test split for all datasets. Detailed dataset statistics are provided in Appendix A. 
+
+Baselines. We compare L OOM SUM with meth-ods that use different input modalities. For the text-only setting, T EXT RANK (Mihalcea and Ta-rau, 2004) is an unsupervised extractive baseline, while BART (Lewis et al., 2020) and B IG BIRD -PEGASUS (Zaheer et al., 2020) are neural ab-stractive summarizers operating only on the nar-rative text. For the table-only setting, BART and BIG BIRD -P EGASUS verbalize selected table tuples, while T ABLE -RAG retrieves relevant table rows before generation. For the joint text–table setting, GCG verbalizes table tuples and combines them with the narrative input for final generation, fol-lowing Liu et al. (2022). D IRECT -LC provides the complete narrative and serialized tables directly to a long-context LLM, whereas RAG-S UM retrieves relevant narrative blocks and table rows using fixed summary-oriented queries. Unless otherwise stated, all LLM-based methods use GPT-5-nano (Singh et al., 2025) as the base model and the same decod-ing configuration as L OOM SUM .
+
+Evaluation Metrics. We evaluate summary quality using reference-based, numerical-content, and source-grounded faithfulness metrics. For reference-based evaluation, we report ROUGE-1, ROUGE-2, and ROUGE-L scores (Lin, 2004), which measure unigram, bigram, and longest-common-subsequence overlap with the reference summary, respectively. We also report BERTScore (Zhang et al., 2019) to assess semantic similar-ity, following prior works (Liu et al., 2022; Wang et al., 2023). For numerical-content evaluation, we adopt Numerical Precision (NP), Numerical Coverage (NC), and their harmonic mean, Numer-ical Selection (NS), from Liu et al. (2022). To evaluate source-grounded factual consistency, we include AlignScore (Zha et al., 2023) and our pro-posed TGF score, described in Section 3. Be-cause TGF evaluates the faithfulness of expressed claims rather than omitted content, we addition-ally report Grounded Claim Coverage (G-Cov). We decompose the reference and generated sum-maries into atomic claims and measure the propor-tion of reference claims covered by at least one generated claim. G-Cov therefore complements the precision-oriented TGF by identifying meth-ods that achieve high faithfulness through overly conservative generation. In the human validation study, we additionally include SummaC (Laban et al., 2022). AlignScore and SummaC serve as generic factuality baselines, allowing us to assess whether TGF’s dimension-specific design provides additional agreement with human judgments. 
+
+5 Results 
+
+We evaluate the generated summaries using auto-matic metrics and human judgments and present the results in this section. We further conduct ablation studies to examine the contribution of individual components and provide a case study. 
+
+5.1 Results on FINDSum (RQ1) 
+
+Table 1 reports the main results on the ROO and Liquidity subsets of FINDSum. Due to space con-straints, we report ROUGE-1 (R-1), ROUGE-2 (R-2), ROUGE-L (R-L), BERTScore (BS), Numeric Selection (NS), and Table-Grounded Faithfulness (TGF) in the main text; complete results and de-tailed analysis are provided in Appendix C. Several patterns emerge from the results. First, LLM-based abstractive methods generally outperform unsuper-vised baselines across both reference-based and faithfulness-oriented metrics under all three input configurations. Text-only methods also generally outperform their table-only counterparts, suggest-ing that narrative passages provide a more directly usable representation of the content emphasized in the reference summaries. Among all methods, LOOM SUM achieves the strongest performance on most reported metrics across both subsets, includ-ing the highest NS and TGF scores. The NS gains indicate improved retention of salient numerical content, while the TGF improvements show that quantities, analytical statements, and their asserted relations are more consistently supported by the source. These results support the central design of L OOM SUM : cross-modal alignment preserves quantitative–narrative relations, while discourse planning integrates the aligned evidence into a co-herent summary. 
+
+Component-wise TGF analysis. Figure 3 shows three component-level scores of TGF: Numeric Grounding (NG), Analysis Support (AS), and Relation Consistency (RC). On FINDSum-ROO, LOOM SUM achieves scores of 74 in NG, 72 in AS, and 69 in RC, respectively, outperforming the strongest baseline. The gains are larger on FINDSum-Liquidity, where L OOM SUM reaches 82 in NG, 80 in AS, and 77 in RC. The progressively larger gains from NG to RC indicate that L OOM -6SUM ’s primary advantage lies not only in repro-ducing grounded quantities, but also in preserving the analytical relations in which those quantities participate. 
+
+5.2 Results on USTT (RQ1) 
+
+Table 2 reports the results on USTT. We observe similar findings as in FindSum. First, Table-only methods perform substantially worse than text-based and multimodal counterparts, suggests that tabular records alone provide insufficient context for recovering the narrative structure and analyti-cal content emphasized in the reference summaries. LOOM SUM achieves the highest R-1, R-L, and NS scores, indicating stronger overall content cover-age and substantially better retention of reference-relevant numerical information. An interesting result is that TextRank obtains the highest TGF score despite considerably lower ROUGE and NS performance. This reflects the dis-tinction between faithfulness and coverage: an ex-tractive method can achieve high claim-level faith-fulness by selecting a small set of directly sup-ported sentences while omitting other salient infor-mation. The component scores in the right panel of Figure 3 clarify this result. TextRank achieves the highest NG score, whereas L OOM SUM obtains the highest AS and RC scores. Thus, TextRank is effective at preserving isolated source quanti-ties, while L OOM SUM provides stronger analytical support and more reliable quantitative–narrative integration. Across all three evaluation sets, RC is gener-ally the most challenging dimension. Neverthe-less, L OOM SUM consistently achieves the highest RC score, providing direct evidence that explicit cross-modal alignment mitigates the quantitative– narrative misalignment identified in Section 1. More detailed analysis can be found in Appendix. 
+
+5.3 Results on Human Evaluation (RQ3) 
+
+We conduct a human evaluation to examine whether the three components of TGF—Numeric Grounding (NG), Analysis Support (AS), and Re-lation Consistency (RC)—agree with human judg-ments of the corresponding properties. Rather than eliciting a single holistic faithfulness score, we eval-uate each dimension independently, consistent with the multidimensional design of TGF. 
+
+Annotation setup. We randomly select 100 sam-ples(documents) and their generated summaries from the FINDSum test set. The study is done by two annotators. NG is evaluated for claims contain-ing quantitative information, AS for claims contain-ing analytical statements, and RC for claims that associate a quantitative fact with a narrative inter-pretation. Each annotator independently assesses the applicable dimensions using the corresponding source evidence, including relevant table records and narrative passages. Annotators are blinded to the generation methods and all automatic metric scores. 
+
+How well does TGF align with human judg-ments? We assess the validity of each TGF compo-nent by computing Spearman’s ρ and Kendall’s 
+
+τb between the LLM-derived scores defined in Section 3 and the corresponding human scores. As shown in Figure 3, TGF-NG exhibits a mod-erate positive correlation with human Numeric Grounding judgments ( ρ = 0 .482 , τb = 0 .464 ,
+
+p < 0.05 ). TGF-RC achieves the strongest corre-lation ( ρ = 0 .598 , τb = 0 .571 , p < 0.05 ), indi-cating that it reliably reflects human assessments of whether quantitative facts are associated with the correct narrative interpretations. TGF-AS also correlates positively with human Analysis Support judgments ( ρ = 0 .326 , τb = 0 .314 ), although the association is not statistically significant. Over-all, the results provide human validation for the NG and RC components, with particularly strong evidence for Relation Consistency. The weaker AS correlation suggests that determining whether an interpretation is sufficiently supported remains more subjective and challenging for both human and automatic evaluation. 
+
+Does TGF capture human judgments beyond generic factuality metrics? We additionally com-pare TGF with AlignScore and SummaC, two generic factuality metrics that each produce a sin-gle overall consistency score. For a fair compari-son, we correlate each metric with Human NG, AS, and RC on the same annotated samples. Figure 4 shows that TGF consistently achieves stronger agreement with human judgments than the generic baselines across both Spearman’s ρ and Kendall’s 
+
+τb. The advantage is especially pronounced for Relation Consistency, where TGF substantially out-performs AlignScore and SummaC. This result sup-ports our central claim that generic source–claim consistency metrics are not sufficient to detect 
+
+quantitative–narrative relation errors . TGF-RC explicitly targets this failure mode, which explains its markedly stronger correspondence with human RC judgments. We also observe gains for Numeric 7Input Method FINDSum-Liquidity FINDSum-ROO R-1 R-2 R-L BS NS TGF R-1 R-2 R-L BS NS TGF Text-only TextRank 33.06 6.98 13.54 74.33 20.05 65.86 35.04 7.34 14.94 76.81 24.80 63.19 BART 21.93 6.22 10.78 72.92 20.44 63.70 23.19 5.83 10.39 67.81 19.80 54.33 BigBird-Pegasus 25.84 7.86 12.59 73.80 21.40 64.28 24.10 7.01 13.49 68.24 22.80 64.37 Table-only BART 17.71 5.98 8.47 66.53 7.50 48.15 18.37 4.62 8.96 67.21 6.50 46.69 BigBird-Pegasus 23.16 6.11 11.50 68.50 13.34 50.92 19.25 6.90 12.91 69.70 12.47 52.22 Table-RAG † 30.05 5.88 12.70 65.59 14.68 48.92 31.80 7.32 14.91 69.72 12.27 51.93 Text + Table GCG † 33.96 7.79 14.14 76.54 24.59 66.71 29.25 8.89 16.58 80.53 23.75 64.47 Direct-LC † 32.01 7.49 13.74 75.38 25.11 69.29 30.19 8.83 16.52 80.55 24.10 68.21 RAG-Sum † 33.51 7.72 14.30 76.31 23.48 76.34 27.82 8.04 15.80 80.70 27.08 69.47 LOOM SUM (Ours) † 32.74 9.51 16.35 76.78 25.98 79.43 35.45 10.77 18.55 81.34 27.03 71.38 
+
+Table 1: Main results on the FINDSum-Liquidity and FINDSum-ROO test sets. Higher values are better. † denotes methods using GPT-5-nano as the base model. The best results are shown in blue .                                     
+
+> Input Method R-1 R-2 R-L BS NS TGF Text-only TextRank 24.77 10.20 13.83 60.24 21.44 66.41 BART 22.84 8.90 14.25 59.80 19.12 54.26 BigBird-Pegasus 24.18 7.69 14.17 60.12 20.35 56.91 Table-only BART 20.46 5.21 13.72 60.01 13.32 52.53 BigBird-Pegasus 20.71 5.54 12.01 59.25 13.98 55.79 Table-RAG †19.26 5.66 10.77 61.50 12.18 56.13 Text + Table GCG †24.83 8.93 12.92 63.84 18.76 59.71 Direct-LC †25.14 9.37 13.26 63.71 18.63 58.51 RAG-Sum †24.56 9.91 12.93 64.47 15.89 60.64 LOOM SUM (Ours) †26.10 9.18 15.16 64.16 27.36 63.71
+
+Table 2: Main results on the USTT test set. Higher values are better. † denotes methods using GPT-5-nano as the base model. The best results are shown in blue .                                       
+
+> Variant Align Plan ICL R-L NS TGF FINDSum–ROO Flat Evidence ✗✗✗13.47 21.46 55.68 + Cross-Modal Alignment ✓✗✗15.89 22.30 62.93 + Planning ✓✓✗16.04 25.71 67.34 LOOM SUM (Ours) ✓✓✓18.55 27.03 71.38 FINDSum–Liquidity Flat Evidence ✗✗✗13.12 20.21 58.94 + Cross-Modal Alignment ✓✗✗14.47 21.47 65.69 + Planning ✓✓✗16.44 24.16 74.48 LOOM SUM (Ours) ✓✓✓16.35 25.98 79.43
+
+Table 3: Component ablation on the ROO and Liquidity test sets from FINDSum. Each row progressively adds one component. The best results are shown in blue . 0.0 0.2 0.4 0.6 
+
+NG AS RC (a) Spearman's ρ   
+
+> 0.482*
+> 0.116 0.219
+> 0.326
+> 0.049 0.189
+> 0.598*
+> 0.138 0.194
+> 0.0 0.2 0.4 0.6
+
+(b) Kendall's τb  
+
+> 0.464**
+> 0.105 0.172
+> 0.314
+> 0.038 0.149
+> 0.571*
+> 0.135 0.149
+> TGF AlignScore SummaC
+
+Figure 4: Rank correlations of TGF and generic fac-tuality metrics with human judgments across the three annotated dimensions, measured using Spearman’s ρ
+
+and Kendall’s τb. Note: ∗ denotes p < 0.05 and ∗∗ 
+
+denotes p < 0.01 .
+
+Grounding and Analysis Support, suggesting that the component-specific design of TGF provides more fine-grained alignment with human assess-ment than a single undifferentiated factuality score. 
+
+5.4 Ablations (RQ2) 
+
+Table 3 reports a cumulative ablation of the three main components of L OOM SUM . Flat Evidence 
+
+uses only independently extracted text and table claims, without explicit cross-modal alignment, planning, or in-context demonstrations. We then progressively add each component until reaching the full model. cross-modal alignment consistently improves all metrics on both FINDSum subsets, showing that incorporating table claims and ex-plicitly connecting them to narrative evidence im-proves quantitative–narrative faithfulness beyond text-only evidence. Adding planning yields fur-ther gains, particularly in NS and TGF. These im-provements suggest that organizing related claims before generation helps retain salient numerical content and preserve their associated interpreta-tions. Finally, in-context demonstrations produce the full L OOM SUM model and further improve NS and TGF on both subsets. Although R-L score slightly decreases from 16.44 to 16.35 in the Liq-uidity subset, the NS and TGF continue to improve, indicating that in-context guidance primarily bene-fits faithful evidence realization rather than lexical 8Source evidence. Table: Net interest income: 51.4; provision benefit: +10.8; post-provision net interest income: 62.2. Text: “... credit loss provisions of $10.8 million on our mortgage loan portfolio and investments in beneficial interests during the year ended December 31, 2020.”             
+
+> ×Direct-LC “... initial credit loss provisions of $5.1 million in Q1 2020, the company recorded a net recovery of $10.8 million in credit loss provisions for the full year 2020 due to better-than-expected loan performance. ...”
+> ×GCG “... credit loss provisions of $10.8 million on mortgage loans and beneficial interests for the year ended December 31, 2020; net $0.9 million of unrealized losses ...”
+> ×RAG-Sum “... macroeconomic conditions and expected lifetime credit losses on our mortgage loan and beneficial interest portfolios are subject to meaningful uncertainty ...”
+> ✓LOOM SUM “... net interest income after provision for credit benefit/(losses) for 2020 was $62.2 million , compared with the original $51.4 million, reflecting the $10.8 million provision benefit recorded on our mortgage loan portfolio and investments in beneficial interests ...” Reference “... our net interest income after the recovery of provision for credit losses increased to $62.2 million [...] primarily as a result of $10.8 million in net recovery of provision for credit losses ...”
+
+Table 4: Qualitative comparison on a FINDSum-ROO example. × denotes an omitted or wrong quantitative– narrative link, whereas ✓ denotes a preserved link. 
+
+overlap. 
+
+Sensitivity Analysis. We further examine the ro-bustness of the proposed method to the choice of base model and observe broadly consistent per-formance across different tasks; full results are reported in Appendix B. 
+
+5.5 Case Study 
+
+Finally, to complement the main results, we exam-ine an example from the FINDSum-ROO testset in Table 4. The source establishes a quantitative– narrative chain in which “$51.4 million in net in-terest income and a $10.8 million credit-loss provi-sion benefit yield $62.2 million in post-provision net interest income”. The accompanying narrative further identifies the mortgage-loan portfolio and investments in beneficial interests as the sources of the provision benefit. The baselines preserve only fragments of the source relation. Direct-LC reports the $10.8 mil-lion recovery but omits its effect on the $62.2 million post-provision income and introduces an unsupported explanation. GCG similarly retains the provision benefit as an isolated fact, while RAG-Sum shifts toward general risk discussion and omits the central quantities altogether. In con-trast, L OOM SUM connects the provision benefit to the resulting income and retains its portfolio-level attribution, consistent with the reference. This ex-ample illustrates how explicit cross-modal align-ment preserves a coherent driver–outcome relation rather than disconnected facts, matching the ag-gregate gains in TGF Relation Consistency. We provide more examples for qualitative analysis in Appendix D. 
+
+6 Conclusion 
+
+In this work, we formalize quantitative–narrative misalignment , where individually supported quan-titative facts and analytical statements are com-bined into unsupported relations. We then propose LOOM SUM , a training-free framework that explic-itly links table-derived facts with narrative interpre-tations and organizes them through discourse plan-ning. We also introduce Table-Grounded Faithful-ness (TGF) to evaluate Numeric Grounding, Anal-ysis Support, and Relation Consistency. Experi-ments on FINDSum and USTT show that L OOM -SUM improves analytical faithfulness without com-promising reference-based quality. Human evalua-tion supports TGF, with the Relation Consistency component aligning more closely with human judg-ments than generic factuality metrics. Overall, our results show that faithful text–table summarization requires preserving not only individual facts, but also the relations between them. Future work may explore richer relation-aware models and broader domains. 
+
+Limitations 
+
+This work provides an initial investigation of quantitative–narrative misalignment in long text– table summarization. L OOM SUM is intentionally designed as a lightweight, training-free framework to isolate the value of explicitly linking quantita-tive facts with their narrative interpretations. It should therefore be viewed as one possible instan-tiation of relation-aware summarization rather than an exhaustive solution to the problem. Its modular pipeline may also propagate errors across evidence extraction, cross-modal alignment, discourse plan-ning, and generation. Future work could explore jointly optimized or learned relation models, richer evidence graphs, and generation objectives that di-rectly preserve cross-modal relations. Our empirical evaluation is conducted on FIND-Sum and USTT, both of which contain financial text–table inputs. Although the underlying fail-ure mode may arise in other domains that com-bine structured records with narrative explanations, such as scientific, medical, and policy documents, its prevalence and characteristics outside financial reporting remain to be established. Extending the 9evaluation to broader domains, languages, table structures, and document lengths is therefore an important direction for future work. Finally, TGF relies on automated claim extrac-tion and LLM-based judgments, which may in-troduce model-dependent errors and sensitivity to evidence presentation (Fan et al., 2026). Our hu-man study provides positive validation for Numeric Grounding and Relation Consistency, but is limited in scale, and the weaker association observed for Analysis Support suggests that analytical interpreta-tions remain more difficult to evaluate consistently. In addition, TGF is precision-oriented and evalu-ates the faithfulness of expressed claims rather than the omission of salient content. Future work could combine relation-aware faithfulness with source-level coverage evaluation and validate the metric using larger and more diverse human annotations. 
+
+References 
+
+Tianyu Cao, Natraj Raman, Danial Dervovic, and Chen-hao Tan. 2024. Characterizing multimodal long-form summarization: A case study on financial reports. 
+
+arXiv preprint arXiv:2404.06162 .Wenhu Chen, Jianshu Chen, Yu Su, Zhiyu Chen, and William Yang Wang. 2020. Logical natural language generation from open-domain tables. In Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics , pages 7929–7942. Yen-Chun Chen and Mohit Bansal. 2018. Fast abstrac-tive summarization with reinforce-selected sentence rewriting. In Proceedings of the 56th annual meet-ing of the association for computational linguistics (volume 1: Long papers) , pages 675–686. Seonglae Cho, Myungha Jang, Jinyoung Yeo, and Dongha Lee. 2024. Rtsum: Relation triple-based interpretable summarization with multi-level salience visualization. In Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Tech-nologies (Volume 3: System Demonstrations) , pages 53–60. Bohao Chu, Meijie Li, Sameh Frihat, Chengyu Gu, Georg Lodde, Elisabeth Livingstone, and Norbert Fuhr. 2025. Tracsum: A new benchmark for aspect-based summarization with sentence-level traceability in medical domain. In Proceedings of the 2025 Con-ference on Empirical Methods in Natural Language Processing , pages 844–864. Bhuwan Dhingra, Manaal Faruqui, Ankur Parikh, Ming-Wei Chang, Dipanjan Das, and William Cohen. 2019. Handling divergent reference texts when evaluating table-to-text generation. In Proceedings of the 57th annual meeting of the association for computational linguistics , pages 4884–4895. Mohamed Elaraby and Diane Litman. 2026. Arc: Argu-ment representation and coverage analysis for zero-shot long document summarization with instruction following llms. In Proceedings of the 19th Confer-ence of the European Chapter of the Association for Computational Linguistics (Volume 1: Long Papers) ,pages 3626–3643. Alexander Richard Fabbri, Chien-Sheng Wu, Wenhao Liu, and Caiming Xiong. 2022. Qafacteval: Im-proved qa-based factual consistency evaluation for summarization. In Proceedings of the 2022 Confer-ence of the North American Chapter of the Associ-ation for Computational Linguistics: Human Lan-guage Technologies , pages 2587–2601. Zhichao Fan, Yanhang Li, Zexin Zhuang, Xian Sun, and Yingshuo Wang. 2026. The moving target: A longitudinal audit of trust-benchmark score drift across open-source chat llm release lines. Preprint ,arXiv:2607.02587. Sebastian Gehrmann, Yuntian Deng, and Alexander M Rush. 2018. Bottom-up abstractive summarization. In Proceedings of the 2018 conference on empirical methods in natural language processing , pages 4098– 4109. Yeonseok Jeong, Minsoo Kim, Seung-won Hwang, and Byung-Hak Kim. 2025. Agent-as-judge for factual summarization of long narratives. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 23602–23619. Frederic Kirstein, Sonu Kumar, Terry Ruas, and Bela Gipp. 2025. Re-frame the meeting summarization scope: Fact-based summarization and personaliza-tion via questions. In Findings of the Association for Computational Linguistics: EMNLP 2025 , pages 20087–20137. Philippe Laban, Tobias Schnabel, Paul N Bennett, and Marti A Hearst. 2022. Summac: Re-visiting nli-based models for inconsistency detection in summa-rization. Transactions of the Association for Compu-tational Linguistics , 10:163–177. Mike Lewis, Yinhan Liu, Naman Goyal, Marjan Ghazvininejad, Abdelrahman Mohamed, Omer Levy, Veselin Stoyanov, and Luke Zettlemoyer. 2020. Bart: Denoising sequence-to-sequence pre-training for nat-ural language generation, translation, and comprehen-sion. In Proceedings of the 58th annual meeting of the association for computational linguistics , pages 7871–7880. Chin-Yew Lin. 2004. Rouge: A package for automatic evaluation of summaries. In Text summarization branches out , pages 74–81. Nelson F Liu, Kevin Lin, John Hewitt, Ashwin Paran-jape, Michele Bevilacqua, Fabio Petroni, and Percy 
+
+10 Liang. 2024. Lost in the middle: How language mod-els use long contexts. Transactions of the association for computational linguistics , 12:157–173. Shuaiqi Liu, Jiannong Cao, Ruosong Yang, and Zhiyuan Wen. 2022. Long text and multi-table summarization: Dataset and method. In Findings of the Association for Computational Linguistics: EMNLP 2022 , pages 1995–2010. Rada Mihalcea and Paul Tarau. 2004. Textrank: Bring-ing order into text. In Proceedings of the 2004 con-ference on empirical methods in natural language processing , pages 404–411. Sewon Min, Kalpesh Krishna, Xinxi Lyu, Mike Lewis, Wen-tau Yih, Pang Koh, Mohit Iyyer, Luke Zettle-moyer, and Hannaneh Hajishirzi. 2023. Factscore: Fine-grained atomic evaluation of factual precision in long form text generation. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 12076–12100. Ratish Puduppully and Mirella Lapata. 2021. Data-to-text generation with macro planning. Transactions of the Association for Computational Linguistics , 9:510– 527. Mathieu Ravaut, Aixin Sun, Nancy Chen, and Shafiq Joty. 2024. On context utilization in summarization with large language models. In Proceedings of the 62nd Annual Meeting of the Association for Compu-tational Linguistics (Volume 1: Long Papers) , pages 2764–2781. Chris Samarinas, Alexander Krubner, Alireza Salemi, Youngwoo Kim, and Hamed Zamani. 2025. Beyond factual accuracy: Evaluating coverage of diverse fac-tual information in long-form text generation. In 
+
+Findings of the Association for Computational Lin-guistics: ACL 2025 , pages 13468–13482. Aaditya Singh, Adam Fry, Adam Perelman, Adam Tart, Adi Ganesh, Ahmed El-Kishky, Aidan McLaughlin, Aiden Low, AJ Ostrow, Akhila Ananthram, and 1 oth-ers. 2025. Openai gpt-5 system card. arXiv preprint arXiv:2601.03267 .Hwanjun Song, Hang Su, Igor Shalyminov, Jason Cai, and Saab Mansour. 2024. Finesure: Fine-grained summarization evaluation using llms. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) ,pages 906–922. Xian Sun, Wei Gao, Yingshuo Wang, Lingdong Kong, Yanhang Li, Zhichao Fan, Zexin Zhuang, Wen-long Dong, Zhiyuan Zheng, Hrishikesh Paranjape, and 1 others. 2026. Beyond accuracy: Measuring bias acknowledgment in chain-of-thought reason-ing for responsible ai evaluation. arXiv preprint arXiv:2606.15127 .David Wan, Jesse Vig, Mohit Bansal, and Shafiq Joty. 2025. On positional bias of faithfulness for long-form summarization. In Proceedings of the 2025 Conference of the Nations of the Americas Chap-ter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Pa-pers) , pages 8791–8810. Zhenyi Wang, Xiaoyang Wang, Bang An, Dong Yu, and Changyou Chen. 2020. Towards faithful neural table-to-text generation with content-matching con-straints. In Proceedings of the 58th annual meeting of the association for computational linguistics , pages 1072–1086. Ziao Wang, Zelin Jiang, Xiaofeng Zhang, Jaehyeon Soon, Jialu Zhang, Wang Xiaoyao, and Hongwei Du. 2023. Beyond pure text: Summarizing financial reports based on both textual and tabular data. In 
+
+IJCAI , pages 5233–5241. Yunshu Wu, Hayate Iso, Pouya Pezeshkpour, Nikita Bhutani, and Estevam Hruschka. 2024. Less is more for long document summary evaluation by llms. In 
+
+Proceedings of the 18th Conference of the European Chapter of the Association for Computational Lin-guistics (Volume 2: Short Papers) , pages 330–343. Manzil Zaheer, Guru Guruganesh, Kumar Avinava Dubey, Joshua Ainslie, Chris Alberti, Santiago On-tanon, Philip Pham, Anirudh Ravula, Qifan Wang, Li Yang, and 1 others. 2020. Big bird: Transformers for longer sequences. Advances in neural informa-tion processing systems , 33:17283–17297. Yuheng Zha, Yichi Yang, Ruichen Li, and Zhiting Hu. 2023. Alignscore: Evaluating factual consistency with a unified alignment function. In Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) ,pages 11328–11348. Tianyi Zhang, Varsha Kishore, Felix Wu, Kilian Q Weinberger, and Yoav Artzi. 2019. Bertscore: Eval-uating text generation with bert. arXiv preprint arXiv:1904.09675 .Zhen Zhang, Moxuan Zheng, Tongchen Zhang, Luyun Lin, and Lixing Lin. 2026. Bankruptcy predic-tion from 10-k narratives: Evidence from inter-pretable text scores and accounting baselines. Risks ,14(8):179. Chenguang Zhu, William Hinthorn, Ruochen Xu, Qingkai Zeng, Michael Zeng, Xuedong Huang, and Meng Jiang. 2021. Enhancing factual consistency of abstractive summarization. In Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Hu-man Language Technologies , pages 718–733. 
+
+11 Contents of Appendix 
+
+A Datasets Statistics 12 B Sensitive Analysis of Base Model 12 C Additional Quantitative Results 12 D Additional Case Studies 15 E Evaluation Prompts 16 
+
+A Datasets Statistics 
+
+Table 5 summarizes the statistics of the test sets 
+
+used in our experiments. We report the number of instances, the average source length, and the average reference summary length for each dataset. All lengths are measured in tokens using the GPT o200_base tokenizer. For FINDSum, the source length includes both the narrative content and the associated tabular information. The two FINDSum subsets represent sub-stantially longer inputs than USTT. FINDSum-Liquidity contains 4,204 test instances, with an average source length of 34,630 tokens and an average reference summary length of 538 tokens. FINDSum-ROO contains a larger test set of 6,201 instances and slightly longer source documents, averaging 36,447 tokens, while its reference sum-maries are somewhat shorter, with an average length of 444 tokens. These statistics highlight the long-context nature of FINDSum, where a summa-rization method must identify and integrate salient evidence distributed across extensive narrative pas-sages and multiple tables. In contrast, USTT contains 1,390 test instances, with an average source length of 1,680 tokens and an average summary length of 85 tokens. Although USTT is considerably shorter than FINDSum, it provides a complementary table–text summariza-tion setting with a different language and input scale. Evaluating on both datasets therefore allows us to examine whether the proposed method is ef-fective not only for long financial reports, but also for shorter table–text inputs.             
+
+> Dataset # Inst. Avg. Doc. Avg. Sum. FindSum-Liquidity 4204 34630 538 FindSum-ROO 6201 36447 444 USTT 1390 1680 85
+> Table 5: Statistics of the datasets used in our experi-ments. Lengths are measured in tokens.
+
+B Sensitive Analysis of Base Model 
+
+Due to resource limit, we conduct the sensitive analysis on 500 samples each, from both datasets. 
+
+C Additional Quantitative Results 
+
+Tables 6 and 7 report the complete quantitative results on the FINDSum-ROO and FINDSum-Liquidity test sets, respectively. In addition to the metrics reported in the main text, we include Nu-merical Precision (NP), Numerical Coverage (NC), AlignScore, SummaC, and Grounded Claim Cover-age (G-Cov). 
+
+Grounded Claim Coverage (G-Cov). G-Cov is a reference-based grounded coverage metric that complements the precision-oriented TGF. TGF evaluates the faithfulness of the claims expressed by a method and averages over the generated claim set. Consequently, a short or conservative sum-mary may obtain a high TGF by expressing only a small number of well-supported claims . G-Cov instead uses claims from the reference summary and measures how much salient reference content is both recovered by the generated summary and grounded in the source. For each document D, we decompose the refer-ence and generated summaries into atomic claim sets Cref (D) and Cgen (D) as we done in TGF. For each reference claim ri ∈ C ref (D), we select its best-aligned generated claim: 
+
+g∗ 
+
+> i
+
+= arg max   
+
+> gj∈C gen (D)
+
+A(ri, g j ), (7) where A(ri, g j ) ∈ { 1, . . . , 5} is an LLM-as-Judge-based semantic alignment rating. Alignment evalu-ates whether the generated claim preserves the con-tent of the reference claim, including its entities, metrics, values, periods, directions, and asserted relations. The normalized alignment credit is 
+
+ai = A(ri, g ∗ 
+
+> i
+
+) − 14 . (8) The matched generated claim is additionally evaluated for Numeric Grounding (NG), Analy-sis Support (AS), and Relation Consistency (RC) against the source evidence. Each applicable rating is normalized to [0 , 1] :
+
+eSi = Si − 14 , S ∈ { NG , AS , RC }. (9) According to the type of the reference claim, its 12 faithfulness credit is defined as 
+
+fi =
+
+gNG i, ri is numeric ,
+
+fAS i, ri is analytical ,
+
+min {gNG i, fAS i, fRC i}, ri is cross-modal .
+
+(10) Then, grounded coverage credit assigned to ri is 
+
+ci = aifi, (11) and the document-level G-Cov score is 
+
+G-Cov( D) = 1
+
+|C ref (D)|
+
+X 
+
+> ri∈C ref (D)
+
+ci. (12) The final dataset score is obtained by averaging over documents. Alignment and faithfulness serve distinct roles in this definition. A generated claim may resemble a reference claim but remain unsupported by the source; conversely, it may be source-grounded but express content unrelated to the reference claim. A reference claim receives high G-Cov credit only when both semantic coverage and source grounding are strong. G-Cov should therefore be interpreted as grounded recall of the salient content represented by the reference summary, rather than exhaustive coverage of all information in the source document. We begin with the analysis of overall perfor-mance. LOOM SUM achieves the strongest over-all performance across the two FINDSum subsets, although it does not outperform every individual metric. On FINDSum-ROO, it obtains the best re-sult on 8/11 reported metrics, including all three ROUGE scores, BERTScore, NC, SummaC, G-Cov, and TGF. On FINDSum-Liquidity, it achieves the best R-2, R-L, BERTScore, NC, NS, G-Cov, and TGF. These results indicate that organizing source-grounded evidence and preserving cross-modal relations improve analytical faithfulness without requiring a corresponding loss in reference-based summary quality. 
+
+Numerical content selection. Next, we analyze an important set of metrics (NP, NC, NS) as intro-duced in Liu et al. (2022). L OOM SUM achieves the highest NC on both subsets, reaching 54.17 on ROO and 56.76 on Liquidity. It recovers a larger proportion of the numerical content selected by the reference summaries. Its NP is not always the high-est, suggesting that broader numerical coverage may include additional source-supported quantities that do not appear in the single reference summary. On ROO, this precision–coverage balance yields an NS of 27.03, which is nearly identical to the best score of 27.08 obtained by RAG-Sum. On Liquidity, L OOM SUM achieves the highest NS of 25.98. 
+
+Effect of input modality. We then shift our focus to analyze the impact of input modalities. The table-only methods generally obtain the lowest TGF and G-Cov scores. Although tables provide precise quantitative values, they contain less of the explana-tory and contextual information needed to recon-struct the reference summaries. Text-only methods perform more strongly, reflecting the importance of narrative evidence. TextRank, in particular, re-mains competitive on several metrics, showing that extractive selection can preserve locally supported and reference-relevant information. Methods us-ing both modalities generally achieve the strongest joint performance. This supports their complemen-tary roles: tables provide exact quantities, whereas narrative passages describe their drivers, qualifica-tions, and implications. The advantage of L OOM -SUM over other joint-input methods further indi-cates that access to both modalities is not sufficient by itself; related evidence must also be correctly associated and organized before generation. 
+
+Faithfulness–coverage trade-off. We argue that TGF and G-Cov capture complementary proper-ties. TGF averages faithfulness over the generated claims and therefore does not penalize informa-tion that a system never attempts to express. G-Cov instead averages grounded coverage over the reference claims, so omitted reference content re-ceives little or no credit. A method with high TGF but low G-Cov is therefore generating a relatively small or conservative set of reliable claims rather than providing comprehensive grounded coverage. RAG-Sum illustrates this distinction. On ROO, it obtains a relatively high TGF of 69.47 but a G-Cov of only 13.10. The pattern is more pronounced on Liquidity, where it reaches a TGF of 76.34 but a G-Cov of 14.84. Its retrieval stage may expose the generator to a compact set of highly relevant evidence, improving the faithfulness of the claims that are produced. At the same time, restricting generation to the retrieved evidence can leave other reference claims uncovered. Direct-LC exhibits a different trade-off on Liquidity. Its G-Cov of 17.75 is close to the best score, indicating that it expresses a relatively broad range of reference content. How-ever, its TGF of 69.29 is substantially below that of RAG-Sum and L OOM SUM . Providing the full 13 Input Method R-1 R-2 R-L BS NP NC NS AlignScore SummaC G-Cov TGF Text-only TextRank 35.04 7.34 14.94 76.81 24.65 40.90 24.80 90.68 54.96 12.26 63.19 BART 23.19 5.83 10.39 67.81 22.41 21.56 19.80 94.63 81.82 10.73 54.33 BigBird-Pegasus 24.10 7.01 13.49 68.24 13.17 31.29 22.80 86.78 64.09 10.54 64.37 Table-only BART 18.37 4.62 8.96 67.21 13.24 6.70 6.50 56.96 34.38 10.51 46.69 BigBird-Pegasus 19.25 6.90 12.91 69.70 8.17 20.43 12.47 50.45 52.28 9.02 52.22 Table-RAG † 31.80 7.32 14.91 69.72 10.46 18.86 12.27 22.67 44.84 11.71 51.93 Text + Table GCG † 29.25 8.89 16.58 80.53 22.64 30.49 23.75 95.31 62.07 13.57 64.47 Direct-LC † 30.19 8.83 16.52 80.55 21.27 29.02 24.10 92.66 85.92 14.72 68.21 RAG-Sum † 27.82 8.04 15.80 80.70 25.57 42.54 27.08 88.21 85.93 13.10 69.47 LOOM SUM (Ours) † 35.45 10.77 18.55 81.34 22.53 54.17 27.03 90.28 86.46 17.75 71.38 
+
+Table 6: Full results on the FINDSum-ROO test set. Higher values are better. † denotes methods using GPT-5-nano as the backbone. The best results are shown in blue . All metrics are reported on a 0–100 scale. 
+
+Input Method R-1 R-2 R-L BS NP NC NS AlignScore SummaC Cov. TGF Text-only TextRank 33.06 6.98 13.54 74.33 17.18 42.37 20.05 80.53 62.07 12.06 65.86 BART 21.93 6.22 10.78 72.92 21.89 24.20 20.44 85.74 72.49 10.56 63.70 BigBird-Pegasus 25.84 7.86 12.59 73.80 22.33 23.97 21.40 83.17 60.20 10.24 64.28 Table-only BART 17.71 5.98 8.47 66.53 11.68 8.53 7.50 56.25 33.24 9.20 48.15 BigBird-Pegasus 23.16 6.11 11.50 68.50 9.43 31.25 13.34 59.53 54.68 10.05 50.92 Table-RAG † 30.05 5.88 12.70 65.59 10.70 33.95 14.68 28.69 44.56 11.20 48.92 Text + Table GCG † 33.96 7.79 14.14 76.54 14.29 51.45 24.59 78.19 63.05 16.25 66.71 Direct-LC † 32.01 7.49 13.74 75.38 15.34 54.78 25.11 79.22 64.29 17.75 69.29 RAG-Sum † 33.51 7.72 14.30 76.31 16.57 50.77 23.48 74.38 63.83 14.84 76.34 LOOM SUM (Ours) † 32.74 9.51 16.35 76.78 18.17 56.76 25.98 78.73 70.53 17.96 79.43 
+
+Table 7: Full results on the FINDSum-Liquidity test set. Higher values are better. † denotes methods using GPT-5-nano as the backbone. The best results are shown in blue . All metrics are reported on a 0–100 scale. 
+
+source makes more information available, but it also increases the difficulty of correctly grounding quantities and associating them with the appropri-ate narrative interpretations. These comparisons demonstrate why TGF and G-Cov should be inter-preted jointly. Moreover, L OOM SUM achieves the highest TGF and G-Cov on both FINDSum sub-sets, indicating that its faithfulness gains do not arise merely from generating fewer or more conser-vative claims. 
+
+Comparison with generic factuality metrics. 
+
+Lastly, we provide analysis around generic factu-ality metrics we utilize in this work. AlignScore and SummaC produce rankings that do not always agree with TGF or G-Cov. On ROO, GCG obtains the highest AlignScore of 95.31, but its TGF and G-Cov are only 64.47 and 13.57, respectively. Text-only BART similarly obtains high AlignScore and SummaC scores of 94.63 and 81.82, while achiev-ing substantially lower TGF and G-Cov scores of 54.33 and 10.73. The discrepancy is also visible on Liquidity, where text-only BART obtains the high-est AlignScore and SummaC scores but reaches only 63.70 TGF and 10.56 G-Cov. Generic factu-ality metrics can therefore assign favorable scores to locally consistent summaries without reflecting whether a broad set of salient reference claims is covered or whether quantitative facts are asso-ciated with their correct narrative interpretations. TGF and G-Cov therefore provide complemen-tary relation-sensitive faithfulness and grounded-coverage signals that are not fully captured by these generic scores. 
+
+Results on USTT. On USTT, we observe very sim-ilar patterns as in FindSum. In Table 8, L OOM SUM 
+
+achieves the best R-1, R-L, NP, NC, NS, Align-Score, and G-Cov results. Its advantage is partic-ularly clear for numerical content selection, im-proving NC from 30.36 for the next-best method to 49.79 and NS from 21.44 to 27.36. TextRank obtains the highest TGF, likely benefiting from its conservative extractive behavior, but achieves a 14 Input Method R-1 R-2 R-L BS NP NC NS AlignScore SummaC G-Cov TGF Text-only TextRank 24.77 10.20 13.83 60.24 12.02 30.36 21.44 77.35 52.20 19.12 66.41 BART 22.84 8.90 14.25 59.80 14.81 26.99 19.12 67.30 42.03 17.18 54.26 BigBird-Pegasus 24.18 7.69 14.17 60.12 13.22 27.51 20.35 64.42 47.83 16.74 56.91 Table-only BART 20.46 5.21 13.72 60.01 10.45 19.52 13.32 36.76 47.91 11.24 52.53 BigBird-Pegasus 20.71 5.54 12.01 59.25 12.33 18.89 13.98 46.16 49.80 11.45 55.79 Table-RAG † 19.26 5.66 10.77 61.50 13.31 12.74 12.18 73.28 42.44 10.16 56.13 Text + Table GCG † 24.83 8.93 12.92 63.84 19.50 24.21 18.76 64.77 42.31 16.19 59.71 Direct-LC † 25.14 9.37 13.26 63.71 17.76 25.78 18.63 74.55 54.70 18.43 58.51 RAG-Sum † 24.56 9.91 12.93 64.47 16.04 23.89 15.89 69.47 42.93 15.28 60.64 LOOM SUM (Ours) † 26.10 9.18 15.16 64.16 19.81 49.79 27.36 77.99 54.02 19.78 63.71   
+
+> Table 8: Full results on the USTT test set. Higher values are better. †denotes methods using GPT-5-nano as the backbone. The best results are shown in blue . All metrics are reported on a 0–100 scale.
+
+lower G-Cov. This contrast further demonstrates the complementarity of the two metrics: higher faithfulness among the claims expressed does not necessarily imply broader grounded coverage of the reference content. Among joint-input methods, LOOM SUM achieves the strongest results on both TGF and G-Cov. 
+
+D Additional Case Studies 
+
+We further examine two complementary case stud-ies from FINDSum and USTT. The FINDSum ex-ample focuses on relation preservation when quan-titative facts and their explanations are distributed across different parts of a report. The USTT exam-ple instead illustrates grounded omission, where methods generate source-supported content but fail to cover the claims emphasized by the reference summary. Table 9 presents an example from Commerce Bancshares’ 2015 annual report. We show the source-supported relations, the reference summary, and verbatim excerpts from each method’s output. Ellipses indicate omitted sentences. Red highlights only the phrase responsible for an unsupported rela-tion, whereas green highlights correctly preserved relations in the output. This example shows that covering the relevant quantities is not sufficient for analytical faithful-ness. Direct-LC recovers several major indicators but incorrectly connects the revenue increase to the low-rate environment and introduces many sec-ondary statistics. GCG and RAG-Sum preserve the revenue decomposition, yet attach valid drivers to the wrong outcomes: loan growth is associated with the yield decline, while non-interest-income drivers are assigned to net interest income. Tex-tRank preserves substantial source wording but reverses the opposing effects of higher loan bal-ances and lower rates. In contrast, L OOM SUM 
+
+preserves the revenue decomposition, the complete loan-interest driver chain, and the explanation for the yield decline. In particular, it distinguishes the positive effect of loan growth from the offsetting effect of lower rates. The case therefore illustrates that the principal baseline failure is often not an unsupported individual fact, but an unsupported composition of otherwise valid facts and explana-tions. 
+
+USTT case. The USTT example in Table 10 il-lustrates a different failure mode: an output may remain source-grounded while providing poor cov-erage of the reference-relevant content. Direct-LC, GCG, and TextRank primarily select monetary-policy or money-market information from non-target sections. These statements are supported by the source, but they omit the four FX claims emphasized by the reference. RAG-Sum retrieves the correct topic and captures the coarse upward trend, yet removes the exact values and both cross-rate comparisons. LOOM SUM , by contrast, pre-serves the directions, values, and pairwise relations of all four target claims despite the presence of source-supported distractors. This case clarifies the role of G-Cov: source faithfulness alone does not guarantee that a summary covers the salient claims represented in the reference. Taken together, the FINDSum case demonstrates incorrect relation composition after partial content recovery, whereas the USTT case demonstrates grounded but incom-plete content selection. L OOM SUM addresses both errors by explicitly aligning related evidence and organizing salient claims before generation. 15 E Evaluation Prompts 
+
+In this section, we provide the complete prompt used to decompose generated summaries into atomic claims for TGF evaluation below. 
+
+TGF Claim Decomposition Prompt 
+
+You are a claim-decomposition annotator for factuality evaluation. You will be provided with a summary in either English or Chinese. Your task is to decompose the summary exhaustively and extract it into minimal, independently verifiable factual claims for Table-Grounded Faithfulness evaluation. Instructions: 1. First, read the summary carefully. Second, decompose the summary into factual claims. 2. You have to follow the rules below. Rules: 1. Use only information explicitly stated in the generated summary. Do not introduce or infer external information. 2. You may resolve local pronouns or references using information within the summary, but do not add unstated entities, causes, or relations. 3. Preserve the exact semantic content of each claim, including: - values, units, entities, metrics, and reporting periods; - directions and magnitudes of change; - negation, attribution, modality, uncertainty, and hedging; - the stated strength of causal or explanatory relations. 4. Keep a quantitative proposition and an analytical proposition together only when the summary explicitly asserts a relation between them, such as a cause, driver, consequence, qualification, attribution, offset, or contextualization. 5. A linked claim may span multiple sentences when an explicit discourse cue or coreference establishes the relation, such as "this increase," "this decline," or "as a result." Pay more attention to this type of claim. 6. Extract all factual claims. Do not omit claims because they appear unimportant, repetitive, or difficult to verify. Assign exactly one claim_type: - numeric_only: An explicit quantitative assertion with no attached narrative interpretation. Quantitative comparisons that require multiple values may remain together as one claim. Dates or reporting periods alone do not make a claim numeric. - analysis_only: A non-numeric trend, explanation, qualification, attribution, uncertainty statement, or interpretation that is independently asserted. - cross_source_analytic: An explicit relation between a quantitative proposition and an analytical proposition. This label describes the structure of the generated claim and does not itself verify the provenance of either component. For cross_source_analytic claims, separately record the quantitative component, analytical component, and relation type. For other claim types, return null for these fields. Return only valid JSON using this schema: {"claims": [ {"claim_id": "c1", "claim": "minimal independently verifiable claim", "claim_type": "numeric_only|analysis_only|cross_source_analytic", "source_sentence_indices": [0], "source_span": "exact supporting span from the summary", "numeric_component": null, "analysis_component": null, "relation_type": null }], "coverage_complete": true, "unprocessed_sentence_indices": [] }Generated summary: {numbered_summary} 
+
+TGF LLM Judge Prompt 
+
+You are a strict evaluator of Table-Grounded Faithfulness (TGF) for one generated claim, which presents in either English or Chinese. Use only the provided evidence packet. Do not use a reference summary, external knowledge, or plausibility. Do not correct or reinterpret the claim. Claim-type hint: {claim.claim_type} Generated claim: {claim.clean_claim_text} Evidence packet: {json.dumps(evidence_packet, ensure_ascii=False)} Evaluate each applicable dimension independently: - numeric_grounding: Whether the quantitative content is supported with the correct value, metric, entity, unit, direction, and reporting period. - analysis_support: Whether the stated trend, comparison, explanation, qualification, attribution, or interpretation is supported. - relation_consistency: Applies only when the claim links quantitative content with an analytical statement. Evaluate whether that specific association is supported. Individually supported components do not imply a supported relation. Applicability: - numeric_grounding applies to claims containing quantitative content. - analysis_support applies to claims containing analytical content. - relation_consistency applies only to explicit quantitative--analytical relations. Rating rubric: - 1: unsupported, contradicted, or substantially mismatched. - 2: mostly unsupported; only weakly or indirectly related evidence. - 3: partially or ambiguously supported. - 4: mostly supported, with minor ambiguity or omitted qualification. - 5: fully supported by the evidence. If the evidence packet is insufficient to judge an applicable dimension, set "evidence_sufficient" to false and "rating" to null. For a non-applicable dimension, set "applicable" to false and "rating" to null. Return only valid JSON: {{ "numeric_grounding": {{ "applicable": true, "evidence_sufficient": true, "rating": 1, "rationale": "Brief evidence-based justification." }}, 
+
+16 "analysis_support": {{ "applicable": true, "evidence_sufficient": true, "rating": 1, "rationale": "Brief evidence-based justification." }}, "relation_consistency": {{ "applicable": true, "evidence_sufficient": true, "rating": 1, "rationale": "Brief evidence-based justification." }} }} 
+
+17 Source / Method Evidence or Output Excerpt Analysis Source Document 
+
+R1: Total revenue increased by $25.7 million, comprising $11.6 million growth in non-interest income and $14.1 million growth in net interest income. 
+
+R2: Loan interest income increased by $10.2 million because average loans grew by $609.0 million, partly offset by a 12-basis-point decline in rates. 
+
+R3: Net yield declined from 3.00% to 2.94% because of continuing low interest rates. The source establishes the revenue decomposition, the complete loan-interest driver chain, and the cause of margin compression. Reference Summary Net income increased to $263.7 million from $261.8 million. The increase resulted from $14.1 million growth in net interest income and $11.6 million growth in non-interest income. . . . These gains were partly offset by higher non-interest expense and lower investment-security gains. The reference preserves the main income decomposition, but omits the loan-interest driver chain and the explanation for the yield decline. Direct-LC Total revenue increased $25.7 million because continuing low interest rates depressed net yield to 2.94% . . . . Net interest income was $634.3 million, while non-interest income was $447.6 million, an increase of $11.6 million. . . . The output also reports provision, asset-quality, capital, dividend, and shareholder-return statistics. The revenue relation is explicitly stated but incorrectly linked to the low-rate environment. Broad coverage introduces many secondary indicators without preserving a focused driver-based narrative. GCG Total revenue increased $25.7 million versus 2014, driven by $11.6 million growth in non-interest income and $14.1 million growth in net interest income. . . . Net yield declined from 3.00% to 2.94% because average loans grew by $609.0 million, or 5.4% . . . . Asset quality improved as net loan charge-offs and non-performing assets declined. R1 is explicitly preserved, but loan growth is incorrectly attached to the yield decline. The positive and negative components of the loan-interest driver chain are not coherently distinguished. RAG-Sum Total revenue increased $25.7 million, reflecting $11.6 million growth in non-interest income and $14.1 million growth in net interest income. . . . Net interest income increased $14.1 million due to higher trust fees, bank-card transaction fees, and mortgage-banking revenue . . . . The output additionally discusses impaired securities, private-equity investments, dividends, and shareholder return. The revenue decomposition is preserved, but valid non-interest-income drivers are assigned to net interest income. Retrieval broadens coverage, yet also introduces secondary details and an incorrect cross-category relation. TextRank Total revenue increased $25.7 million due to growth in non-interest income of $11.6 million and growth in net interest income of $14.1 million. . . . Loan interest income increased $10.2 million because rates declined by 12 basis points, while higher loan balances partly offset the increase . . . . Net interest income totaled $664.0 million on a tax-equivalent basis, an increase of $15.4 million. R1 is retained through sentence extraction, but the polarity of R2 is reversed. The output preserves source wording and values, but remains extractive and provides limited cross-sentence synthesis. LOOM SUM Total revenue increased $25.7 million due to $11.6 million growth in non-interest income and $14.1 million growth in net interest income. . . . Loan interest income increased $10.2 million as average loans grew by $609.0 million; these improvements are partly offset by a 12-basis-point decline in rates and higher non-interest expense. . . . Net yield declined from 3.00% to 2.94% because of continuing low interest rates. LOOM SUM explicitly preserves R1–R3, including the opposing effects of loan growth and lower rates. It synthesizes the evidence into a coherent narrative without introducing excessive secondary detail. 
+
+Table 9: Case study of quantitative-narrative relation preservation. The source document provides the grounding evidence, while the reference summary is included for comparison. Each row shows a selected method output containing verbatim output excerpts, with ellipses denoting omitted sentences. Red highlights only the phrase responsible for an unsupported or reversed relation. Green highlights the correct relations and interpretations of our method L OOM SUM .
+
+18 Source / Method Evidence or Output Excerpt Analysis Source R1: 美元兑 人民币中间价上 行405BP 至6.7503 。
+
+R2: 在岸即期汇率上行619BP 至6.7670 。
+
+R3: 在岸即期汇率较中间价高167BP 。
+
+R4: 离岸即期汇率上行750.5BP 至6.75875 ，较在岸低82.5BP 。配套
+
+表格则记录M2 、M1 和M0 货币供应量。
+
+The reference-relevant FX evidence occurs in one source section; the paired table is a cross-modal distractor. Reference 截至7月15 日，美元兑 人民币中间价较7月8日上行405BP 至6.7503 ；
+
+美元兑 人民币即期汇率上行619BP 至6.7670 ，较中间价高167BP ；
+
+美元兑 离岸人民币即期汇率上行750.5BP 至6.75875 ，较在岸即期汇
+
+率低82.5BP 。
+
+Preserves all four target claims and both cross-rate comparisons. Direct-LC 央行在7月11 日-15 日实施逆回购150 亿元到期150 亿元，同时
+
+以1000 亿元MLF 投放并有同额MLF 到期，净投放为零；. . . 货币市 
+
+场方面，7月15 日银行间同业拆借加权利率较7月8日下行1.28 基点
+
+至1.33% ，质押式回购下行0.58 基点至1.31% ；. . . The facts are source-supported but come from non-target sections; all four reference-relevant FX claims are omitted. GCG 央行在7月11 日-15 日实现净投放为零，逆回购投放150 亿元、到
+
+期150 亿元，MLF 投放1000 亿元、到期1000 亿元；. . . 货币市 场方
+
+面，7月15 日银行间同业拆借加权利率较7月8日下降1.28 基点
+
+至1.33% ，质押式回购利率下降0.58 基点至1.31% ；. . . The output is grounded in the source, but verbalization does not repair content selection; all target FX relations are omitted. RAG-Sum 外汇方面，美元对人民币中间价和即期汇率均走高，提示短期汇率
+
+承压。
+
+Retrieves the FX topic but omits every target value and both pairwise relations. TextRank 货币市 场：截至7月15 日，银行间同业拆借加权平均利率较7月8日
+
+变动-1.28BP 至1.33% ，质押式回购加权平均利率较7月8日变
+
+动-0.58BP 至1.31% ；. . . Extracts a source-faithful sentence from the wrong section; all four reference-relevant FX claims are omitted. LOOM SUM 截止至7月15 日，央行调整美元兑 人民币中间价上 
+
+行405BP 至6.7503 ；在岸即期汇率上行619BP 至6.7670 ，较中间汇率
+
+价高167BP ；离岸即期汇率上行750.5BP 至6.75875 ，较在岸
+
+低82.5BP ，呈跨市场小幅价差。
+
+Preserves every value, direction, and relation. 
+
+Table 10: Case study on USTT. L OOM SUM preserves all four reference-relevant claims; all baselines omit the target quantitative relations. Chinese excerpts are copied from the original source and stored outputs. 
+
+19

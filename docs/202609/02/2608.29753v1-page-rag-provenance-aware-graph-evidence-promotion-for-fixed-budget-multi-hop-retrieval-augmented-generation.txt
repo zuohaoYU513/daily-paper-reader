@@ -1,0 +1,434 @@
+Title: PAGE-RAG: Provenance-Aware Graph Evidence Promotion for Fixed-Budget Multi-hop Retrieval-Augmented Generation
+
+URL Source: https://arxiv.org/pdf/2608.29753v1
+
+Published Time: Tue, 01 Sep 2026 01:43:29 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# PAGE-RAG: Provenance-Aware Graph Evidence Promotion for Fixed-Budget Multi-hop Retrieval-Augmented Generation 
+
+# Haokun Deng ∗1, Xunkai Li ∗1, Hongchao Qin 1, Rong-Hua Li 1†
+
+> 1
+
+Department of Computer Science, Beijing Institute of Technology Beijing, China 
+
+Abstract 
+
+Multi-hop question answering in retrieval-augmented gener-ation (RAG) often benefits from retrieving beyond the few candidates that will finally be read: narrow retrieval can miss an indispensable hop, while expanded retrieval introduces topical distractors. This challenge is not tied to a particu-lar knowledge-base format. Candidate pools may come from standalone retrievers, standard RAG backends, or graph-based retrieval pipelines. What is needed is a query-aware selection layer that can use relational structure to filter candidates be-fore generation. PAGE-RAG addresses this setting by using a graph as a temporary selection structure, rather than assum-ing a graph-structured knowledge base. It builds a query-local graph over retrieved candidates, records why candidates are connected, and treats each connection as a support hypothe-sis rather than support itself. We identify the resulting failure mode as a connectivity-support gap : connected candidates do not necessarily support the answer. We propose PAGE-RAG, a Provenance-Aware Graph Evidence promotion method that scores candidate paths with relevance, source-tracing meta-data, specificity, hubness, noise, and coherence signals, and applies minimal sufficient selection to promote supporting facts into a compact reader context. PAGE-RAG can serve as a complete retrieval-to-reading pipeline, and the same promo-tion stage can be inserted after existing retrieval or RAG sys-tems without replacing their upstream retrieval logic. Across three multi-hop QA benchmarks under the same final bud-get, PAGE-RAG improves support F1 and answer F1 by 10.4 and 3.3 points on a weighted average over a strong retriever. As a plug-in, PAGE-RAG further improves all reported RAG backends, including reasoning-oriented, compression-based, graph-based, and document/chunk-level systems. 
+
+# Introduction 
+
+Retrieval-augmented generation (RAG) helps language mod-els answer knowledge-intensive questions by retrieving ex-ternal context before generation (Guu et al. 2020; Lewis et al. 2020; Izacard and Grave 2021; Izacard et al. 2022b). Graph-based RAG further organizes retrieved candidates through entities, relations, or passage links, allowing the system to use relationships among candidate texts rather than treat-ing each passage independently (Edge et al. 2024; Gutiérrez et al. 2024; Guo et al. 2025; Zhu et al. 2025). Even with 
+
+> ∗
+
+These authors contributed equally. 
+
+> †
+
+Correspondence to: Rong-Hua Li <lironghuabit@126.com>. 
+
+these mechanisms, multi-hop question answering remains challenging: a faithful answer requires complementary facts to be retrieved together and placed in the right relation (Yang et al. 2018; Ho et al. 2020; Trivedi et al. 2022, 2023). A narrow top-k retrieval may miss an indispensable hop, making the answer unreachable (Trivedi et al. 2023; Zhuang et al. 2024; Liu et al. 2026). A natural remedy is to retrieve more candidates, but the enlarged pool also brings more topical distractors (Xu, Shi, and Choi 2023; Hwang et al. 2025; Asai et al. 2024). In graph-based retrieval, the problem becomes sharper: shared entities and relation links can create plausible but non-supporting bridges, and these connected distractors can degrade the final answer (Gutiérrez et al. 2025; Guo et al. 2025; Zhu et al. 2025; Luo et al. 2025). The central challenge is to expose enough candidate facts while preventing noisy or merely connected candidates from dominating the final context. Figure 1 illustrates this failure mode. For the question “Which city was the composer of Interstellar born in?”, the initial retrieval finds a useful bridge fact about Hans Zimmer but misses the birthplace fact; it also retrieves a director-related distractor. Expanding the pool recovers the key fact, but it can also extend the distractor path through Christopher Nolan. The example exposes the core gap: connectivity is not support . Connectivity explains why candidates are related, while support explains why they can justify the answer. The two are not inherently equivalent. To bridge this gap, we propose PAGE-RAG, a provenance-aware graph evidence promotion method for multi-hop RAG. Given a question and an expanded candidate pool from an upstream retriever, PAGE-RAG builds a query-local support graph over the retrieved candidates. It treats graph edges as support hypotheses rather than answer support by default, scores candidate paths with query alignment, source relia-bility, bridge specificity, hubness, noise, and path coherence signals, and then applies minimal sufficient selection to pro-duce a compact final context. In this way, PAGE-RAG pre-serves the reachability gained from expanded retrieval while avoiding the mistake of optimizing raw relevance or connec-tivity. PAGE-RAG can operate as a complete retrieval-to-reading pipeline, and its promotion stage can also be attached after existing retrievers, non-graph RAG systems, or graph-based RAG systems that expose candidate pools. This plug-in inter-arXiv:2608.29753v1 [cs.AI] 30 Aug 2026 Figure 1: Motivating example for fixed-budget support promotion. Expanded retrieval can recover a missing supporting fact, but it can also amplify distractors. PAGE-RAG promotes support-bearing candidates into the same reader budget. face is lightweight: it does not require replacing the upstream system, changing the reader, or rebuilding a corpus-wide graph. Instead, PAGE-RAG uses a temporary query-local graph to decide which retrieved connections should be pro-moted into the final context. Our contributions are summarized as follows. 1. Candidate-Pool Quality Gap. We identify a quality risk in RAG knowledge construction: expanded candi-date pools may contain the needed facts, yet their topical or graph-based relations can still fail to jointly support the answer. We name this broader issue the candidate-pool quality gap, with the connectivity-support gap as its graph-side manifestation, and frame support promotion as a meaningful research direction for multi-hop RAG. 2. Flexible Plug-in Promotion. We introduce PAGE-RAG as a backend-general promotion layer that can be inserted after retrievers, standard RAG backends, or graph-based RAG systems. It builds a temporary query-local graph over their candidate pools, scores support hypotheses from connection metadata, and selects a compact con-text without replacing the upstream system. 3. Complete PAGE-RAG Pipeline. We instantiate the same idea as a full retrieval-to-reading pipeline with expanded retrieval, query-local graph construction, support-aware path scoring, and minimal sufficient selection, separating useful support from raw relevance or connectivity before generation. 4. Empirical Validation. We show that PAGE-RAG im-proves support F1 and answer F1 by 10.4 and 3.3 points on a weighted average over a strong retriever, and brings consistent gains when used as a plug-in for existing RAG systems, measured by answer quality and support quality. 
+
+# Preliminaries 
+
+Problem Definition 
+
+We study multi-hop RAG with an upstream knowledge access module and a bounded reader context. Given a question and an external corpus or knowledge base, the upstream module returns an expanded candidate pool. The module may be a standalone retriever, a standard RAG backend, or a graph-based retrieval system; our problem does not assume that the underlying knowledge base is itself a graph. Each candidate may be a sentence, passage, document, or chunk, depending on the backend. The reader receives at most k final context units. The goal is therefore not to pass the whole expanded pool to the reader, but to select a compact subset that jointly supports the answer. This differs from ordinary top-k retrieval, which ranks candidates mainly by local relevance, and from graph retrieval, which may treat connected candidates as useful be-cause they are structurally related. We call the broader failure the candidate-pool quality gap : an expanded pool may con-tain the needed facts, yet the final context can still be dom-inated by related but non-supporting candidates. In graph-structured selection, this appears as the connectivity-support gap , where connected candidates do not necessarily support the answer. PAGE-RAG addresses this problem by using a temporary query-local graph to select support-bearing can-didates under the same reader budget. 
+
+Related Work 
+
+Retrieval and candidate expansion. Standalone retrievers provide candidate texts for open-domain QA and RAG. DPR and Contriever use learned dense representations (Karpukhin et al. 2020; Izacard et al. 2022a), ColBERTv2 keeps fine-grained token interaction (Santhanam et al. 2022), and NV-Embed represents a recent LLM-embedding retriever family (Lee et al. 2024). These methods can expose semantically related candidates, but multi-hop QA often requires comple-mentary facts whose relevance becomes clear only after an-other hop is found. Expanding retrieval increases the chance of finding the missing hop, while also adding distractors, which motivates a downstream support-promotion step. 
+
+Reasoning-oriented and selective RAG. RAG systems also improve retrieval through reasoning, feedback, or con-text control. IRCoT and EfficientRAG interleave retrieval with multi-step reasoning or query refinement (Trivedi et al. 2023; Zhuang et al. 2024); Self-RAG and corrective retrieval methods use reflection or assessment signals to decide how retrieved content should be used (Asai et al. 2024; Yan et al. 2024); planner-executor and agentic retrieval frameworks de-compose complex questions into sub-goals (Yao et al. 2023; Liu et al. 2026). Context compression and selection meth-ods reduce distracting text before reading (Xu, Shi, and Choi 2023; Hwang et al. 2025; Jiang et al. 2024). These methods make RAG more adaptive, but they do not directly model whether the retained candidates form a support-bearing chain for the answer. 
+
+Graph-based RAG. Graph-based RAG organizes text with entities, relations, passages, or knowledge graph struc-tures. Earlier reasoning-path retrieval explores paths over Wikipedia-style graphs (Asai et al. 2020); recent systems include GraphRAG, the HippoRAG series, LightRAG, and KG2RAG (Edge et al. 2024; Gutiérrez et al. 2024, 2025; Guo et al. 2025; Zhu et al. 2025). Graphs help reveal relationships that independent passage scores may miss, but shared enti-ties, generic relations, and noisy extraction can also connect candidates that are related without supporting the answer. PAGE-RAG differs by using graph structure as a query-local selection workspace: edges propose support hypotheses, and connected paths must pass support-aware scoring and mini-mal selection before entering the reader context. 
+
+# Method 
+
+We introduce PAGE-RAG, a retrieval-to-reading framework for multi-hop RAG. In its main pipeline, PAGE-RAG starts from a question and a corpus, uses a neural retrieval stage to obtain an expanded candidate pool, builds a query-local provenance-aware graph over these candidates, scores can-didate paths by support rather than raw connectivity, and returns a compact reader context. The same promotion stage can also be attached after an existing retriever or RAG back-end when that system already exposes a candidate pool. The method follows the principle that connectivity is not sup-port : a graph edge indicates that two candidates may be related, but it does not by itself support the answer. Figure 2 summarizes the full workflow. 
+
+Expanded Candidate Retrieval 
+
+The motivation for the retrieval stage is reachability. In multi-hop QA, an initial top-k list may contain an obvious bridge fact but miss a later hop that is less lexically similar to the question. Expanding retrieval is a direct way to make such missing facts reachable, but it should create a search space for selection rather than a larger reader input. Operationally, the first stage of PAGE-RAG retrieves a broad candidate pool for the input question. In our main pipeline, this stage uses NV-Embed-v2 as the neural retriever (Lee et al. 2024). Instead of retrieving only the final top-k
+
+items that will be shown to the reader, PAGE-RAG retrieves a larger pool. The initial top-k results are therefore treated as the conventional reader budget, while the remaining candi-dates provide additional search space where missing support facts may appear. This expanded pool is not used by simply giving the reader more text. It is passed to the PAGE-RAG promotion stages, which build the local graph, score support paths, and select a final context whose size is no larger than k. The same interface also allows backend generalization: an external re-triever, standard RAG system, or graph-based RAG system may provide the expanded pool, and PAGE-RAG can then be inserted between that retrieval stage and the reader to perform support-aware promotion. 
+
+Provenance-Aware Evidence Graph 
+
+The expanded pool is only a list, so it does not explain how candidates may jointly answer the question. PAGE-RAG in-troduces a graph at this point to expose relational structure among candidates, but the graph is used as a query-local workspace for selection, not as a claim that connected candi-dates are already supporting facts. This distinction is impor-tant because the same entity link can either connect comple-mentary facts or create a distracting bridge. PAGE-RAG converts the expanded pool into a per-question support graph. The construction is similar in spirit to graph-based RAG systems that organize text through chunks, entities, relations, or passage links (Edge et al. 2024; Gutiér-rez et al. 2024; Guo et al. 2025; Zhu et al. 2025). Candi-date documents or passages are connected to their sentences, sentences are connected to mentioned entities, neighboring sentences are linked within the same source, and candidates from different sources can be linked through shared enti-ties or extracted relations. This gives PAGE-RAG a local structure for exploring possible multi-hop support without assuming that every connected candidate is useful. The key difference from a connectivity-only graph is that each edge stores why the connection exists. PAGE-RAG records the following source-tracing metadata for each edge: 
+
+m(e) = {src , sent , trig , conf ,
+
+div , spec , hub }. (1) Here, source and sentence identifiers make the edge trace-able to the original text; the trigger entity or relation explains what created the edge; and confidence and diversity esti-mate reliability. Specificity and hubness form the key pair for separating useful bridges from broad connectors. For a shared-entity edge with trigger set Te and local entity set T ,we compute: Figure 2: Overview of PAGE-RAG. The main pipeline retrieves an expanded candidate pool, builds a per-question provenance-aware graph, scores candidate paths with support signals, performs minimal selection, and passes a fixed-size context to the reader. 
+
+spec( e) = Clamp 
+
+ mean t∈Te idf( t)max t′∈T idf( t′)
+
+
+
+,
+
+hub( e) = Clamp 
+
+ mean t∈Te df( t)max t′∈T df( t′)
+
+
+
+.
+
+(2) Here, df and idf are computed within the query-local graph rather than the whole corpus. Thus, a rare trigger entity re-ceives a high specificity score, while a trigger that connects many local candidates receives a high hubness penalty. These metadata also determine how edges are used during path construction. Document–sentence and sentence–entity edges serve mainly as source anchors. Candidate support paths are expanded primarily over sentence-level links, espe-cially neighboring-sentence and shared-entity edges. A path through a specific entity with a reliable source trace can be promoted, whereas a path through a generic hub entity should be downweighted even if it connects many candidates. This provenance-aware design changes the role of the graph. Many graph-based RAG pipelines use the graph as an indexing or retrieval substrate, where connectivity helps surface related chunks or subgraphs. PAGE-RAG uses the graph as a temporary workspace for evaluating support, not as a corpus-wide knowledge store. The graph is rebuilt around the expanded pool of the current question, and its connec-tions are later tested by support-aware path scoring before entering the reader context. 
+
+Support-Aware Path Scoring 
+
+Once the local graph is built, the key question becomes which connected paths should be trusted. A path can be useful because it links complementary facts, redundant because it repeats what is already known, or spurious because it passes through a hub entity or weak relation. The scoring module is designed to turn raw connectivity into comparable support hypotheses before any final context is selected. A candidate path is scored from the sentences it contains, the sentence-level links it traverses, and the source-tracing metadata stored on those links. PAGE-RAG first assigns each edge a support-oriented score: 
+
+edge( e) = α rel( e, q ) + β reliab( e)+ γ spec( e) − δ hub( e)
+
+− η noise( e).
+
+(3) Here, rel measures question-edge lexical alignment, reliab 
+
+combines confidence and source diversity, and noise penal-izes weak shared-entity links or low-confidence matches. The path score then combines sentence support, edge support, co-herence, and length cost: 
+
+score( π) = sent( π) + X
+
+> e∈Eπ
+
+edge( e)+ λ coh( π) − μ len( π).
+
+(4) These expressions are intentionally compact: the impor-tant point is not the exact weight of each term, but the sep-aration between being connected and being useful for an-swering. In Figure 2, the green path links complementary facts and receives high sentence support, source reliability, and specificity; the yellow path is related but largely overlaps with already available information; the red path is connected through a distracting bridge and has high noise or hubness. The scorer converts path structure and source-tracing meta-data into comparable support hypotheses, so the following selection stage can reason over ranked candidates rather than raw graph connectivity. 
+
+Ranking and Minimal Selection 
+
+Scoring alone is not enough because the final reader context is small and redundancy is costly. Even high-scoring paths can overlap with already selected facts, while a lower-ranked path may provide the missing complementary hop. The role of this module is therefore to convert a ranked path list into a minimal set of context units that is sufficient for answering. After scoring, PAGE-RAG ranks candidate paths but does not simply pass the top paths to the reader. This step is cen-tral to the fixed-budget setting. The expanded pool is valu-able because it increases the chance of exposing a missing hop, but it is also the source of additional noise. Ranking identifies promising support hypotheses; minimal selection decides which of them actually deserve space in the final context. Let S denote the context units already selected for the current question. The overall objective is to choose a compact subset that maximizes support utility under the reader budget: 
+
+S⋆ = arg max   
+
+> S:|S|≤ k
+
+Support( S, q ) − λCost( S, q ). (5) For a candidate path π, ∆support( π | S) measures the additional support contributed by adding the path to S. It is estimated from observable signals such as new question coverage, path score, source diversity, relation match, and whether the path connects complementary facts not already covered by S. ∆cost( π | S) measures the additional reader budget consumed by the path, including newly introduced sentences or documents, redundancy with selected context, and noise penalties. The support state is judged only from the retrieved text and graph-derived features, not from bench-mark supporting-fact annotations. A candidate path is kept only when: 
+
+∆support( π | S) > ∆cost( π | S). (6) The selector accumulates context units incrementally. It tries candidate paths in ranked order, keeps a path when it adds new support, rejects paths whose marginal contribution is redundant or noisy, and stops once the selected context is sufficient or the budget is reached. To avoid discarding useful intermediate bridges too early, PAGE-RAG uses an ambiguity-tolerant continuation rule. If the current selected subgraph is still ambiguous but has positive utility, it remains provisional while the selector considers the next ranked path or a one-hop frontier continuation. If this continuation does not improve the support state or utility, the newly considered path is rejected. In the example in Figure 2, the first support path is kept, but the selected subgraph is still ambiguous because it does not yet contain enough complementary facts. The selector then rejects a non-supporting path and keeps another support path that changes the state to enough. This turns a high-recall but noisy candidate pool into a compact support-bearing con-text, making the improvement attributable to better support selection rather than to giving the reader more input. 
+
+Reader Context and Backend Generalization 
+
+The last design goal is interface compatibility. PAGE-RAG should improve the context that reaches the reader without requiring a new reader architecture or a special prompt for-mat. It should also respect the native unit of the upstream backend: some systems expose sentences, while others ex-pose passages, chunks, or full documents. The final reader context is serialized together with the question and passed to the reader. In sentence-level settings, PAGE-RAG selects sentence-level support paths and returns the supporting sentences that remain after minimal selec-tion. In document or passage-level settings, PAGE-RAG-doc keeps the same internal sentence/path reasoning, but it ag-gregates support back to the upstream system’s native units. That aggregation is not a mere change in output granular-ity: document-level reranking also incorporates document length, title-question overlap, retriever rank and score, ques-tion token and entity coverage, sentence and path support statistics, cross-document path structure, and source-tracing edge signals such as specificity, hubness, and noise. The core principle stays the same, but the context unit becomes the one expected by the backend and the reader. PAGE-RAG is a complete retrieval-to-reading pipeline, not only a plug-in wrapper. In the main pipeline, the re-triever discovers a broad candidate pool, PAGE-RAG pro-motes support-bearing paths, and the reader answers from the selected context. At the same time, the promotion stage is backend-general: it can be attached after existing retriev-ers, standard RAG systems, or graph-based RAG systems that expose candidate pools. This makes PAGE-RAG easy to integrate into existing retrieval stacks without changing their reader interface or replacing their upstream retrieval logic. Its bounded role remains the same in all settings: it cannot recover facts that never enter the candidate pool, but it can turn an expanded pool into a compact context that is more useful for generation. 
+
+# Experiments 
+
+Our experiments validate PAGE-RAG from two complemen-tary directions. First, we evaluate it as a complete retrieval-to-reading workflow that starts from expanded retrieval and pro-duces its own compact reader context. Second, we evaluate the same support-promotion stage as a plug-in inserted be-tween existing upstream candidate generators and the reader. Together, these settings test whether PAGE-RAG improves final-context quality both as a standalone pipeline and as a backend-general selection layer, without increasing the final reader input. Method HotpotQA MuSiQue 2Wiki Avg. Ans F1 Sup F1 Ans F1 Sup F1 Ans F1 Sup F1 Ans F1 Sup F1 Contriever (Izacard et al. 2022a) 65.42 35.12 46.62 38.28 56.04 31.67 58.12 33.53 ColBERTv2 (Santhanam et al. 2022) 62.27 30.73 42.79 34.29 52.22 29.20 54.53 30.25 NV-Embed-v2 (Lee et al. 2024) 67.80 49.03 48.79 52.39 53.99 40.96 58.00 44.86 GraphRAG (Edge et al. 2024) 61.79 34.88 35.47 31.65 48.73 33.35 51.62 33.67 IRCoT@5 (Trivedi et al. 2023) 68.47 48.87 40.76 44.40 54.00 40.40 57.36 43.64 IRCoT + PAGE-RAG 70.87 54.79 55.18 62.73 63.13 54.39 64.83 55.42 
+
+RECOMP@5 (Xu, Shi, and Choi 2023) 68.52 43.42 45.44 50.84 57.59 45.52 59.89 45.40 RECOMP + PAGE-RAG 71.12 54.91 55.71 62.00 63.03 54.11 64.92 55.22 PAGE-RAG 70.94 55.09 56.00 62.00 63.23 54.16 65.00 55.31 Table 1: Sentence-level results under a fixed top-5 sentence budget. Best results are bolded and second-best results are underlined. 
+
+## Method HotpotQA MuSiQue 2Wiki Avg. Ans F1 Sup F1 Ans F1 Sup F1 Ans F1 Sup F1 Ans F1 Sup F1 SelfRAG (Asai et al. 2024) 68.46 49.20 42.08 46.47 62.71 56.08 62.39 52.77 SelfRAG + PAGE-RAG 76.62 55.13 53.75 56.02 68.08 62.74 69.36 59.50 EfficientRAG (Zhuang et al. 2024) 66.58 46.41 47.17 20.04 47.08 40.57 60.65 42.19 EfficientRAG + PAGE-RAG 67.82 54.00 47.37 41.15 50.90 43.51 62.25 50.52 GFM-RAG (Luo et al. 2025) 73.08 50.69 36.11 37.88 71.48 59.10 60.22 49.22 GFM-RAG + PAGE-RAG 73.74 51.54 41.27 39.87 71.84 59.20 62.28 50.20 LightRAG (Guo et al. 2025) 74.80 60.08 35.87 43.96 60.48 49.58 57.05 51.21 LightRAG + PAGE-RAG 74.81 61.04 37.13 45.56 61.94 51.15 57.96 52.58 KG2RAG (Zhu et al. 2025) 71.30 50.48 43.58 48.99 56.76 40.61 57.21 46.69 KG2RAG + PAGE-RAG 71.80 50.73 50.11 51.95 59.87 41.20 60.59 47.96 HippoRAG2 (Gutiérrez et al. 2025) 72.45 52.39 39.20 43.65 52.58 45.33 57.71 47.48 HippoRAG2 + PAGE-RAG 74.67 53.62 42.89 45.45 53.78 46.43 59.51 48.70 Table 2: Mixed-granularity results under a fixed top-5 document, passage, or chunk budget. Each PAGE-RAG row is compared with its corresponding upstream backend. 
+
+Experimental Setup 
+
+We evaluate on three multi-hop QA benchmarks, HotpotQA (Yang et al. 2018), MuSiQue (Trivedi et al. 2022), and 2Wiki-MultiHopQA (Ho et al. 2020), and report supporting-fact F1 (Sup F1) and answer F1 (Ans F1). The two metrics are re-lated but not identical: higher support quality does not always translate linearly into answer quality (Asai et al. 2024; Trivedi et al. 2022). Weighted averages are computed by the number of evaluated examples in each dataset. For answer generation, we use DeepSeek-V4-Pro (DeepSeek-AI 2026). For baselines with their own gener-ator, such as SelfRAG, we keep the retrieval workflow and feed its selected context to the same reader. We consider two evaluation protocols. The sentence-level protocol fixes the final reader input to the same number of sentences and compares PAGE-RAG with standalone re-trievers, a connectivity-based graph baseline, and reason-ing or compression-oriented RAG systems. The GraphRAG row uses GraphRAG-style candidate linking as a controlled graph-construction baseline, rather than the original corpus-level summarization workflow. The mixed-granularity pro-tocol covers systems whose native output unit may be a doc-ument, passage, or chunk, so Table 2 is not intended for global vertical ranking and is best read through paired base-line/plugin comparisons. For plug-in experiments, the upstream system first pro-duces an expanded candidate pool using its own retrieval or graph construction procedure, and PAGE-RAG operates between this candidate-generation step and reading. To pre-serve input-budget fairness, all systems pass at most five final units to the reader; if minimal selection returns fewer units, PAGE-RAG fills the remaining slots with the highest-scoring support candidates. 
+
+Main Results 
+
+We first examine PAGE-RAG as a complete sentence-level retrieval-to-reading pipeline in Table 1. Compared with stan-dalone retrievers, PAGE-RAG improves the average over the strongest retriever, NV-Embed-v2 (Lee et al. 2024), from Figure 3: Position distribution of gold supporting facts. The left panel compares sentence-level methods, and the right panel compares plug-in pairs. 58.00 to 65.00 Ans F1 and from 44.86 to 55.31 Sup F1. The gain is also not limited to retrieval-only baselines. PAGE-RAG outperforms the controlled IRCoT@5 (Trivedi et al. 2023) and RECOMP@5 (Xu, Shi, and Choi 2023) pipelines by 7.64 and 5.11 points in Ans F1, respectively, and by 11.67 and 9.91 points in Sup F1. Overall, PAGE-RAG achieves the best answer F1 in the sentence-level table, while also reach-ing the second-best support F1. This supports the main claim that PAGE-RAG improves retrieval-side context quality and, more importantly, promotes candidates that better support the answer, leading to stronger downstream generation. We next evaluate the same promotion stage as a plug-in for recent and competitive RAG backends. On MuSiQue, PAGE-RAG improves IRCoT@5 (Trivedi et al. 2023) by 14.42 Ans F1 and 18.33 Sup F1, and improves RECOMP (Xu, Shi, and Choi 2023) by 10.27 Ans F1 and 11.16 Sup F1. Table 2 fur-ther shows gains for all six reported document/chunk-level backends, including SelfRAG (Asai et al. 2024), Efficien-tRAG (Zhuang et al. 2024), HippoRAG2 (Gutiérrez et al. 2025), GFM-RAG (Luo et al. 2025), LightRAG (Guo et al. 2025), and KG2RAG (Zhu et al. 2025). The improvements across multi-step retrieval, compression, self-reflective RAG, efficient RAG, and graph-based RAG show that PAGE-RAG is robust across diverse systems, rather than only strengthen-ing a simple retriever. These results also clarify the scope of the method. PAGE-RAG can improve diverse upstream systems without increas-ing the final reader budget, but it still depends on the ex-panded candidate pool provided by the upstream retriever or RAG backend. If the required support facts never appear in that pool, the query-local graph cannot recover them by se-lection alone. The gains on graph-based backends are stable but generally smaller than the gains on several non-graph RAG settings, because graph RAG systems already expose some relational structure before PAGE-RAG is applied. In these cases, PAGE-RAG mainly recalibrates graph connec-tivity into support-aware selection: graph structure is useful, but connected candidates still need to be filtered by whether they jointly support the answer. 
+
+Analysis and Ablation 
+
+Figure 3 explains where the support gains come from. The left panel shows that PAGE-RAG does not simply retrieve more candidates; it moves more gold supporting facts into the visible top-5 positions. For example, compared with NV-                
+
+> Method HotpotQA MuSiQue 2Wiki Avg. w/o support-aware scoring 58.10 37.54 48.76 50.64 w/o minimal selection 61.91 39.45 52.93 54.44 PAGE-RAG 70.94 56.00 63.23 65.00
+
+Table 3: Component ablation results measured by answer F1. Embed-v2, PAGE-RAG reduces the Out mass from 31.5% to 27.1% and shifts more support into the second and third positions. The right panel shows the same effect in plug-in settings. IRCoT + PAGE-RAG reduces Out support from 33.4% to 28.0%, SelfRAG + PAGE-RAG reduces it from 15.9% to 4.7%, and HippoRAG2 + PAGE-RAG also yields a smaller but consistent shift. This ranking evidence supports the central mechanism: PAGE-RAG raises support-bearing paths within the candidate ranking so that they enter the fixed reader budget. Table 3 further tests the two main components behind this promotion. Removing support-aware scoring drops the average Ans F1 to 50.64, showing that graph connectivity alone is a weak signal for answer support. Removing minimal selection also hurts performance, with an average Ans F1 of 54.44, because high-scoring paths still need to be filtered into a compact and non-distracting context. The full PAGE-RAG recovers substantially higher answer quality across all three datasets, confirming that support-aware scoring and minimal selection are both necessary for the final prediction gains. Thus, the ablation verifies component necessity, while the heatmap illustrates how PAGE-RAG improves the ranking of support-bearing candidates before reading. 
+
+# Conclusion 
+
+We introduced PAGE-RAG, a provenance-aware evidence promotion framework for multi-hop RAG. The key idea is to separate candidate reachability from final-context useful-ness: expanded retrieval makes more facts available, but graph connectivity does not by itself imply answer sup-port. PAGE-RAG builds a query-local support graph, scores candidate paths with source-tracing and support signals, and selects a compact context before generation. Experi-ments across sentence-level and mixed-granularity protocols show that PAGE-RAG improves both complete retrieval-to-reading pipelines and plug-in settings over existing RAG and GraphRAG backends. The ranking-position analysis further shows that PAGE-RAG promotes more gold supporting facts into the final visible context, while the component ablation confirms that both support-aware scoring and minimal se-lection are necessary for this improvement. More broadly, the results suggest that multi-hop RAG should not be framed only as a problem of retrieving more candidates or building more connections; it also requires deciding which connected candidates jointly support the answer. A limitation is that PAGE-RAG cannot recover facts that never enter the ex-panded candidate pool, so future work should study tighter integration between support promotion and adaptive candi-date generation. Code Availability 
+
+The original PAGE-RAG implementation is available at https://github.com/denghk666/PAGE-RAG under the Apache License 2.0. Third-party baseline components retain their original licenses. 
+
+# References 
+
+Asai, A.; Hashimoto, K.; Hajishirzi, H.; Socher, R.; and Xiong, C. 2020. Learning to Retrieve Reasoning Paths over Wikipedia Graph for Question Answering. In International Conference on Learning Representations .Asai, A.; Wu, Z.; Wang, Y.; Sil, A.; and Hajishirzi, H. 2024. Self-RAG: Learning to Retrieve, Generate, and Cri-tique through Self-Reflection. In ICLR .DeepSeek-AI. 2026. DeepSeek-V4: Towards Highly Effi-cient Million-Token Context Intelligence. arXiv preprint arXiv:2606.19348 .Edge, D.; Trinh, H.; Cheng, N.; Bradley, J.; Chao, A.; Mody, A.; Truitt, S.; and Larson, J. 2024. From Local to Global: A Graph RAG Approach to Query-Focused Summarization. 
+
+arXiv preprint arXiv:2404.16130 .Guo, Z.; Xia, L.; Yu, Y.; Ao, T.; and Huang, C. 2025. Ligh-tRAG: Simple and Fast Retrieval-Augmented Generation. In 
+
+Findings of the Association for Computational Linguistics: EMNLP 2025 , 10746–10761. Gutiérrez, B. J.; Shu, Y.; Gu, Y.; Yasunaga, M.; and Su, Y. 2024. HippoRAG: Neurobiologically Inspired Long-Term Memory for Large Language Models. NeurIPS .Gutiérrez, B. J.; Shu, Y.; Qi, W.; Zhou, S.; and Su, Y. 2025. From RAG to Memory: Non-Parametric Contin-ual Learning for Large Language Models. arXiv preprint arXiv:2502.14802 .Guu, K.; Lee, K.; Tung, Z.; Pasupat, P.; and Chang, M.-W. 2020. REALM: Retrieval-Augmented Language Model Pre-Training. In ICML .Ho, X.; Duong Nguyen, A.-K.; Sugawara, S.; and Aizawa, A. 2020. Constructing A Multi-hop QA Dataset for Com-prehensive Evaluation of Reasoning Steps. In COLING .Hwang, T.; Cho, S.; Jeong, S.; Song, H.; Han, S.; and Park, J. C. 2025. EXIT: Context-Aware Extractive Compression for Enhancing Retrieval-Augmented Generation. In Findings of the Association for Computational Linguistics: ACL 2025 ,4895–4924. Izacard, G.; Caron, M.; Hosseini, L.; Riedel, S.; Bojanowski, P.; Joulin, A.; and Grave, E. 2022a. Unsupervised Dense In-formation Retrieval with Contrastive Learning. Transactions on Machine Learning Research .Izacard, G.; and Grave, E. 2021. Leveraging Passage Re-trieval with Generative Models for Open Domain Question Answering. In EACL .Izacard, G.; Lewis, P.; Lomeli, M.; Hosseini, L.; Petroni, F.; Schick, T.; Dwivedi-Yu, J.; Joulin, A.; Riedel, S.; and Grave, E. 2022b. Atlas: Few-shot Learning with Retrieval Aug-mented Language Models. arXiv preprint arXiv:2208.03299 .Jiang, H.; Wu, Q.; Luo, X.; Li, D.; Lin, C.-Y.; Yang, Y.; and Qiu, L. 2024. LongLLMLingua: Accelerating and Enhancing LLMs in Long Context Scenarios via Prompt Compression. In Proceedings of the 62nd Annual Meeting of the Associa-tion for Computational Linguistics (Volume 1: Long Papers) ,1658–1677. Karpukhin, V.; Oguz, B.; Min, S.; Lewis, P.; Wu, L.; Edunov, S.; Chen, D.; and Yih, W.-t. 2020. Dense Passage Retrieval for Open-Domain Question Answering. In Proceedings of the 2020 Conference on Empirical Methods in Natural Lan-guage Processing .Lee, C.; Roy, R.; Xu, M.; Raiman, J.; Shoeybi, M.; Catanzaro, B.; and Ping, W. 2024. NV-Embed: Improved Techniques for Training LLMs as Generalist Embedding Models. arXiv preprint arXiv:2405.17428 .Lewis, P.; Perez, E.; Piktus, A.; Petroni, F.; Karpukhin, V.; Goyal, N.; Küttler, H.; Lewis, M.; Yih, W.-t.; Rocktäschel, T.; et al. 2020. Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. In NeurIPS .Liu, Y.; Liu, Y.; Yuan, F.; Cao, C.; Sun, Y.; Peng, K.; Chen, W.; Li, J.; and Ma, Z. 2026. OPERA: A Reinforcement Learning–Enhanced Orchestrated Planner-Executor Archi-tecture for Reasoning-Oriented Multi-Hop Retrieval. Pro-ceedings of the AAAI Conference on Artificial Intelligence ,40(38): 32258–32266. Luo, L.; Zhao, Z.; Haffari, G.; Phung, D.; Gong, C.; and Pan, S. 2025. GFM-RAG: Graph Foundation Model for Retrieval Augmented Generation. arXiv preprint arXiv:2502.01113 .Santhanam, K.; Khattab, O.; Saad-Falcon, J.; Potts, C.; and Zaharia, M. 2022. ColBERTv2: Effective and Efficient Re-trieval via Lightweight Late Interaction. In Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Lan-guage Technologies , 3715–3734. Trivedi, H.; Balasubramanian, N.; Khot, T.; and Sabharwal, A. 2022. MuSiQue: Multihop Questions via Single-hop Question Composition. TACL .Trivedi, H.; Balasubramanian, N.; Khot, T.; and Sabharwal, A. 2023. Interleaving Retrieval with Chain-of-Thought Rea-soning for Knowledge-Intensive Multi-Step Questions. In 
+
+Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 10014– 10037. Xu, F.; Shi, W.; and Choi, E. 2023. RECOMP: Improving Retrieval-Augmented LMs with Compression and Selective Augmentation. arXiv preprint arXiv:2310.04408 .Yan, S.-Q.; Gu, J.-C.; Zhu, Y.; and Ling, Z.-H. 2024. Cor-rective Retrieval Augmented Generation. arXiv preprint arXiv:2401.15884 .Yang, Z.; Qi, P.; Zhang, S.; Bengio, Y.; Cohen, W. W.; Salakhutdinov, R.; and Manning, C. D. 2018. HotpotQA: A Dataset for Diverse, Explainable Multi-hop Question An-swering. In EMNLP .Yao, S.; Zhao, J.; Yu, D.; Du, N.; Shafran, I.; Narasimhan, K.; and Cao, Y. 2023. ReAct: Synergizing Reasoning and Acting in Language Models. In International Conference on Learning Representations .Zhu, X.; Xie, Y.; Liu, Y.; Li, Y.; and Hu, W. 2025. Knowl-edge Graph-Guided Retrieval Augmented Generation. In 
+
+Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Lin-guistics: Human Language Technologies (Volume 1: Long Papers) , 8912–8924. Zhuang, Z.; Zhang, Z.; Cheng, S.; Yang, F.; Liu, J.; Huang, S.; Lin, Q.; Rajmohan, S.; Zhang, D.; and Zhang, Q. 2024. Ef-ficientRAG: Efficient Retriever for Multi-Hop Question An-swering. In Proceedings of the 2024 Conference on Empiri-cal Methods in Natural Language Processing , 3392–3411. 
+
+# Appendix A: Method Details 
+
+This appendix provides the implementation details behind the PAGE-RAG pipeline. The main paper describes the high-level workflow: retrieve an expanded candidate pool, build a query-local graph, score support-bearing paths, and select a fixed-budget reader context. Here we make the graph con-struction, scoring signals, and minimal selection procedure explicit.             
+
+> Edge type Endpoints Role
+> contains document–sentence Source anchoring mention sentence–entity Entity anchoring adjacent sentence–sentence Local context link shared entity sentence–sentence Cross-source bridge relation entity–entity Optional relation link
+
+Table 4: Graph edge types used in the query-local PAGE-RAG graph. 
+
+A.1 Query-Local Graph Construction 
+
+PAGE-RAG builds a graph only over the candidates retrieved for the current question. It does not require a corpus-wide graph index. Each graph contains three node types: docu-ment or passage nodes, sentence nodes, and entity nodes. The graph also contains five edge types, summarized in Ta-ble 4. Document–sentence and sentence–entity edges keep source traceability, while sentence–sentence edges are the main paths used for support promotion. The construction resembles graph-based RAG systems that organize text through passages, entities, and relation links (Edge et al. 2024; Gutiérrez et al. 2024; Guo et al. 2025; Zhu et al. 2025), but PAGE-RAG uses the graph dif-ferently. A graph edge is treated as a proposal for support, not as support by default. This is the implementation-level form of the connectivity-support gap discussed in the main paper. 
+
+A.2 Feature Notation 
+
+We list the feature calculations used by the implementa-tion. Clamp( x) clips x into [0 , 1] . Tok( x) denotes lowercase, stopword-removed tokens. For two text fields a and b, lexical coverage is: 
+
+Lex( a, b ) = 
+
+P 
+
+> t
+
+min(count a(t), count b(t)) max( | Tok( a)|, 1) . (7) For two sets A and B, PAGE-RAG uses Jaccard( A, B ) = 
+
+|A ∩ B|/|A ∪ B|.The sentence-level relevance used for seed selection and path scoring combines lexical matching with question-entity coverage: 
+
+sent _rel( q, s ) = Clamp  wℓ Lex( q, s )+ we ent _overlap( q, s ),
+
+ent _overlap( q, s ) = | Ent( q) ∩ Ent( s)|
+
+max( | Ent( q)|, 1) .
+
+(8) Seed scoring further adds a soft relation-intent boost and a bounded literal-entity bonus: 
+
+seed( q, s ) = sent _rel( q, s ) + rel _boost( q, s )+ literal( q, s ),
+
+literal( q, s ) = min( τlit , λ lit nlit (q, s )) ,
+
+(9) where nlit (q, s ) is the number of question entities that appear literally in s.
+
+A.3 Metadata Feature Calculation 
+
+For every edge e, PAGE-RAG stores source-tracing meta-data: 
+
+m(e) = {src , sent , trig , conf , div , spec , hub }. (10) Here, src and sent identify the original source and sentence, and trig is the entity or relation that creates the edge. For an edge e, Te denotes its trigger set; for a shared-entity edge between sentences si and sj , Te = Ent( si) ∩ Ent( sj ). De
+
+denotes the set of distinct source documents in the edge provenance, and T denotes all trigger entities in the query-local graph. The remaining fields are computed as follows. 
+
+Confidence. For contains, mention, and adjacent edges, 
+
+conf( e) = 1 .0. For relation edges, conf( e) is the extracted relation confidence. For shared-entity edges with trigger set 
+
+Te:
+
+conf( e) = min(1 .0, b 0 + b1|Te|). (11) 
+
+Source diversity. PAGE-RAG computes source diversity with a conservative scaling so that a single-source edge re-ceives no diversity reward: 
+
+div( e) = 
+
+0, |De| = 0 ,
+
+min(1 .0, ρ (|De| − 1)) , otherwise . (12) 
+
+Specificity and hubness. For an entity t, df( t) is the num-ber of sentences in the query-local graph that mention t, and: 
+
+idf( t) = log 1 + |S q |
+
+1 + df( t) + 1 , (13) where Sq is the sentence set in the query-local graph. Adja-cent and non-shared edges use fixed fallback values because they do not have a shared trigger set. For shared-entity edges: 
+
+spec( e) = Clamp 
+
+ mean t∈Te idf( t)max t′∈T idf( t′)
+
+
+
+,
+
+hub( e) = Clamp 
+
+ mean t∈Te df( t)max t′∈T df( t′)
+
+
+
+.
+
+(14) Noise penalty. For a shared-entity edge, PAGE-RAG ac-cumulates a bounded noise penalty when the edge has low specificity, low confidence, or weak source diversity: 
+
+]noise( e) = ξsI[spec( e) < τ s] + ξcI[conf( e) < τ c]+ ξdI[|De| = 1 and ¬paragraph] ,
+
+noise( e) = Clamp( ]noise( e)) .
+
+(15) Adjacent edges use a small fallback noise penalty. 
+
+A.4 Edge and Path Feature Calculation 
+
+The edge relevance feature uses the question tokens, the provenance sentences attached to the edge, and the trigger text. Here prov( e) denotes the concatenated provenance sen-tences for e, and trig( e) denotes its trigger entity or relation: 
+
+edge _rel( e, q ) = Jaccard(Tok( q), Tok(prov( e) + trig( e))) .
+
+(16) The reliability feature combines diversity and confidence: 
+
+reliability( e) = Clamp( λd div( e) + λc conf( e)) . (17) The implementation then forms an edge score from these feature values: 
+
+edge( e, q ) = α edge _rel( e, q ) + β reliability( e)+ γ spec( e) − δ hub( e) − η noise( e). (18) The edge score linearly combines relevance, reliability, speci-ficity, hubness, and noise terms. For a shared-entity edge whose trigger appears in the question or question entities, PAGE-RAG can add a small query-entity edge boost and discount the hub penalty. For a candidate path π, let Eπ be the edge set along the path. PAGE-RAG first computes a sentence base. For one-sentence paths it uses the maximum sentence relevance; for multi-sentence paths it uses the mean sentence relevance: 
+
+sent _base( π) = 
+
+max s∈π sent _rel( q, s ), |π| = 1 ,
+
+mean s∈π sent _rel( q, s ), |π| > 1.
+
+(19) For neighboring sentence pairs (si, s i+1 ) in a path, coherence is: 
+
+pair _coh( si, s i+1 ) = ωe Jaccard(Ent( si), Ent( si+1 )) + ωℓ Lex( si, s i+1 ),
+
+coh( π) = mean i pair _coh( si, s i+1 ).
+
+(20) In paragraph mode, coh( π) = 0 , because cross-paragraph lexical coherence can double-count hub links. The path length term is: 
+
+len _cost( π) = 
+
+μ max(0 , |E π | − 1) , standard mode ,
+
+−μp min(2 , |E π |), paragraph mode .
+
+(21) The second case is a small multi-hop bonus, since paragraph-style corpora often require crossing paragraph boundaries. The path score used for ranking is: 
+
+path( π, q ) = sent _base( π) + X
+
+> e∈E π
+
+edge( e, q )+λcoh coh( π) − len _cost( π).
+
+(22) 
+
+Algorithm 1 Minimal sufficient selection 
+
+Require: Ranked candidate paths P , budget k, question q
+
+Ensure: Selected context C 
+
+> 1:
+
+C ← ∅ , state ← Ambiguous  
+
+> 2:
+
+for each path π ∈ P do  
+
+> 3:
+
+C′ ← C ∪ sentences( π) 
+
+> 4:
+
+if |C′| > k then  
+
+> 5:
+
+skip π 
+
+> 6:
+
+else if π improves support utility or state then  
+
+> 7:
+
+C ← C′ 
+
+> 8:
+
+update state from selected context  
+
+> 9:
+
+else if π is a plausible intermediate bridge then  
+
+> 10:
+
+keep one-step patience before rejecting  
+
+> 11:
+
+else  
+
+> 12:
+
+reject π 
+
+> 13:
+
+end if  
+
+> 14:
+
+if state is Enough then  
+
+> 15:
+
+break  
+
+> 16:
+
+end if  
+
+> 17:
+
+end for  
+
+> 18:
+
+fill remaining budget, if needed, with highest-scoring unused candidates  
+
+> 19:
+
+return C
+
+For bridge questions, a path receives an additional bounded bonus when it contains at least two sentences, one sentence mentions a question entity, and another sentence carries a re-lation signal. The contains and mention edges mainly provide traceability and entity anchors; path ranking is computed over sentence-level transitions induced by adjacent, shared-entity, and relation or semantic links. 
+
+A.5 Minimal Sufficient Selection 
+
+After path scoring, PAGE-RAG must convert a ranked path list into a compact reader context. The selector is deliber-ately different from simply taking the top-scoring sentences. It adds paths only when they improve the current support state or provide a plausible intermediate bridge toward a suf-ficient context. This design is important because expanded retrieval increases reachability and noise at the same time. The concrete selection flow is shown in Algorithm 1. The last fill step is used only to keep the reader budget fixed in controlled experiments. It first preserves the minimal selected core and then fills unused slots with the highest-scoring remaining candidates from the expanded pool. This prevents an unfair comparison where PAGE-RAG receives fewer final context units than the baseline. 
+
+A.6 Document and Chunk-Level Adaptation 
+
+The main PAGE-RAG pipeline operates at sentence level, but the same principle can be applied to document, passage, or chunk-level backends. In mixed-granularity settings, PAGE-RAG still builds internal sentence-level or chunk-internal paths when text structure is available, because sentence-level links make support scoring more precise. The final output, however, is mapped back to the backend’s native unit, such as a document or chunk identifier. Edge metadata are also in-Group Removed signals     
+
+> Query alignment sentence relevance, edge relevance, question entity overlap, relation-type boost Provenance reliability confidence, source diversity, prove-nance reliability score Bridge specificity entity specificity, hub penalty, query-entity hub discount Path quality control noise penalty, path coherence, path length cost or bonus
+
+Table 5: Feature groups removed in Appendix B ablations. terpreted at the native granularity: source diversity becomes diversity across documents or chunks, and support paths are promoted only when their selected units remain within the final top-k budget. This adaptation is why PAGE-RAG can serve as a plug-in layer. The upstream backend is responsible for producing a candidate pool in its own format; PAGE-RAG uses a tem-porary graph to recalibrate the pool by support and returns the same type of context unit expected by the downstream reader. 
+
+# Appendix B: Feature-Group Ablation 
+
+The main paper reports component-level ablations for support-aware scoring and minimal selection. Here we fur-ther ask whether the scoring signals are merely a collection of features or whether each semantic group contributes to support promotion. We group the support scoring signals into four interpretable families. Query alignment keeps path exploration anchored to the current question, using sentence relevance, edge relevance, question-entity overlap, and relation-intent cues. Provenance reliability estimates whether a connection is backed by re-liable source traces, using confidence and source diversity. Bridge specificity addresses the connectivity-support gap di-rectly: shared entities can create useful bridges, but generic hub entities often connect topical distractors, so specificity and hubness must be separated. Path quality control measures whether a candidate path is coherent and compact rather than merely connected, using noise, coherence, and length-related terms. Table 5 summarizes which signals are removed in each ablation. The results show that the scoring module is not driven by a single signal, and that different datasets stress differ-ent parts of the scorer. This is expected because the three benchmarks differ in how the missing support usually ap-pears in the expanded pool: HotpotQA often contains explicit bridge entities, MuSiQue contains paragraph-level semantic associations, and 2Wiki contains relation chains over named entities. On HotpotQA and 2Wiki, removing query alignment causes the largest drop. HotpotQA often requires linking an entity-bearing bridge sentence to an answer-bearing sen-tence, and 2Wiki frequently asks relation-chain questions over named entities. In these settings, graph connectivity alone can easily follow a related entity neighborhood with-out staying anchored to the exact question. Removing query alignment drops HotpotQA from 70.94 to 56.10 Ans F1 and drops 2Wiki from 63.23 to 44.78 Ans F1; the support drops are also large. MuSiQue behaves differently. Its questions are paragraph-style and often require a more implicit decomposition, so sur-face query overlap is less dominant. The largest answer drop occurs when bridge specificity is removed, and path quality control is also important. This matches the dataset structure: many candidates can be loosely connected through generic entities or long paragraph-level associations, but only a sub-set forms a compact chain that supports the answer. Speci-ficity and path quality therefore help PAGE-RAG distinguish useful bridges from plausible but distracting ones. Provenance reliability gives a steadier contribution across datasets. It does not always produce the single largest drop, but it consistently improves both answer and support quality by separating edges with clearer source traces from weaker or less repeated links. This behavior is useful for fixed-budget selection: when two candidate paths have similar topical rel-evance, the path with clearer source traces is less likely to be a coincidental connection. The result is not that prove-nance alone solves support promotion, but that it stabilizes the scorer when relevance and graph structure are ambigu-ous. The four groups are also complementary. Query alignment tells PAGE-RAG what relation the current question is ask-ing for; bridge specificity and path quality decide whether a connected path is a plausible support path rather than a hub-induced shortcut; provenance reliability checks whether the connection has credible source traces. Removing any one of 
+
+Method HotpotQA MuSiQue 2Wiki Avg. Ans F1 Sup F1 Ans F1 Sup F1 Ans F1 Sup F1 Ans F1 Sup F1 w/o query alignment 56.10 27.79 43.20 46.41 44.78 29.41 48.35 30.71 w/o provenance reliability 62.94 40.60 39.44 40.14 49.38 36.17 52.79 38.06 w/o bridge specificity 61.66 39.40 36.60 36.27 48.81 35.53 51.74 36.89 w/o path quality control 63.08 40.08 39.90 40.39 48.15 34.56 52.20 37.01 PAGE-RAG 70.94 55.09 56.00 62.00 63.23 54.16 65.00 55.31 
+
+Table 6: Feature-group ablations. Avg. is weighted by the number of evaluated examples. them leaves the model with a partial view of support. Overall, the full scorer is substantially stronger than any feature-group removal, supporting the design choice to treat connectivity as a hypothesis that must be calibrated by all four signal families together. 
+
+# Appendix C: Noise Robustness 
+
+This appendix evaluates whether PAGE-RAG remains sta-ble when the expanded candidate pool becomes noisier. The main experiments already use an expanded top-20 retrieval pool and a fixed top-5 reader context. In this stress test, we fur-ther append additional distractor documents to the expanded pool before graph construction. The added distractors are sampled from the same benchmark corpus but are not part of the original top-20 cache for the current question. PAGE-RAG then builds the query-local graph over this noisier pool, performs the same support-aware path scoring and minimal selection procedure, and still returns only five context units to the reader. We test three noise levels: +5 , +10 , and +20 extra dis-tractor documents. All runs use the same DeepSeek-V4-Pro reader as the main table and keep the same final reader bud-get. Table 7 reports answer F1. The results show a gradual degradation rather than a col-lapse. On HotpotQA, adding five, ten, and twenty extra dis-tractors reduces answer F1 by 2.68, 4.07, and 5.26 points. On MuSiQue, the corresponding drops are 4.93, 5.43, and 6.62 points. On 2Wiki, the +5 , +10 , and +20 settings re-duce answer F1 by 5.65, 6.97, and 7.86 points. Compared with the main-table baselines, these noisy PAGE-RAG vari-ants remain stronger than, or roughly comparable to, common strong baselines under the same final budget, which indicates that the method keeps substantial answer quality even when the expanded pool is polluted. At the same time, the mono-tonic decline is expected: when the candidate pool becomes much noisier, the query-local graph contains more plausible but non-supporting bridges, and support promotion becomes harder. We therefore interpret this experiment as a sensitivity analysis rather than a claim of noise-invariant robustness.                 
+
+> Dataset PAGE-RAG +5 +10 +20
+> HotpotQA 70.94 68.26 66.87 65.68 MuSiQue 56.00 51.07 50.57 49.38 2Wiki 63.23 57.58 56.26 55.37
+
+Table 7: Noise robustness measured by answer F1. Each +m
+
+column appends m extra distractor documents to the ex-panded candidate pool while keeping the final reader context fixed at five units. 
+
+# Appendix D: Case Study 
+
+We provide three examples where the initial top-5 retrieval misses at least one required supporting fact, while the ex-panded top-20 pool contains the missing fact and PAGE-RAG promotes it into the final top-5 reader context. Table 8 summarizes the questions and answer changes, and Table 9 shows how the missing facts move from the expanded pool into the final context. 
+
+HotpotQA. The initial retrieval is dominated by sentences about basketball positions. It retrieves that Goran Dragic can play both point guard and shooting guard, but it does not include the facts needed to connect him to the 2013-2014 Phoenix Suns season. PAGE-RAG promotes the nationality fact and two season facts from ranks 6, 8, and 12 into the final context. As a result, the reader changes its answer from “Slovenia” to “Phoenix Suns”. 
+
+MuSiQue. The initial top-5 retrieval is attracted by the phrase “first mosque” and returns mosque-related distractors from Australia, the United Kingdom, Ukraine, and Cam-bodia. The expanded pool contains the missing location chain: Tobolar Copra is in Majuro, and Majuro’s first mosque opened in September 2012. PAGE-RAG promotes these two facts from ranks 13 and 15 into the final context, changing the answer from “1970” to the correct date. 
+
+2Wiki. The initial top-5 retrieval contains topically related Selangor fragments but misses the complete paternal chain. The expanded pool contains both missing links: Ibrahim Shah was born Raja Ibrahim bin Raja Lumu, and Salehuddin Shah was born Raja Lumu bin Daeng Chelak. PAGE-RAG promotes these facts from ranks 6 and 19 into the first two final positions, changing the answer from Ibrahim’s father to the correct grandfather. Across the three examples, PAGE-RAG helps for the same reason: the expanded pool already contains the missing hop, but it is buried behind topical distractors. By scoring con-nected candidates as support hypotheses and selecting a com-pact set of complementary paths, PAGE-RAG moves the missing facts into the final reader context without increasing the reader budget. Dataset Question Gold answer Initial answer PAGE-RAG answer 
+
+HotpotQA Which team’s 2013-2014 season had players includ-ing a Slovenian who plays at both point guard and shooting guard? Phoenix Suns Slovenia Phoenix Suns MuSiQue When did the first mosque open in the place where Tobolar Copra plant is located? September 2012 1970 September 2012 2Wiki Who is Ibrahim Shah of Selangor’s paternal grand-father? Daeng Chelak Sultan Salehuddin Shah Almarhum Daeng Chelak 
+
+Table 8: Case study summary. Initial answer denotes the answer produced from the initial retrieval context, while PAGE-RAG answer denotes the answer after support promotion. 
+
+Dataset Promoted fact Initial rank Final rank Role in the answer chain 
+
+HotpotQA Goran Dragic is a Slovenian professional basketball player. Top-6 Final-2 identifies the Slovenian player The 2013-14 Phoenix Suns season was the team’s 46th NBA season. Top-12 Final-3 identifies the team season Goran Dragic was a returning player for the Suns in that season. Top-8 Final-5 links the player to the season MuSiQue Tobolar Copra processing plant is in Majuro, Mar-shall Islands. Top-13 Final-2 resolves the location in the question The first mosque in Majuro opened in September 2012. Top-15 Final-3 provides the requested date 2Wiki Ibrahim Shah was born Raja Ibrahim bin Raja Lumu. Top-6 Final-1 links Ibrahim Shah to Raja Lumu Salehuddin Shah was born Raja Lumu bin Daeng Chelak. Top-19 Final-2 links Raja Lumu to Daeng Chelak 
+
+Table 9: Promoted supporting facts. Initial rank is the rank in the expanded top-20 retrieval pool; final rank is the rank after PAGE-RAG selection.

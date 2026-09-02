@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-01</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-02</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 23 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 17 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>12</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-01 22:08:31 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-02 22:45:45 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日共梳理23篇论文，精读12篇、速读11篇，覆盖金融、RAG、语音等领域。最值得关注：金融报告多模态基础模型与RAG反误导推理链均获9.0高分，代表两大核心突破。建议优先精读这两篇，后续可跟进速读中的不确定性语义承诺与可认证RAG共识方向。</p>
+<p>今日聚焦检索增强生成（RAG）与幻觉检测，精读两篇9分论文，另有速读三篇8分工作。最值得关注：ISO-RAG用等周噪声控制优化RAG鲁棒性，Enoki提出多层级高效幻觉检测方案。建议普通读者优先了解这两项方法，可显著提升生成可靠性与排查效率。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">12 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Frontiers in FinTech: Multimodal Foundation Models for Financial Reporting and Decision Science">Frontiers in FinTech: Multimodal Foundation Models for Financial Reporting and Decision Science</span></li><li><span class="dpr-home-dashboard-paper-title" title="ReliableRAG: Combating Misinformation in Retrieval-Augmented Generation via Reliability-Guided Reasoning Chains">ReliableRAG: Combating Misinformation in Retrieval-Augmented Generation via Reliability-Guided Reasoning Chains</span></li><li><span class="dpr-home-dashboard-paper-title" title="When RAG Fails to Equalize: Geo-bias in Factual Question Answering over Public Companies">When RAG Fails to Equalize: Geo-bias in Factual Question Answering over Public Companies</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="ISO-RAG: Isoperimetric Noise Control for Retrieval-Augmented Generation">ISO-RAG: Isoperimetric Noise Control for Retrieval-Augmented Generation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Enoki: Efficient Multi-Level Hallucination Detection">Enoki: Efficient Multi-Level Hallucination Detection</span></li><li><span class="dpr-home-dashboard-paper-title" title="SCoNE: Selective Context-aware Neuron Editing for Robust Retrieval-Augmented Generation">SCoNE: Selective Context-aware Neuron Editing for Robust Retrieval-Augmented Generation</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">hallu-rag <strong>12</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">hallu-rag <strong>6</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -94,7 +94,7 @@
     <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Credal Large Language Models for Semantic Commitment under Uncertainty">Credal Large Language Models for Semantic Commitment under Uncertainty</span></li><li><span class="dpr-home-dashboard-paper-title" title="RAGSentinel: Certifiable Geometric Consensus for Robust Retrieval-Augmented Generation">RAGSentinel: Certifiable Geometric Consensus for Robust Retrieval-Augmented Generation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Lost in Speech: Trilingual Spoken Hallucination Detection Across Audio and Transcripts">Lost in Speech: Trilingual Spoken Hallucination Detection Across Audio and Transcripts</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Dynamic Alignment Compensation for Hallucination Mitigation in Large Vision-Language Models">Dynamic Alignment Compensation for Hallucination Mitigation in Large Vision-Language Models</span></li><li><span class="dpr-home-dashboard-paper-title" title="AgenticRag-R1: Agentic Reinforcement Learning with Stack Memory for Multi-Step Reasoning, Retrieval and Memorizing">AgenticRag-R1: Agentic Reinforcement Learning with Stack Memory for Multi-Step Reasoning, Retrieval and Memorizing</span></li><li><span class="dpr-home-dashboard-paper-title" title="PAGE-RAG: Provenance-Aware Graph Evidence Promotion for Fixed-Budget Multi-hop Retrieval-Augmented Generation">PAGE-RAG: Provenance-Aware Graph Evidence Promotion for Fixed-Budget Multi-hop Retrieval-Augmented Generation</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">hallu-rag <strong>11</strong></span></div>
 </section>
