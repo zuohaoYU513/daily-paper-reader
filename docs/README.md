@@ -48,7 +48,7 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-02</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-03</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
     <strong class="dpr-home-dashboard-count">共 17 篇</strong>
@@ -58,7 +58,7 @@
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-02 22:45:45 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-03 21:39:49 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日聚焦检索增强生成（RAG）与幻觉检测，精读两篇9分论文，另有速读三篇8分工作。最值得关注：ISO-RAG用等周噪声控制优化RAG鲁棒性，Enoki提出多层级高效幻觉检测方案。建议普通读者优先了解这两项方法，可显著提升生成可靠性与排查效率。</p>
+<p>今日聚焦黑盒LLM幻觉检测与知识对齐微调，共追踪17篇论文，精读6篇。</p>
+<p>最值得看：利用互补信号进行幻觉检测（10分）及知识对齐微调（9分），速读中RAG可靠性提升与多模态文档RAG值得关注。</p>
+<p>建议优先精读两篇高分工作，再结合速读中RAG相关方法，梳理检测与增强的互补路径。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -81,7 +83,7 @@
     <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="ISO-RAG: Isoperimetric Noise Control for Retrieval-Augmented Generation">ISO-RAG: Isoperimetric Noise Control for Retrieval-Augmented Generation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Enoki: Efficient Multi-Level Hallucination Detection">Enoki: Efficient Multi-Level Hallucination Detection</span></li><li><span class="dpr-home-dashboard-paper-title" title="SCoNE: Selective Context-aware Neuron Editing for Robust Retrieval-Augmented Generation">SCoNE: Selective Context-aware Neuron Editing for Robust Retrieval-Augmented Generation</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="From Tokens to Semantics: Leveraging Complementary Signals for Hallucination Detection in Black-Box LLMs">From Tokens to Semantics: Leveraging Complementary Signals for Hallucination Detection in Black-Box LLMs</span></li><li><span class="dpr-home-dashboard-paper-title" title="Stick to What You Know: A Study of Knowledge-Aligned Supervised Fine-Tuning">Stick to What You Know: A Study of Knowledge-Aligned Supervised Fine-Tuning</span></li><li><span class="dpr-home-dashboard-paper-title" title="PRO-Step: Step-level Process Reward Optimization for Retrieval-Augmented Generation">PRO-Step: Step-level Process Reward Optimization for Retrieval-Augmented Generation</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">hallu-rag <strong>6</strong></span></div>
 </section>
@@ -94,7 +96,7 @@
     <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Dynamic Alignment Compensation for Hallucination Mitigation in Large Vision-Language Models">Dynamic Alignment Compensation for Hallucination Mitigation in Large Vision-Language Models</span></li><li><span class="dpr-home-dashboard-paper-title" title="AgenticRag-R1: Agentic Reinforcement Learning with Stack Memory for Multi-Step Reasoning, Retrieval and Memorizing">AgenticRag-R1: Agentic Reinforcement Learning with Stack Memory for Multi-Step Reasoning, Retrieval and Memorizing</span></li><li><span class="dpr-home-dashboard-paper-title" title="PAGE-RAG: Provenance-Aware Graph Evidence Promotion for Fixed-Budget Multi-hop Retrieval-Augmented Generation">PAGE-RAG: Provenance-Aware Graph Evidence Promotion for Fixed-Budget Multi-hop Retrieval-Augmented Generation</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Knowing Before Answering: Decoding Language Models for Reliable RAG">Knowing Before Answering: Decoding Language Models for Reliable RAG</span></li><li><span class="dpr-home-dashboard-paper-title" title="Doc-REFRAG: Rethinking Multimodal Document Retrieval-Augmented Generation">Doc-REFRAG: Rethinking Multimodal Document Retrieval-Augmented Generation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Learning to Reason and Use Tools through Unsupervised Fine-Tuning in Task-Oriented Dialog Systems">Learning to Reason and Use Tools through Unsupervised Fine-Tuning in Task-Oriented Dialog Systems</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">hallu-rag <strong>11</strong></span></div>
 </section>

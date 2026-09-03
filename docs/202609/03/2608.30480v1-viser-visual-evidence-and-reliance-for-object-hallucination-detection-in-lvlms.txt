@@ -1,0 +1,864 @@
+Title: VisER: Visual Evidence and Reliance for Object Hallucination Detection in LVLMs
+
+URL Source: https://arxiv.org/pdf/2608.30480v1
+
+Published Time: Tue, 01 Sep 2026 03:00:49 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+## VisER: Visual Evidence and Reliance for Object Hallucination Detection in LVLMs 
+
+Afsaneh Hasanebrahimi, Hanxun Huang, Christopher Leckie, Sarah Erfani 
+
+School of Computing and Information Systems The University of Melbourne Melbourne, Australia 
+
+{a.hasanebrahimi,hanxun.huang,caleckie,sarah.erfani}@unimelb.edu.au 
+
+Abstract 
+
+Object hallucination remains a persistent reli-ability issue in large vision-language models, where generated object mentions may sound plausible but lack visual grounding. Recent training-free detectors use internal signals such as token likelihood, attention, visual confi-dence, or image-text similarity to identify hal-lucinated objects. These signals are useful, but they are often source-confounded. They mea-sure how strongly an object is supported inside the model without distinguishing whether that support comes from object-specific visual evi-dence or the generated text prefix. In difficult cases, a hallucinated object can still receive high internal support because it fits the scene, is associated with nearby visual cues, or fol-lows naturally from the generated text prefix. We propose VisER, a training-free two-sided metric for object-level hallucination detection. VisER evaluates each generated object mention from two complementary views. Visual Evi-dence measures whether object-context com-patibility is backed by object-specific evidence from image tokens. Visual Reliance measures whether the object is supported more by the image than by the generated prefix. Combining these views gives a more source-aware ground-ing score, while avoiding additional object-level verification generations. Across multi-ple LVLMs and benchmarks, VisER improves AUROC and AUPR over a range of baselines. 
+
+1 Introduction 
+
+Large Vision-Language Models (LVLMs) have made substantial progress in connecting visual per-ception with natural language generation, enabling strong performance across image captioning, visual question answering, and multimodal instruction fol-lowing (Liu et al., 2023; Zhu et al., 2024; Dai et al., 2023; Chen et al., 2023; Zhu et al., 2025). De-spite these advances, LVLMs remain vulnerable to object hallucination, where the model generates object mentions that are not present in the input image (Rohrbach et al., 2018; Li et al., 2023). This failure mode is particularly concerning because hallucinated objects are often fluent, contextually plausible, and embedded naturally within otherwise correct descriptions. As LVLMs are increasingly used in settings where factual visual grounding is important, detecting object hallucinations has become a key problem for reliable multimodal gen-eration (Bai et al., 2024; Liu et al., 2024b). Existing object hallucination detectors can be broadly grouped into two categories. The first re-lies on external supervision, including ground-truth object annotations, reference-based evaluation, or auxiliary judge models (Rohrbach et al., 2018; Li et al., 2023; Jing et al., 2024; Xiao et al., 2025; Sun et al., 2024). While effective for controlled evaluation, these methods are difficult to deploy in open-ended settings where references are un-available, and auxiliary evaluators may introduce their own biases or errors. The second category uses training-free internal signals available during LVLM inference, such as token probabilities (Zhou et al., 2024), confidence estimates from visual rep-resentations (Jiang et al., 2025a), attention pat-terns (Jiang et al., 2025b; Hoang et al., 2026), and latent image-text similarities (Phukan et al., 2025; Park and Li, 2025). These methods are lightweight and reference-free, but they mainly ask whether an object mention is supported inside the model. The need for a two-sided view becomes clear in difficult hallucination cases. Under the standard evaluation definition, an object hallucination oc-curs when a generated object mention is absent from the image (Rohrbach et al., 2018; Li et al., 2023). However, for a detector, the difficult cases are those where the absent object still receives strong internal support. Scene plausibility and ob-ject co-occurrence can make an absent object ap-pear compatible with the global visual context or the surrounding generated description (Rohrbach et al., 2018; Li et al., 2023; Zhou et al., 2024; Park 1arXiv:2608.30480v1 [cs.CV] 31 Aug 2026 Describe the               
+
+> image.
+> A young child is standing beside a
+> wooden table , looking at a small
+> birthday cake on a white plate with
+> a lit candle , while holding a fork .
+> child cake plate fork table
+> A. Input & Generation C1. Visual Evidence
+> C2. Visual Reliance
+> B2. Text-prefix Prior
+> B1. Scene-level Prior
+> D. Output
+> Real
+> Hallucinated
+> fork
+> cake
+> Image (I) + Instruction (x)
+> LLM
+> ...
+> Σ
+> Generated Objects
+> Cosine Similarity
+> Logit Lens
+> ....  Ratio
+> ... Generated Object
+> Generated Prefix
+
+Figure 1: Overview of VisER as two-sided visual source validation. A generated object mention can receive high internal support either because it is visually grounded or because it is falsely supported by scene priors, misleading visual cues, or autoregressive text-prefix continuation. VisER validates the source of this support using two complementary signals: Visual Evidence V E (o), which checks whether object-context compatibility is backed by object-specific image-token evidence, and Visual Reliance V R (o), which compares image-derived support with generated-prefix support. The final score favors objects that are both visually evidenced and image-driven. 
+
+and Li, 2025). Autoregressive generation can also reinforce later object mentions through the gener-ated prefix rather than through the image (Zhou et al., 2024; Huang et al., 2024; Liu et al., 2024d; Hoang et al., 2026). Even image-side signals can be misleading when attention or similarity is con-centrated on related, background, or non-object-specific visual tokens (Gong et al., 2024; Jiang et al., 2025b). Thus, high likelihood, attention, con-fidence, or image-text similarity can indicate visual grounding, but it can also indicate plausibility or association. We refer to this ambiguity as source confound-ing ; an internal signal is source-confounded when it assigns high support to an object mention with-out distinguishing the source of that support. For a grounded object, high support should come from object-specific visual evidence. For a hallucinated object, however, high support may instead arise be-cause the object is scene-plausible, associated with related visual cues, or naturally continued from the generated text prefix. In such cases, the de-tector measures the strength of support but not whether that support is visually grounded. This makes source confounding a central failure mode for training-free hallucination detection, and a re-liable detector should not only ask whether an ob-ject is internally supported, but also whether the support is object-specific and image-derived. Ap-pendix E.2 shows representative examples in which contextually plausible but absent objects are scored as grounded by baseline signals, whereas VisER correctly flags them as hallucinated. Motivated by this observation, we propose 
+
+VisER (Vi sual Evidence and Reliance), a training-free metric for object-level hallucination detection. As illustrated in Figure 1, VisER evaluates each generated object mention from two complementary sides. Visual Evidence measures whether object-context compatibility is backed by object-specific evidence from image tokens. Visual Reliance mea-sures whether the object is supported more by the image than by the generated text prefix. Combin-ing these two sides yields a more source-aware grounding score without model training or addi-tional object-level verification generations. Un-like similarity-based detectors that mainly measure compatibility between an object and the image-text context (Park and Li, 2025), VisER further asks whether that compatibility is supported by object-specific visual evidence and is not primarily driven by the prefix. Our contributions are summarized as follows: • We revisit training-free object hallucination detection through source confounding, where high internal support may reflect visual evi-2dence, scene association, or generated-prefix cues. • We propose VisER, a training-free metric that combines Visual Evidence and Visual Re-liance to score object mentions based on both object-specific evidence and image-versus-prefix support. • We evaluate VisER across multiple LVLMs and benchmarks, showing consistent gains over existing baselines and complementary benefits from both components. 
+
+2 Related Work 
+
+Object hallucination evaluation and external verification. Object hallucination refers to a vi-sual faithfulness error in which an LVLM mentions objects that are absent from, or unsupported by, the input image (Liu et al., 2024b). Early evaluation protocols compare generated object mentions with annotated visual references, including ground-truth object labels, captions, or object-presence annota-tions (Rohrbach et al., 2018; Li et al., 2023; Petryk et al., 2024; He et al., 2025). Other work uses stronger LLMs or LVLMs as external judges to assess response faithfulness (Liu et al., 2024a; Jing et al., 2024; Wang et al., 2023; Jiang et al., 2024; Cao et al., 2024). These methods are effective for controlled evaluation, but they often require annota-tions, auxiliary models, or multi-stage verification, making them less suitable when object-level refer-ences are unavailable. 
+
+Training-free internal-signal detectors. To re-duce dependence on external references, recent work has used signals available during LVLM in-ference. Likelihood-based methods such as LURE use the negative log-likelihood of generated ob-ject tokens as a hallucination cue (Zhou et al., 2024). Representation-based methods estimate grounding from internal activations. Internal Confi-dence uses logit-lens probabilities over image hid-den states (Jiang et al., 2025a), while Contextual Lens studies contextual embeddings beyond raw logit-lens evidence (Phukan et al., 2025). Attention-based methods examine how object generation re-lies on image or text tokens. SVAR measures atten-tion to image tokens in intermediate layers, while PAS uses attention to preliminary or generated text tokens to detect prefix-driven hallucinations (Jiang et al., 2025b; Hoang et al., 2026). GLSim improves object-level detection by combining global and lo-cal image-text similarity (Park and Li, 2025). 
+
+Confounded support in LVLM hallucination. 
+
+Several studies show that hallucinated objects can receive support from sources other than direct ob-ject evidence. Object co-occurrence, instruction frequency, and scene priors can make absent ob-jects appear plausible (Li et al., 2023; Zhou et al., 2024). Mitigation work also suggests that re-ducing statistical bias or unimodal priors can re-duce hallucination, indicating that plausible but unsupported mentions are often prior-driven (Leng et al., 2024). Language-side effects provide an-other source of support. LVLMs may show text inertia, producing similar descriptions even when visual evidence is weak (Liu et al., 2024d), and generated prefix tokens can influence later object mentions (Hoang et al., 2026). Image-side signals can also be imperfect. Attention may vary across layers or heads (Jain and Wallace, 2019; Jiang et al., 2025b), be affected by visual attention sinks (Kang et al., 2025), or concentrate on background and outlier image tokens rather than object-specific re-gions (Gong et al., 2024; Che et al., 2025). These findings motivate a two-sided detector that con-siders both whether an object has image-token evi-dence and whether its support is more image-driven than prefix-driven. 
+
+3 Method 
+
+3.1 Problem Setup 
+
+We consider a pretrained LVLM that takes an image 
+
+I and a textual instruction x, and autoregressively generates a response y = ( y1, . . . , y T ). We study object-level hallucination detection. Let o denote an object mention in the generated response, and let to denote the position of the generated token matched to o. The goal is to assign each object men-tion a grounding score s(o, I, x, y <t o ) ∈ R, where larger values indicate stronger visual grounding. A binary detector can be obtained by thresholding 
+
+G(o, I, x, y <t o ) = 1{s(o, I, x, y <t o ) ≥ δ},
+
+where δ is a decision threshold. In our experiments, we evaluate ranking quality using AUROC and AUPR, so no fixed threshold is required. The LVLM represents the image as a sequence of visual tokens V = {v1, . . . , v N }, which are pro-jected into the language-model space. Let hℓi ∈ Rd
+
+denote the hidden representation of token i at layer 3ℓ. We use ℓI for image-token representations and 
+
+ℓT for text-token representations. The object-token representation is denoted by hℓT 
+
+> o
+
+= hℓT 
+
+> to
+
+. We write 
+
+sim( ·, ·) for cosine similarity and sim +(a, b ) for its 
+
+[0 , 1] -rescaled form. 
+
+Visual logit-lens evidence. To obtain object-specific evidence from image tokens, we apply logit lens (nostalgebraist, 2020) to image-token hidden states. Let WU ∈ Rd×| Ω| be the language-model unembedding matrix, where Ω is the vocabulary. For each image token vi, we compute zi = hℓI 
+
+> vi
+
+WU .The visual logit-lens evidence for object o at image token vi is pi(o) = softmax( zi)o. This gives an object-specific score for each image token. 
+
+3.2 VisER 
+
+VisER assigns each generated object mention a grounding score from two complementary signals. Visual Evidence ( VE ) measures object-specific image-token evidence, while Visual Reliance ( VR )compares image-derived support with generated-prefix support. Their combination favors objects that are both visually evidenced and more image-driven than prefix-driven. 
+
+Visual Evidence (VE). Visual Evidence mea-sures whether object-context compatibility is sup-ported by object-specific evidence from image to-kens. Let hℓT 
+
+> ctx
+
+denote the hidden representation of the final prompt token before response generation. We first aggregate the visual logit-lens evidence for object o over all image tokens: 
+
+Mvis (o) = 
+
+> N
+
+X
+
+> i=1
+
+pi(o),
+
+where pi(o) is the logit-lens probability assigned to object token o at image token vi. We then compute an evidence gate 
+
+g(o) = σ
+
+ Mvis (o)
+
+τ + ϵ
+
+
+
+,
+
+where σ(·) is the sigmoid function, τ is an evidence-scale parameter, and ϵ is used for numer-ical stability. We estimate τ from an unlabeled calibration split disjoint from the evaluation set, using the average visual evidence mass. The Visual Evidence score is 
+
+V E (o) = sim( hℓT
+
+> ctx
+
+, h ℓT 
+
+> o
+
+) · g(o).
+
+This score keeps the object-context compatibility term, but modulates it by object-specific image-token evidence. As a result, weak object-specific image-token evidence reduces the contribution of object-context compatibility to the final VE score. 
+
+Visual Reliance (VR). Visual Reliance compares image-derived support with support from the gen-erated prefix. This is useful because an object men-tion may be reinforced by previous tokens even when the image provides limited evidence. We first compute image-derived support as 
+
+Simg (o) = 
+
+> N
+
+X
+
+> i=1
+
+ˆpi(o) sim +(hℓI 
+
+> vi
+
+, h ℓT 
+
+> o
+
+),
+
+where the normalized visual evidence weight is 
+
+ˆpi(o) = pi(o)
+
+PNj=1 pj (o) + ϵ .
+
+Thus, all image tokens contribute to Simg (o), with larger weight assigned to tokens that provide stronger object-specific evidence. For prefix support, let Y<t o = {y1, . . . , y to−1}
+
+be the generated prefix before object o. We use in-put embeddings as a lightweight estimate of lexical-semantic support from the prefix. Let eo be the input embedding of the object token and ej the in-put embedding of prefix token yj . We select the 
+
+Ko = min( K, t o − 1) prefix tokens most similar to 
+
+eo, where K is the maximum number of selected prefix tokens and Ko is the actual number of prefix tokens selected for object o. If Ko = 0 , we set 
+
+Stext (o) = 0 . Otherwise, 
+
+Stext (o) = 1
+
+Ko
+
+X 
+
+> j∈TopK( Y<to ;o)
+
+sim +(ej , e o),
+
+where TopK( Y<t o ; o) returns the selected prefix-token indices. We define Visual Reliance as 
+
+V R (o) = Simg (o)
+
+Simg (o) + Stext (o) + ϵ .
+
+A larger V R (o) indicates that support for the object is more image-derived than prefix-derived. 
+
+Final VisER Score. VE and VR capture comple-mentary aspects of object grounding. V E (o) down-weights object-context compatibility when object-specific image-token evidence is weak. V R (o)
+
+compares image-derived support with generated-prefix support, reducing the effect of objects that are more strongly supported by the prefix than by the image. We combine the two scores as 
+
+sVisER (o) = αV E (o) + (1 − α)V R (o),
+
+4Object:  Toothbrush (Hallucinated)  Object:  Ski (Hallucinated)                                           
+
+> The image features abathroom with apink
+> bathtub and a green tiled wall. The bathtub is
+> situated next to a sink , which is also pink in
+> color. The bathroom has a mirror above the
+> sink , reflecting the pink bathtub and green tiled
+> wall. There are two toothbrushes placed near
+> the sink, one on the left side and the other on
+> the right side.
+> The image features two men riding skateboards
+> down a street. Both skateboarders are holding
+> ski poles, which adds an interesting twist to their
+> activity. One of the men is wearing a white shirt,
+> while the other is dressed in red. They are
+> enjoying together, showcasing their unique
+> combination of skateboarding and skiing.
+> VE VR VE VR
+> Vis Evidence↑: Scene-compatible cues.
+> Vis Reliance↓: Reliance on prefix.
+> Vis Evidence↓: Weak evidence of ski.
+> Vis Reliance↑: No reliance on prefix.
+> a. Scene/text false support b. Image-cue false support
+
+Figure 2: Complementary roles of Visual Evidence (VE) and Visual Reliance (VR) in detecting false-support hallucinations. Left: “toothbrushes” is plausible in the bathroom scene and receives relatively high compatibility, but low VR indicates that the mention is not primarily image-driven. Right: “ski” receives high VR from image-side cues such as poles and motion, but low VE reveals weak ski-specific evidence. 
+
+where α ∈ [0 , 1] controls the trade-off between visual evidence and visual reliance. Larger values of sVisER (o) indicate stronger visual grounding. 
+
+Why VE and VR are Complementary. Fig-ure 2 shows why both components are necessary. In the bathroom example, the hallucinated object “toothbrush” is scene-compatible and can receive high similarity or compatibility because bathrooms, sinks, and toothbrushes commonly co-occur. Asimilarity-based detector can therefore over-score it; VE alone may also remain high if related visual cues provide weak object-like evidence. However, VR reveals that the mention is not primarily image-driven. In the skateboard example, the hallucinated object “ski” is supported by image-side cues such as poles and body motion, so an image-versus-text ratio can be high. However, VE remains low be-cause the image lacks object-specific evidence for an actual ski. These cases show that neither vi-sual support nor visual reliance alone is sufficient; reliable grounding requires their combination. 
+
+3.3 A Bayesian Source-Confounding View 
+
+VisER is motivated by the fact that image-conditioned support for an object does not necessar-ily imply visual grounding. For an object mention 
+
+o generated at position to, Bayes’ rule gives 
+
+log pθ(o | I, x, y <t o ) = log pθ(o | x, y <t o )
+
+| {z }
+
+prefix-side support 
+
++ log pθ(I | o, x, y <t o )
+
+pθ(I | x, y <t o )
+
+| {z }
+
+image-side compatibility gain 
+
+.
+
+We use this decomposition as an analytical lens; VisER does not estimate probabilities directly. The decomposition exposes two sources of confounding in object hallucination. First, the prefix-side term can make an object likely because it follows natu-rally from the generated text. Second, the image-side compatibility can be high because an object is scene-plausible, or is associated with visual cues. 
+
+Prefix-side confounding. Visual Reliance ad-dresses prefix-side confounding by asking whether the object receives additional support from the image beyond what the prefix already explains. This mirrors the conditional pointwise mutual-information contrast 
+
+PMI( I; o | x, y <t o ) = log pθ(o | I, x, y <t o ) − log pθ(o | x, y <t o ),
+
+which isolates the gain from conditioning on the image. This contrast suggests that a useful training-free detector should compare image-derived sup-port against prefix-derived support, rather than relying on the image-conditioned object proba-bility alone. Instead of estimating this contrast with additional model calls or explicit likelihoods, VisER constructs internal proxies for the compet-ing sources using Simg (o) for image-derived sup-port and Stext (o) for prefix-derived support. Visual Reliance log-odds satisfy 
+
+log V R (o)1 − V R (o) = log Simg (o)−log( Stext (o) + ϵ) .
+
+Thus, V R (o) is a bounded monotonic transform of a smoothed image-versus-prefix log-ratio. It does not equal the conditional PMI, but it preserves the same source comparison. The score increases when support is more image-derived than prefix-derived, and decreases when the generated prefix better explains the object mention. 5Dataset Method LLaVA-1.5-7B LLaVA-NeXT InstructBLIP MiniGPT-4 Average AUROC ↑ AUPR ↑ AUROC ↑ AUPR ↑ AUROC ↑ AUPR ↑ AUROC ↑ AUPR ↑ AUROC ↑ AUPR ↑                                                                                                                                                                
+
+> MSCOCO Entropy (Malinin and Gales, 2021) 71.41 87.66 58.25 90.09 65.81 84.25 45.78 82.44 60.31 86.11 NLL (Zhou et al., 2024) 70.28 87.19 58.99 90.27 65.30 83.92 57.55 86.18 63.03 86.89 Internal Conf. (Jiang et al., 2025a) 73.88 90.62 78.00 95.83 84.59 93.57 75.79 93.50 78.07 93.38 SVAR (Jiang et al., 2025b) 74.39 92.20 74.02 95.45 78.19 91.95 85.94 96.63 78.14 94.06 Contextual Lens (Phukan et al., 2025) 70.93 89.03 59.15 90.04 81.17 91.94 82.55 94.43 73.45 91.36 PAS (Hoang et al., 2026) 82.52 94.81 73.71 95.58 81.96 91.58 80.96 95.16 79.79 94.28 GLSim (Park and Li, 2025) 84.09 94.45 77.43 95.65 82.86 93.30 80.66 94.64 81.26 94.51 VisER (Ours) 86.17 95.37 81.44 96.74 85.66 94.84 86.29 96.35 84.89 95.82
+> Pascal VOC Entropy (Malinin and Gales, 2021) 53.12 74.34 62.39 91.07 60.57 76.11 53.48 81.33 57.39 80.71 NLL (Zhou et al., 2024) 52.56 74.24 62.57 91.49 60.44 76.62 57.97 83.47 58.39 81.46 Internal Conf. (Jiang et al., 2025a) 71.05 82.74 77.50 95.47 82.96 89.96 68.58 86.15 75.02 88.58 SVAR (Jiang et al., 2025b) 74.59 88.75 73.84 95.11 75.86 87.51 82.62 94.74 76.73 91.53 Contextual Lens (Phukan et al., 2025) 70.73 84.82 58.87 90.12 80.62 88.87 74.69 88.80 71.23 88.15 PAS (Hoang et al., 2026) 80.31 91.36 74.96 95.66 79.30 86.85 78.20 92.80 78.19 91.67 GLSim (Park and Li, 2025) 80.27 90.58 79.17 95.88 84.89 92.49 78.72 93.41 80.76 93.09 VisER (Ours) 82.20 91.26 87.31 98.08 85.72 93.24 80.34 92.93 83.89 93.88
+
+Table 1: Main object-level hallucination detection results on MSCOCO and Pascal VOC. AUROC and AUPR are reported for each LVLM setting, with averages computed across the four model settings. 
+
+Dataset Method LLaVA-1.5-13B InternVL3 Shikra Qwen2.5-VL Average AUROC ↑ AUPR ↑ AUROC ↑ AUPR ↑ AUROC ↑ AUPR ↑ AUROC ↑ AUPR ↑ AUROC ↑ AUPR ↑
+
+MSCOCO Entropy 70.99 88.85 64.38 95.33 69.20 87.62 68.10 95.85 68.17 91.91 NLL 69.11 88.10 64.30 95.31 66.66 86.93 65.53 95.50 66.40 91.46 Internal Conf. 70.30 89.41 66.63 95.56 68.53 89.23 64.80 95.20 67.56 92.35 SVAR 72.83 92.63 74.02 96.98 59.73 84.76 73.76 96.76 70.08 92.78 Contextual Lens 76.39 92.31 77.18 97.15 78.72 91.80 71.25 96.17 75.88 94.36 PAS 80.79 94.76 75.44 97.41 79.48 93.56 73.95 97.18 77.42 95.73 GLSim 81.53 94.82 67.23 95.79 75.03 91.74 69.67 96.11 73.36 94.62 VisER 83.82 95.35 82.54 97.78 80.18 93.68 80.10 97.30 81.66 96.03 
+
+Table 2: Extended MSCOCO results on additional LVLMs. AUROC and AUPR are reported for each model, with averages computed across the four extended settings. 
+
+Image-side confounding. Visual Evidence ad-dresses the remaining image-side confounding. The Bayesian image-side gain measures whether the image is compatible with the hypothesis that 
+
+o belongs in the description. The similarity term 
+
+sim( hℓT
+
+ctx , h ℓT
+
+o ) captures whether the object is com-patible with the multimodal context, while Mvis (o)
+
+tests whether image tokens provide direct object-specific evidence. In this sense, V E (o) is a specificity-corrected proxy for the image-side term. It retains compatibility when it is visually evi-denced, and suppresses scene-level or cue-driven compatibility that can otherwise mimic grounding. Thus, a generated object receives a high VisER score only when it is both supported by direct image-token evidence and more strongly explained by the image than by the generated prefix. 
+
+4 Experiments 
+
+Models. We evaluate VisER on a diverse set of LVLMs covering different model families and scales. Our main evaluation includes LLaVA-1.5-7B (Liu et al., 2023), LLaVA-NeXT-7B (Liu et al., 2024c), InstructBLIP (Dai et al., 2023), and MiniGPT-4 (Zhu et al., 2024). We include LLaVA-NeXT-7B to evaluate generalization to a more re-cent LLaVA-family architecture. To further exam-ine robustness across architectures, we also report results on LLaVA-1.5-13B, InternVL3-8B (Zhu et al., 2025), Shikra-7B (Chen et al., 2023), and Qwen2.5-VL (Bai et al., 2025). All models use greedy decoding with a maximum output length of 512 new tokens. Implementation details, including model configurations, layer selection, and hyper-parameter settings, are provided in Appendix B. 
+
+1
+
+Benchmarks. We evaluate on MSCOCO (Lin et al., 2014), following prior object hallucination detection protocols (Hoang et al., 2026; Jiang et al., 2025b), and additionally report results on Pascal VOC (Everingham et al., 2010). Following (Li et al., 2023; Leng et al., 2024; Jiang et al., 2025a) we randomly sample 500 images from the valida-tion split. MSCOCO and Pascal VOC contain 80 
+
+> 1
+
+The code is publicly available in https://github.com/ AfsanehEB/VisER .
+
+6and 20 object categories, respectively, with image-level object annotations indicating which categories are present in each image. Following the CHAIR object-level evaluation protocol, we extract gener-ated object mentions and label them as grounded or hallucinated by matching them against the anno-tated object lists. All LVLMs are prompted with: “Describe the given image in detail.” 
+
+Baselines. We compare VisER with several training-free object hallucination detection baselines. These include logit-based uncer-tainty signals, namely Negative Log-Likelihood (NLL) (Zhou et al., 2024) and Entropy (Malinin and Gales, 2021); attention-based methods, including Summed Visual Attention Ratio (SVAR) (Jiang et al., 2025b) and Prelim At-tention Score (PAS) (Hoang et al., 2026); and representation-based methods, including Inter-nal Confidence (IC) (Jiang et al., 2025a) and Global-Local Similarity (GLSim) (Park and Li, 2025). All baselines are evaluated on the same generated captions, object mentions, and image samples for each benchmark to ensure a fair comparison. The baseline details can be found in Appendix A. We report object-level AUROC and AUPR, using grounded object mentions as the positive class. For parameterized baselines, we adopt the hyperparameter settings specified by the original methods when available. 
+
+4.1 Results Main results. Table 1 reports object-level hallu-cination detection results on MSCOCO and Pascal VOC across four LVLM settings. VisER achieves the strongest average performance on both datasets. On MSCOCO, VisER obtains the best AUROC for all four models, with an average AUROC of 84.89, improving over the strongest average base-line, GLSim, by 3.63 points. It also achieves the highest average AUPR of 95.82. On Pascal VOC, VisER again achieves the best average performance, reaching 83.89 AUROC and 93.88 AUPR. The gains are especially pronounced on LLaVA-NeXT and InstructBLIP. On MSCOCO, VisER im-proves LLaVA-NeXT AUROC from the strongest baseline score of 78.00 to 81.44. On Pascal VOC, it improves over the strongest baseline by 8.14 points on LLaVA-NeXT and 0.83 points on InstructBLIP. This shows that hallucinated objects can receive strong internal support from scene priors or autore-gressive prefix cues, and that combining object-                                                  
+
+> Model Method Time ACC PR(T) PR(F) F1 F1(F) 7B POPE 3.19 67.77 61.28 91.86 74.97 54.75 VisER 2.36 78.67 80.93 76.72 77.86 79.42 13B POPE 4.50 60.53 56.05 90.72 71.20 37.29 VisER 3.27 76.56 76.36 76.78 76.65 76.47
+> Table 3: Balanced object-level comparison with POPE. Time denotes object verification overhead.
+> Method Metric Peak VRAM (GB) Entropy/NLL Token Probability 13.33 Internal Conf. Token Probability 15.77 GLSim Embedding-similarity 13.54 SVAR/PAS Attention Allocation 14.31 VisER Embedding-based 13.33
+> Table 4: Post-caption detector-stage profiling on LLaVA-1.5-7B in float16 mode with batch size 1.
+
+specific visual evidence with image-versus-prefix reliance improves detection. 
+
+Extended models. Table 2 reports additional MSCOCO results on LLaVA-1.5-13B, InternVL3, Shikra-7B, and Qwen2.5-VL. VisER achieves the best average AUROC of 81.66, improving over the strongest average baseline, PAS, by 4.24 points. The gains are largest on Qwen2.5-VL and In-ternVL3, where VisER improves AUROC over the strongest baselines by 6.15 and 5.36 points, re-spectively. VisER also achieves the best results on LLaVA-1.5-13B and Shikra-7B, showing that the two-sided grounding view generalizes across model scales and architectures. 
+
+4.2 Comparison with POPE 
+
+We further compare VisER with POPE-style prompting-based object verification (Li et al., 2023). Given the objects extracted from each gen-erated caption, POPE verifies each object with the question: Q: Is there a {object} in the image? For POPE, we use yes/no parsing, and an object is predicted as present only if the response starts with an affirmative token such as “yes”. For this POPE comparison, we use a larger 3000-image MSCOCO subset to obtain a sufficient num-ber of hallucinated object mentions. Because gen-erated object sets are naturally imbalanced, we con-struct balanced object-level subsets by retaining all hallucinated objects and randomly sampling an equal number of grounded objects. This yields 2495 grounded and 2495 hallucinated objects for LLaVA-1.5-7B and 2216 grounded and 2216 hal-72 4 6 8 10 12 14 16 18 20 0.82 0.83 0.84 0.85 0.86                
+
+> K
+> AUROC
+> VisER PAS GLSim
+> 00.20.40.60.810.78 0.80.82 0.84 0.86
+> α
+> AUROC
+> VisER
+> V E (o)
+> V R (o)04812 16 20 24 28 32 0.74 0.76 0.78 0.80.82 0.84 0.86
+> Image layer AUROC (a) (b) (c)
+
+Figure 3: Sensitivity analysis of VisER. Left: effect of the number of selected prefix tokens K. Middle: effect of the interpolation weight α. Right: effect of the image layer when the text layer is fixed. 
+
+lucinated for LLaVA-13B. We repeat the sampling procedure 1000 times and report the average. As shown in Table 3, VisER improves ACC from 67.77 to 78.67 and hallucinated-object F1 from 54.75 to 79.42, while reducing verification time from 3.19s to 2.36s. A similar pattern is ob-served for LLaVA-13B, indicating that these gains also hold at a larger model scale. POPE achieves high precision for grounded objects, but its low F1(F) indicates a bias toward predicting object presence. In contrast, VisER provides stronger hallucination-sensitive discrimination without re-quiring additional yes/no generations. 
+
+Efficiency. Finally, Table 4 reports the post-caption detector-stage peak GPU memory on LLaVA-1.5-7B. VisER matches the lightweight En-tropy/NLL baseline in peak VRAM, while requir-ing less memory than Internal Confidence, GLSim, and attention-based scoring. This indicates that VisER can be implemented efficiently by retaining only selected hidden representations and comput-ing logit-lens evidence in chunks. All VRAM mea-surements are reported on a single NVIDIA A100 GPU using the same inference setting. 
+
+4.3 Ablation Study Sensitivity Analysis. Figure 3 studies the sen-sitivity of VisER to K, α, and the image layer on LLaVA-1.5-7B using the MSCOCO dataset. Figure 3(a) shows that VisER remains above the strongest baselines, PAS and GLSim, across the full range of K. Performance improves from 84.85 AU-ROC at K = 2 to 85.66 at K = 10 , and then satu-rates, indicating that a small set of highly related prefix tokens is sufficient to estimate text-prefix support. Figure 3(b) shows that both components contribute to performance. V R (o) alone obtains 78.22 AUROC and V E (o) alone reaches 83.88, while their combination performs best, peaking at 
+
+> LLaVA-7B LLaVA-13B MiniGPT-4 LLaVA-NeXT InternVL3 Shikra
+> 60 65 70 75 80 85
+> AUROC (%)  W/O Gating W Gating
+
+Figure 4: Effect of evidence gating in Visual Evidence. “W/O Gating” uses only object-context compatibility, while “W Gating” multiplies compatibility by the evi-dence gate g(o).
+
+85.66 around α = 0 .4. This confirms that visual ev-idence and visual reliance capture complementary hallucination cues. Figure 3(c) shows that later im-age layers provide stronger evidence, with the best performance at layer 32, suggesting that semanti-cally richer image-token representations improve object-level grounding signals. 
+
+Effect of Evidence Gating. Figure 4 isolates the role of the evidence gate g(o) in Visual Evidence across LVLMs. Without the gate, VE relies only on object-context compatibility and can over-score hallucinations that are plausible from scene context alone. Gating filters compatibility through object-specific image-token evidence, yielding consistent AUROC gains. This supports our central claim that compatibility is a useful but incomplete grounding cue unless its visual source is validated. 
+
+Counterfactual Validation of Source Attribution. 
+
+To further examine whether VE and VR capture the intended sources of support, we perform three counterfactual interventions on LLaVA-1.5-7B and LLaVA-1.5-13B: blank-image replacement, patch shuffling, and prefix removal. Table 5 reports the corresponding AUROC values. As shown in Table 5, replacing the image with a blank input or shuffling its patches reduces VE and 8Model Condition VE VR VisER LLaVA-1.5-7B Original 83.88 78.22 86.17 Blank image 67.74 70.86 71.38 Patch-shuffled 74.34 74.44 77.99 Prefix removed 83.88 50.00 83.88 LLaVA-1.5-13B Original 80.01 77.78 83.82 Blank image 55.58 68.34 61.89 Patch-shuffled 69.60 73.89 74.93 Prefix removed 80.01 50.00 80.01 
+
+Table 5: Counterfactual validation of Visual Evidence and Visual Reliance. Values are AUROC. 
+
+> Compatibility Gate VE VisER
+> 60 65 70 75 80 85 90
+> AUROC (%)  LLaVA-1.5-7B LLaVA-1.5-13B
+
+Figure 5: Component ablation on MSCOCO. Compati-bility uses object-context compatibility alone, Gate uses the evidence gate alone, VE combines compatibility with the evidence gate, and VisER further incorporates Visual Reliance. 
+
+the full VisER score on both model scales. This suggests that these signals depend on coherent vi-sual evidence rather than only on the presence of image tokens. In contrast, removing prefix sup-port leaves VE unchanged while reducing VR to chance-level discrimination. These results provide additional empirical support for interpreting VE as visual-evidence-sensitive and VR as measuring the balance between image- and prefix-derived support, without claiming calibrated causal attribution. 
+
+Component Ablation. To further isolate the con-tribution of each component, we compare object-context compatibility alone, the evidence gate alone, Visual Evidence, and the full VisER score. Figure 5 reports the corresponding AUROC values. As shown in Figure 5, the evidence gate is infor-mative on its own, but performs better when used to validate object-context compatibility. Combin-ing compatibility with the evidence gate increases AUROC from 72.25 to 83.88 on LLaVA-1.5-7B and from 65.15 to 80.01 on LLaVA-1.5-13B. The full VisER score further improves performance to 86.17 and 83.82 AUROC, respectively. This sup-ports using the gate as an evidence validator and further shows that VE and VR provide complemen-tary information. 
+
+5 Conclusion 
+
+We introduced VisER, a training-free metric for object-level hallucination detection in LVLMs. VisER addresses source confounding by combining Visual Evidence, measuring whether object-context compatibility is supported by object-specific image-token evidence, with Visual Reliance, compar-ing image-derived support against generated-prefix support. The object-level VisER score could also support downstream applications such as selective abstention, caption revision, or future decoding-time intervention. Across multiple LVLMs and datasets, VisER consistently improves AUROC and AUPR over strong baselines. Ablations show that the two signals are complementary, making VisER an effective post-hoc detector for visually unsup-ported object mentions in open-ended generations. 
+
+Limitations 
+
+VisER focuses on object-existence hallucinations in open-ended image descriptions. Our evalua-tion primarily follows COCO/VOC-style object categories and therefore does not directly assess open-vocabulary hallucinations, attributes, rela-tions, counts, actions, or other fine-grained fac-tual errors. The object-token representation may also be sensitive to multi-token expressions, sub-word tokenization, and repeated object mentions. VisER requires access to internal LVLM represen-tations, making it more suitable for white-box or gray-box settings than fully black-box APIs. Future work could extend the two-sided grounding view to phrase- and region-level hallucination detection, and explore whether VE- and VR-style signals can guide hallucination mitigation during decod-ing. VisER is intended as a diagnostic object-level hallucination detector and should not be treated as a guarantee of visual factuality in safety-critical deployments. 
+
+Acknowledgements 
+
+This research was supported by The University of Melbourne’s Research Computing Services, the Petascale Campus Initiative, and the Spartan HPC facilities. This Spartan facility was established with the assistance of LIEF Grant LE170100200. More-over, this research was supported by the ARC Cen-tre of Excellence for Automated Decision-Making and Society (CE200100005), and partially funded by the Australian Government through the Aus-tralian Research Council. 9References 
+
+Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wen-bin Ge, Sibo Song, Kai Dang, Peng Wang, Shi-jie Wang, Jun Tang, Humen Zhong, Yuanzhi Zhu, Mingkun Yang, Zhaohai Li, Jianqiang Wan, Pengfei Wang, Wei Ding, Zheren Fu, Yiheng Xu, and 8 others. 2025. Qwen2.5-VL technical report. arXiv preprint arXiv:2502.13923 .Zechen Bai, Pichao Wang, Tianjun Xiao, Tong He, Zongbo Han, Zheng Zhang, and Mike Zheng Shou. 2024. Hallucination of multimodal large language models: A survey. arXiv preprint arXiv:2404.18930 .Qingxing Cao, Junhao Cheng, Xiaodan Liang, and Liang Lin. 2024. VisDiaHalBench: A visual di-alogue benchmark for diagnosing hallucination in large vision-language models. In Proceedings of the 62nd Annual Meeting of the Association for Compu-tational Linguistics (ACL) (Volume 1: Long Papers) .Liwei Che, Tony Qingze Liu, Jing Jia, Weiyi Qin, Ruix-iang Tang, and Vladimir Pavlovic. 2025. Hallucina-tory image tokens: A training-free EAZY approach to detecting and mitigating object hallucinations in LVLMs. In Proceedings of the IEEE/CVF Interna-tional Conference on Computer Vision (ICCV) .Keqin Chen, Zhao Zhang, Weili Zeng, Richong Zhang, Feng Zhu, and Rui Zhao. 2023. Shikra: Unleashing multimodal LLMs’ referential dialogue magic. arXiv preprint arXiv:2306.15195 .Wenliang Dai, Junnan Li, Dongxu Li, Anthony Tiong, Junqi Zhao, Weisheng Wang, Boyang Li, Pascale N Fung, and Steven C. Hoi. 2023. InstructBLIP: To-wards general-purpose vision-language models with instruction tuning. Advances in Neural Information Processing Systems (NeurIPS) .Mark Everingham, Luc Van Gool, Christopher K. I. Williams, John Winn, and Andrew Zisserman. 2010. The PASCAL visual object classes (VOC) challenge. 
+
+International Journal of Computer Vision (IJCV) .Xuan Gong, Tianshi Ming, Xinpeng Wang, and Zhihua Wei. 2024. DAMRO: Dive into the attention mech-anism of LVLM to reduce object hallucination. In 
+
+Proceedings of the Conference on Empirical Methods in Natural Language Processing (EMNLP) .Yixiao He, Haifeng Sun, Pengfei Ren, Jingyu Wang, Huazheng Wang, Qi Qi, Zirui Zhuang, and Jing Wang. 2025. Evaluating and mitigating object hallu-cination in large vision-language models: Can they still see removed objects? In Proceedings of the Con-ference of the Nations of the Americas Chapter of the Association for Computational Linguistics (NAACL) (Volume 1: Long Papers) .Nhat Hoang, Minh Vu, My T. Thai, and Manish Bhat-tarai. 2026. PAS: Prelim attention score for detecting object hallucinations in large vision-language mod-els. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .Qidong Huang, Xiaoyi Dong, Pan Zhang, Bin Wang, Conghui He, Jiaqi Wang, Dahua Lin, Weiming Zhang, and Nenghai Yu. 2024. OPERA: Alleviating hallucination in multi-modal large language models via over-trust penalty and retrospection-allocation. In 
+
+Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR) .Sarthak Jain and Byron C. Wallace. 2019. Attention is not explanation. In Proceedings of the Conference of the North American Chapter of the Association for Computational Linguistics (NAACL) .Chaoya Jiang, Hongrui Jia, Wei Ye, Mengfan Dong, Haiyang Xu, Ming Yan, Ji Zhang, and Shikun Zhang. 2024. Hal-Eval: A universal and fine-grained hallu-cination evaluation framework for large vision lan-guage models. In Proceedings of the 32nd ACM International Conference on Multimedia .Nick Jiang, Anish Kachinthaya, Suzanne Petryk, and Yossi Gandelsman. 2025a. Interpreting and editing vision-language representations to mitigate halluci-nations. In International Conference on Learning Representations (ICLR) .Zhangqi Jiang, Junkai Chen, Beier Zhu, Tingjin Luo, Yankun Shen, and Xu Yang. 2025b. Devils in middle layers of large vision-language models: Interpreting, detecting and mitigating object hallucinations via attention lens. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition (CVPR) .Liqiang Jing, Ruosen Li, Yunmo Chen, and Xinya Du. 2024. FaithScore: Fine-grained evaluations of hallu-cinations in large vision-language models. In Find-ings of the Association for Computational Linguistics: EMNLP 2024 .Seil Kang, Jinyeong Kim, Junhyeok Kim, and Seong Jae Hwang. 2025. See what you are told: Visual attention sink in large multimodal models. In International Conference on Learning Representations (ICLR) .Sicong Leng, Hang Zhang, Guanzheng Chen, Xin Li, Shijian Lu, Chunyan Miao, and Lidong Bing. 2024. Mitigating object hallucinations in large vision-language models through visual contrastive decoding. In Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition (CVPR) .Yifan Li, Yifan Du, Kun Zhou, Jinpeng Wang, Xin Zhao, and Ji-Rong Wen. 2023. Evaluating object hallucination in large vision-language models. In 
+
+Proceedings of the Conference on Empirical Methods in Natural Language Processing (EMNLP) .Tsung-Yi Lin, Michael Maire, Serge J. Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and C. Lawrence Zitnick. 2014. Microsoft COCO: Common objects in context. In European Conference on Computer Vision (ECCV) .
+
+10 Fuxiao Liu, Kevin Lin, Linjie Li, Jianfeng Wang, Yaser Yacoob, and Lijuan Wang. 2024a. Mitigating hal-lucination in large multi-modal models via robust instruction tuning. In International Conference on Learning Representations (ICLR) .Hanchao Liu, Wenyuan Xue, Yifei Chen, Dapeng Chen, Xiutian Zhao, Ke Wang, Liping Hou, Rongjun Li, and Wei Peng. 2024b. A survey on hallucination in large vision-language models. arXiv preprint arXiv:2402.00253 .Haotian Liu, Chunyuan Li, Yuheng Li, and Yong Jae Lee. 2024c. Improved baselines with visual instruc-tion tuning. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition (CVPR) .Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee. 2023. Visual instruction tuning. Advances in Neural Information Processing Systems (NeurIPS) .Shi Liu, Kecheng Zheng, and Wei Chen. 2024d. Paying more attention to image: A training-free method for alleviating hallucination in LVLMs. In European Conference on Computer Vision (ECCV) .Andrey Malinin and Mark Gales. 2021. Uncertainty estimation in autoregressive structured prediction. In 
+
+International Conference on Learning Representa-tions (ICLR) .nostalgebraist. 2020. Interpreting GPT: The logit lens. Accessed: 2026-05-17. Seongheon Park and Sharon Li. 2025. GLSim: Detect-ing object hallucinations in LVLMs via global-local similarity. Advances in Neural Information Process-ing Systems (NeurIPS) .Suzanne Petryk, David M. Chan, Anish Kachinthaya, Haodi Zou, John Canny, Joseph E. Gonzalez, and Trevor Darrell. 2024. ALOHa: A new measure for hallucination in captioning models. In Proceed-ings of the Conference of the North American Chap-ter of the Association for Computational Linguistics (NAACL) .Anirudh Phukan, Divyansh, Harshit Kumar Morj, Vaish-navi, Apoorv Saxena, and Koustava Goswami. 2025. Beyond Logit Lens: Contextual embeddings for ro-bust hallucination detection & grounding in VLMs. In Proceedings of the Conference of the Nations of the Americas Chapter of the Association for Com-putational Linguistics (NAACL) (Volume 1: Long Papers) .Anna Rohrbach, Lisa Anne Hendricks, Kaylee Burns, Trevor Darrell, and Kate Saenko. 2018. Object hallu-cination in image captioning. In Proceedings of the Conference on Empirical Methods in Natural Lan-guage Processing (EMNLP) .Zhiqing Sun, Sheng Shen, Shengcao Cao, Haotian Liu, Chunyuan Li, Yikang Shen, Chuang Gan, Liangyan Gui, Yu-Xiong Wang, Yiming Yang, Kurt Keutzer, and Trevor Darrell. 2024. Aligning large multimodal models with factually augmented RLHF. In Find-ings of the Association for Computational Linguis-tics: ACL 2024 .Junyang Wang, Yiyang Zhou, Guohai Xu, Pengcheng Shi, Chenlin Zhao, Haiyang Xu, Qinghao Ye, Ming Yan, Ji Zhang, Jihua Zhu, Jitao Sang, and Haoyu Tang. 2023. Evaluation and analysis of hallucina-tion in large vision-language models. arXiv preprint arXiv:2308.15126 .Wenyi Xiao, Ziwei Huang, Leilei Gan, Wanggui He, Haoyuan Li, Zhelun Yu, Fangxun Shu, Hao Jiang, and Linchao Zhu. 2025. Detecting and mitigating hallucination in large vision language models via fine-grained AI feedback. In Proceedings of the AAAI Conference on Artificial Intelligence .Yiyang Zhou, Chenhang Cui, Jaehong Yoon, Linjun Zhang, Zhun Deng, Chelsea Finn, Mohit Bansal, and Huaxiu Yao. 2024. Analyzing and mitigating object hallucination in large vision-language models. In In-ternational Conference on Learning Representations (ICLR) .Deyao Zhu, Jun Chen, Xiaoqian Shen, Xiang Li, and Mohamed Elhoseiny. 2024. MiniGPT-4: Enhancing vision-language understanding with advanced large language models. In International Conference on Learning Representations (ICLR) .Jinguo Zhu, Weiyun Wang, Zhe Chen, Zhaoyang Liu, Shenglong Ye, Lixin Gu, Hao Tian, Yuchen Duan, Weijie Su, Jie Shao, Zhangwei Gao, Erfei Cui, Xue-hui Wang, Yue Cao, Yangzhou Liu, Xingguang Wei, Hongjie Zhang, Haomin Wang, Weiye Xu, and 32 others. 2025. InternVL3: Exploring advanced train-ing and test-time recipes for open-source multimodal models. arXiv preprint arXiv:2504.10479 .
+
+Appendix A Related Work: Baseline Scoring Functions 
+
+For all baselines, we compute an object-level score for a generated object mention o = yt, where t de-notes the decoding position of the matched object token. All scores are oriented such that larger val-ues indicate stronger visual grounding and smaller values indicate a higher likelihood of hallucination. 
+
+Entropy. The entropy baseline measures the un-certainty of the LVLM next-token distribution at the object generation step. Let 
+
+qt(y) = pθ(y | I, x, y <t )
+
+denote the probability assigned to vocabulary token 
+
+y ∈ Ω when generating yt. The token-level entropy is 
+
+H(o) = − X
+
+> y∈Ω
+
+qt(y) log qt(y).
+
+11 Since lower entropy indicates higher model con-fidence, we use the negative entropy as the grounding-oriented score: 
+
+SEnt (o) = −H(o).
+
+Internal Confidence. Internal Confidence esti-mates object evidence from visual-token represen-tations using logit-lens probabilities. For an image token vi at layer ℓ, let 
+
+pℓ,i (o) = softmax 
+
+
+
+hℓvi WU
+
+
+
+> o
+
+denote the probability assigned to the object to-ken o after projecting the visual-token hidden state through the language-model unembedding matrix 
+
+WU . The Internal Confidence score is defined as the strongest object evidence over image tokens and layers: 
+
+SIC (o) = max  
+
+> ℓ∈L
+
+max  
+
+> i∈I
+
+pℓ,i (o),
+
+where I denotes the set of image-token positions and L is the set of evaluated layers. 
+
+SVAR. SVAR measures how much attention the generated object token assigns to image tokens. Let Aℓ,h (t, i ) denote the attention weight from the generated object position t to image-token position 
+
+i, at layer ℓ and head h. We compute the visual attention ratio over the selected middle layers as 
+
+SSVAR (o) = 1
+
+|L| H
+
+X
+
+> ℓ∈L
+> H
+
+X
+
+> h=1
+
+X
+
+> i∈I
+
+Aℓ,h (t, i ),
+
+where H is the number of attention heads. Follow-ing the original setting, we use the middle-layer range L = {5, . . . , 18 }. Larger values indicate stronger visual-token attention during object gener-ation. 
+
+Contextual Lens. Contextual Lens uses representation-level similarity between the gener-ated object token and visual-token representations. Given the object hidden state hℓT 
+
+> o
+
+and image-token hidden states {hℓI 
+
+> vi
+
+}i∈I , we compute 
+
+SCL (o) = max  
+
+> i∈I
+
+sim 
+
+
+
+hℓT 
+
+> o
+
+, h ℓI
+
+> vi
+
+
+
+.
+
+This score captures the strongest visual-token representation that is compatible with the generated object mention. 
+
+GLSim. GLSim measures object grounding through global and local image-text compatibility. 
+
+SGLSim (o) = βS global (o) + (1 − β)Slocal (o).
+
+The global component measures compatibility be-tween the generated object representation and the multimodal context representation: 
+
+Sglobal (o) = sim 
+
+
+
+hℓT
+
+> ctx
+
+, h ℓT
+
+> o
+
+
+
+,
+
+For the local component, it first selects the K image tokens with the highest logit-lens evidence for the object: 
+
+KLL  
+
+> o
+
+= TopK i∈I pi(o),
+
+where 
+
+pi(o) = softmax( hℓI 
+
+> vi
+
+WU )o.
+
+The local score is then computed as the average similarity between the selected image-token repre-sentations and the object-token representation: 
+
+Slocal (o) = 1
+
+K
+
+X
+
+> i∈K LL
+> o
+
+sim 
+
+
+
+hℓI 
+
+> vi
+
+, h ℓT
+
+> o
+
+
+
+.
+
+This baseline measures whether the generated ob-ject is compatible with the global and local visual representations. 
+
+PAS. PAS estimates attention to see whether ob-ject generation is driven by previously generated text tokens. Let P<t denote the set of gener-ated prefix-token positions before the object token 
+
+o = yt. The preliminary attention score is 
+
+TPAS (o) = 1
+
+|L| H
+
+X
+
+> ℓ∈L
+> H
+
+X
+
+> h=1
+
+X
+
+> j∈P <t
+
+Aℓ,h (t, j ).
+
+A larger TPAS (o) indicates that the object token attends more strongly to previously generated text, suggesting that the mention may be text-prefix-driven rather than visually grounded. To keep all baselines oriented consistently, we use 
+
+SPAS (o) = −TPAS (o).
+
+Thus, larger SPAS (o) corresponds to stronger grounding-oriented evidence. 12 B Implementation Details 
+
+We implement VisER as a post-hoc object-level hal-lucination detector applied to generated captions. Each model generates at most 512 new tokens. Greedy decoding is used as the default generation setting in the main experiments for determinism and comparability with prior work. In ablation stud-ies in Appendix D, we additionally evaluate robust-ness to other decoding strategies. VisER is then computed on the generated object mentions and does not modify the decoding process. Following prior LVLM object hallucination evaluations (Jiang et al., 2025a; Li et al., 2023; Phukan et al., 2025), we evaluate on 500 randomly sampled MSCOCO validation images. We use a small held-out cali-bration split for selecting τ and report sensitivity analyses for K, α, and layer choice in Ablation studies in Section 4.3 to show that the method is not narrowly tuned to a single configuration. The evidence-scale parameter τ is estimated from a dis-joint calibration split of 100 images by averaging the visual evidence mass Mvis . The layer indices 
+
+(ℓI , ℓ T ), the number of selected prefix tokens K,and the final weighting parameter α are fixed per model, as shown in Table 6. For object words that tokenize into multiple subword units, we use the first matched token to compute the scores. For each generated response, if the same object word appears multiple times, we score only its first gener-ated occurrence, since the first token often captures the core semantic meaning of the object (Park and Li, 2025). Table 7 reports the number of grounded and hallucinated object mentions.                              
+
+> Model (ℓI, ℓ T)Kα
+> LLaVA-1.5-7B (32 ,31) 10 0.40 LLaVA-1.5-13B (40 ,38) 10 0.40 LLaVA-NeXT-7B (32 ,31) 10 0.50 InstructBLIP (32 ,31) 10 0.40 MiniGPT-4 (32 ,27) 10 0.25 Shikra-7B (32 ,27) 10 0.20
+
+Table 6: Hyperparameters used for VisER. ℓI denotes the image-token layer used for visual evidence and image-derived support, ℓT denotes the text/object rep-resentation layer, K is the number of top prefix tokens used for text-prefix support, and α balances Visual Evi-dence and Visual Reliance.               
+
+> Model Grounded Hallucinated LLaVA-1.5-7B 1510 416 LLaVA-1.5-13B 1560 373 LLaVA-NeXT-7B 1173 157 InstructBLIP 1582 556 MiniGPT-4 1169 226 Shikra-7B 1631 446
+
+Table 7: Number of generated object mentions eval-uated for the models reported in Table 6. Grounded and hallucinated labels are obtained using the CHAIR object-level evaluation.                                     
+
+> Method Greedy Beam Top-kNucleus Entropy 71.41 71.13 73.19 70.21 NLL 70.28 59.38 70.60 67.88 Internal Conf. 73.88 74.90 74.38 73.30 SVAR 74.39 73.76 71.45 73.50 Contextual Lens 70.93 72.97 69.59 70.55 PAS 82.52 82.29 81.10 81.62 GLSim 84.09 76.53 84.47 84.31 VisER 86.17 82.59 85.72 85.75
+
+Table 8: Effect of decoding strategy on object hallucina-tion detection. 
+
+C Additional Ablation Studies 
+
+C.1 Effect of Multi-token Object Representation 
+
+To assess the effect of multi-token aggregation, we compare three strategies: using the first token, the last token, and averaging over all object tokens. Table 9 reports the corresponding results. As shown in Table 9, the first-token strategy achieves the highest AUROC on both models, while averaging over all object tokens remains close. These results indicate that VisER is not highly sensitive to the aggregation strategy and support the first-token representation as a simple and effective default. 
+
+C.2 Evidence Gate Distribution 
+
+Since Mvis (o) is a sum of non-negative visual logit-lens probabilities, the evidence gate satisfies 
+
+g(o) ∈ [0 .5, 1) .
+
+This restricted range is intentional: the gate is de-signed as a soft evidence validator rather than a standalone detector. The compatibility score al-ready provides useful grounding information, while the gate modulates this compatibility according to object-specific visual evidence rather than com-pletely suppressing it. 13 LLaVA-1.5-7B LLaVA-1.5-13B Token strategy AUROC AUPR AUROC AUPR First token 86.17 95.37 83.82 95.35                                   
+
+> Last token 79.64 93.46 79.40 94.24 Average over tokens 85.06 95.14 83.16 95.35
+> Table 9: Effect of multi-token aggregation on MSCOCO.
+> Model Grounded Halluc. Gap mean mean LLaVA-1.5-7B 0.686 0.559 0.127 LLaVA-1.5-13B 0.667 0.549 0.118
+> Table 10: Empirical evidence-gate statistics for grounded and hallucinated object mentions on MSCOCO.
+
+Table 10 reports the empirical gate statistics for grounded and hallucinated object mentions. As shown in Table 10, the empirical gate distri-bution is not degenerate. Grounded objects receive consistently higher mean gate values than halluci-nated objects on both model scales. Thus, despite its restricted range, the gate provides meaningful variation in object-specific visual evidence. 
+
+> Score Frequency
+> VisER
+> Grounded Hallucinated Score Frequency
+> NLL
+> Grounded Hallucinated
+> Figure 6: Density visualization of object-level scores for grounded and hallucinated objects.
+
+D Effect of Decoding Strategies 
+
+Following prior object hallucination detection stud-ies (Hoang et al., 2026; Park and Li, 2025; Jiang et al., 2025a), we use greedy decoding as the default setting because it is simple, determinis-tic, and computationally efficient. To examine whether VisER depends on this specific generation regime, we additionally evaluate detection perfor-mance under three alternative decoding strategies, including beam search, top-k sampling, and nu-cleus sampling. We use Nbeams = 2 , k = 10 ,and p = 0 .9 for beam search, top-k, and nucleus decoding, respectively, and apply the same object-level evaluation protocol to the generated captions. As shown in Table 8, VisER remains consistently strong across decoding strategies, suggesting that its two-sided grounding score is robust to changes in the generation procedure rather than being spe-cialized to greedy decoding. 
+
+E Visualization and Examples 
+
+E.1 Visualization of Scores 
+
+Figure 6 compares the object-level score distribu-tions produced by NLL and VisER. The VisER scores show a substantially clearer distinction be-tween grounded and hallucinated object mentions, whereas the NLL distributions remain more concen-trated and overlapping. This indicates that token likelihood alone provides a limited signal for vi-sual faithfulness, since likely object tokens may still be driven by language or scene priors rather than direct image evidence. By contrast, VisER produces a more discriminative scoring space by jointly validating object-specific visual evidence and object-level support. The resulting separation suggests that VisER reliably distinguishes visually grounded objects from mentions induced by con-textual or autoregressive priors. 
+
+E.2 Examples of Source-Confounded Support 
+
+Figure 7 provides representative qualitative exam-ples where hallucinated object mentions are cor-rectly detected by VisER but missed by one or more baseline support signals. These cases illus-trate the source-confounding problem. A halluci-nated object can receive high support from scene context, object co-occurrence, or the generated pre-fix, even when the object is not visually grounded in the image. In the first row, both PAS and GLSim, as the best available baselines, incorrectly classify the highlighted hallucinated objects as grounded. In the second row, GLSim fails while VisER cor-rectly detects the hallucination. In the third row, PAS fails while VisER again correctly identifies the highlighted object mentions as hallucinated. These examples show that measuring support strength alone can be misleading, whereas VisER improves reliability by checking whether the support is visu-ally sourced. 14 The image features a man wearing a suit and tie, sitting 
+
+comfortably on a couch. He is smiling and talking on his  cell phone ,
+
+which is held to his ear. The man appears to be engaged in a 
+
+pleasant conversation.  The couch is situated in a room with a chair 
+
+placed nearby. The man's attire suggests that he might be attending a 
+
+formal event or a professional setting. 
+
+The image features a white plate with a fork and a knife placed on it. The 
+
+fork is positioned on the left side of the plate, while the  knife  is on the 
+
+right side. The plate appears to be empty, with no food visible.  In addition 
+
+to the utensils, there is a piece of paper on the plate, possibly used for 
+
+wrapping or serving the food. The overall scene suggests that the plate is 
+
+ready for someone to enjoy a meal. 
+
+The traffic light is red, indicating that vehicles should stop. The street sign 
+
+is blue and reads "Santa Monica Blvd." The scene also includes a building 
+
+in the background, adding to the urban atmosphere.  There are several  cars 
+
+parked or driving along the street, with one car closer to the traffic light 
+
+and others further away. 
+
+The image features a room with a large white bookshelf filled with 
+
+numerous books. The bookshelf is positioned against the wall, and the 
+
+books are neatly arranged on its shelves. A clock is mounted on the wall 
+
+above the bookshelf, adding a decorative touch to the room.  In addition to 
+
+the bookshelf, there is a  chair  placed in the room, providing a comfortable 
+
+seating option for reading or relaxing. 
+
+The image features a desk with a desktop computer setup. The computer 
+
+is placed on the desk, accompanied by a keyboard and a  mouse . A monitor 
+
+is also present on the desk, positioned in front of the computer.  In 
+
+addition to the computer setup, there are several books scattered around 
+
+the desk, indicating a workspace for studying or research. 
+
+The image features a vase filled with a beautiful bouquet of white flowers, 
+
+including lilies. The vase is placed on a  table , and the flowers are arranged 
+
+in a visually appealing manner. The bouquet consists of several white 
+
+flowers, with some of them being larger and more prominent than others. 
+
+The overall scene is aesthetically pleasing and showcases the beauty of 
+
+the white flowers. 
+
+## (a) 
+
+## (b) 
+
+## (c) Figure 7: Examples of source-confounded hallucinations. Highlighted words indicate hallucinated object mentions in the generated captions. In row (a), both PAS and GLSim incorrectly classify the hallucinated objects as grounded, while VisER correctly detects them as hallucinated. In row (b), GLSim fails but VisER succeeds. In row (c), PAS fails but VisER succeeds. These examples illustrate that baseline support signals can be misled by contextual plausibility or generated-prefix continuation, whereas VisER requires stronger visually sourced evidence. 
+
+15 The image features a delicious breakfast meal consisting of                 
+
+> a bacon sandwich and a pancake. The sandwich is placed on
+> top of the pancake, creating a unique and appetizing
+> combination.
+> VR(o)
+> A fork can be seen on the right side of the table, and a
+> bowl is located near the center of the table. The dining
+> table is surrounded by chairs , with one chair on the left
+> side, another on the right side, and a third chair at the
+> top left corner.
+> The horses are spread out, with some closer to the
+> foreground and others further back in the field. In the
+> background, there is a large building, possibly a church, with
+> aclock tower visible.
+
+a. 
+
+b.     
+
+> VE(o) VR(o) VE(o)
+> The image depicts a busy city street with a train passing over
+> a bridge. The scene captures the hustle and bustle of a typical
+> city street, with various modes of transportation and people
+> going about their daily routines.
+> VR(o) VE(o) VR(o) VE(o)
+> VisER VisER
+> VisER VisER
+
+Figure 8: Qualitative examples of VisER on hallucinated object mentions. Bars show percentile-normalized Visual Evidence V E (o), Visual Reliance V R (o), and VisER; the dashed line denotes the threshold. VisER suppresses hallucinations that are either scene-prior-driven, such as “sandwich” and “clock”, or insufficiently supported by visual evidence, such as “chairs” and “train”. 
+
+E.3 Examples of Scoring 
+
+Figure 8 provides qualitative examples illustrating how VisER combines Visual Evidence V E (o) and Visual Reliance V R (o) to detect object-level hal-lucinations. The bars show percentile-normalized component scores, while the dashed horizontal line denotes the threshold. In the first row, the hallu-cinated objects are plausible from the scene con-text: “sandwich” is suggested by the breakfast set-ting, and “clock” is suggested by the church-like building. However, both cases receive weak object-specific visual evidence, which lowers the final VisER score despite contextual plausibility. In the second row, the hallucinated objects receive differ-ent component patterns: “chairs” obtains moderate visual support from the dining scene, while “train” is associated with the elevated rail structure, but the final VisER score remains low when the evidence is not sufficiently reliable. 
+
+F Source-Confounding Analysis 
+
+We provide a simple sufficient-condition analysis showing why the two VisER components address complementary false-support regimes. Let 
+
+Mo = Mvis (o), Co = sim( hℓT
+
+ctx , h ℓT
+
+o ),Io = Simg (o), To = Stext (o),
+
+where Co denotes object-context compatibility, and let η = τ + ϵ. Then 
+
+VE( o) = Coσ(Mo/η ),
+
+VR( o) = Io
+
+Io + To + ϵ .
+
+Complementary false-support regimes. First, consider an evidence-limited hallucination oh with nonnegative object-context compatibility Coh ≥
+
+0. The object may be compatible with the scene or associated with related visual cues, but object-specific image-token evidence is weak: 
+
+Moh ≤ mh.
+
+16 Since Coh ≥ 0 and σ(·) is monotone, 
+
+VE( oh) = Coh σ(Moh /η ) ≤ Coh σ(mh/η ).
+
+Thus, high contextual compatibility alone is not sufficient for a high VE score; the compatibility term is restricted by object-specific image-token evidence. Second, consider a prefix-dominated halluci-nation oh, where the generated prefix provides stronger support than the image: 
+
+Toh ≥ κI oh , κ > 1.
+
+For clarity, taking ϵ = 0 , we obtain 
+
+VR( oh) = Ioh
+
+Ioh + Toh
+
+≤ 11 + κ .
+
+Thus, VR is small when support for the object is dominated by the autoregressive prefix rather than by image-derived evidence. 
+
+Source-validation margins. Let og be agrounded object and oh a hallucinated object. In the evidence-limited regime, assume 
+
+Mog ≥ mg, Moh ≤ mh, mg > m h,
+
+with Cog ≥ cg ≥ 0 and 0 ≤ Coh ≤ ch. Then 
+
+VE( og) − VE( oh) ≥ cgσ(mg/η ) − chσ(mh/η ).
+
+Therefore, VE gives a positive margin whenever 
+
+cgσ(mg/η ) > c hσ(mh/η ).
+
+In the prefix-dominated regime, assume 
+
+Iog ≥ κT og , Toh ≥ κI oh , κ > 1.
+
+Again taking ϵ = 0 for clarity, 
+
+VR( og) ≥ κ
+
+1 + κ , VR( oh) ≤ 11 + κ ,
+
+and hence 
+
+VR( og) − VR( oh) ≥ κ − 1
+
+κ + 1 .
+
+For the final score 
+
+sVisER (o) = αVE( o) + (1 − α)VR( o),
+
+define 
+
+∆E = VE( og) − VE( oh),
+
+∆R = VR( og) − VR( oh).
+
+Then we have 
+
+sVisER (og) − sVisER (oh) = α∆E + (1 − α)∆ R.
+
+Thus, VisER has a positive margin whenever 
+
+α∆E + (1 − α)∆ R > 0.
+
+In particular, if ∆E ≥ 0, ∆R ≥ 0, and at least one inequality is strict, then sVisER (og) > s VisER (oh)
+
+for any α ∈ (0 , 1) . This formalizes the complemen-tarity of the two components: VE is most useful for evidence-limited false support, where compatibil-ity is not backed by object-specific image evidence, while VR is most useful for prefix-dominated false support, where the generated prefix explains the object better than the image. 
+
+G Usage of Large Language Models 
+
+We used OpenAI GPT-5 language models only for language editing and proofreading. The models were not involved in idea development or method design. 
+
+H Artifact Licenses 
+
+We use publicly available datasets, models, and baseline methods, including MSCOCO, Pas-cal VOC, LLaVA, LLaVA-NeXT, InstructBLIP, MiniGPT-4, InternVL3, Shikra, and Qwen2.5-VL, under their respective licenses and terms of use. Our use of these artifacts is limited to academic research and evaluation. 17

@@ -1,0 +1,731 @@
+Title: Beyond Language Priors: Diagnosing and Fixing Visual-Origin Hallucinations in Multimodal LLM
+
+URL Source: https://arxiv.org/pdf/2609.00231v1
+
+Published Time: Wed, 02 Sep 2026 00:11:06 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# Beyond Language Priors: Diagnosing and Fixing Visual-Origin Hallucinations in Multimodal LLMs 
+
+## Peiyang Xu ∗
+
+peiyang2003@gmail.com Tsinghua University Beijing, China 
+
+## Xiaopei Zhu ∗
+
+zxpthu@gmail.com Tsinghua University Beijing, China 
+
+## Jun Zhu 
+
+dcszj@mail.tsinghua.edu.cn Tsinghua University Beijing, China 
+
+## Xiaolin Hu †
+
+xlhu@tsinghua.edu.cn Tsinghua University Beijing, China 
+
+## Abstract 
+
+Existing research on object hallucination in multimodal large lan-guage models (MLLMs) predominantly attributes the problem to language priors such as over-reliance on textual co-occurrence sta-tistics. We challenge this view by presenting quantitative evidence for a complementary, under-explored cause: visual-origin hallu-cination , where hallucinations arise from incorrect visual feature extraction and misalignment between image and text embeddings. Through cosine similarity analysis and Smooth Grad-CAM entropy measurements, we show that hallucinated samples exhibit system-atically lower image-text similarity (average 0.158 vs. −0.122) and inverted attention patterns, where attention is dispersed when the target object is present but wrongly concentrated when it is absent. Guided by this diagnosis, we propose Adversarial Con-trastive Fine-Tuning (ACFT). ACFT uses an Adversarial Halluci-nation Attribute Flipping (AHAF) procedure, involving minimal, targeted adversarial perturbations that flip an image’s hallucina-tion attribute, to construct perfectly aligned positive-negative pairs, which are then used for contrastive fine-tuning. AHAF simultane-ously serves as a diagnostic probe , revealing that MLLM visual rep-resentations lie dangerously close to hallucination decision bound-aries. Requiring only 0.9% of the COCO dataset and adding zero inference overhead, ACFT achieves state-of-the-art performance on POPE, MME, and four description-level hallucination benchmarks across LLaVA, MiniGPT-4, and Qwen2.5-VL. Code is available at https://github.com/zxp555/ACFT_MM26. 
+
+## CCS Concepts 
+
+• Computing methodologies → Computer vision ; Machine learning .
+
+## Keywords 
+
+Multimodal Large Language Models; Object Hallucination; Adver-sarial Contrastive Learning 
+
+## 1 Introduction 
+
+Object hallucination, where Multimodal Large Language Models (MLLMs) falsely perceive” non-existent objects or ignore” objects actually present in the image [27, 32], remains a critical obstacle to 
+
+> ∗Co-First Authors, both authors contributed equally to this research.
+> †Corresponding author.
+
+deploying models such as LLaVA [17], MiniGPT-4 [42], and GPT-4o [25] in high-stakes domains. The dominant research narrative attributes hallucinations primarily to language priors : over-reliance on textual co-occurrence [4, 11, 43], hallucination heads attending to text tokens [34, 41], summary-token attention sinks [9], or insuf-ficient fine-grained reasoning supervision [39]. This language-prior perspective aligns naturally with long-output-text settings, where rich textual context amplifies linguistic biases. We believe that this perspective is incomplete . When model out-puts are short, e.g., answering “Is there an OBJ in the image?”, the model’s reasoning may rely more on the visual modality, and a different hallucination mechanism emerges: one rooted in visual feature extraction itself [28]. We term this visual-origin halluci-nation and provide a systematic evidence for its existence through two complementary analyses on LLaVA v1.5 [17] (see Figure 1 and SM for details): 
+
+Finding 1: Image–text embedding misalignment. The cosine simi-larity between image and text embeddings is significantly lower for hallucinated samples than for correct ones (average 0.158 for cor-rect cases vs. −0.122 for hallucinated cases), indicating a systematic breakdown in cross-modal alignment. 
+
+Finding 2: Inverted visual attention patterns. We apply Smooth Grad-CAM [24, 40] to visualize model attention and define a seman-tically appropriate distribution: attention should focus on the target region when the object is present and disperse when it is absent. Hallucinated cases systematically violate this pattern (see Figure 1, right). We quantify this via normalized Shannon entropy of each Grad-CAM heatmap over 500 hallucinated and 500 non-hallucinated samples: when the object is present, hallucinated models show 5.1% higher entropy than correct ones (attention too dispersed, miss-ing the target); when the object is absent, entropy is 6.2% lower (wrongly concentrated on an irrelevant region, triggering halluci-nation). 
+
+Causal validation. We further test causality through direct in-terventions on the visual encoder (see SM, Section 1.4). On POPE, Gaussian noise, downsampling, and a weaker encoder reduce aver-age accuracy from 0.842 to 0.739–0.822, whereas a stronger SigLIP-SO400M encoder raises it to 0.864. These results provide causal support that visual feature quality drives object-existence halluci-nation. These two findings establish that visual-origin hallucination is a distinct and measurable phenomenon linked to incorrect visual arXiv:2609.00231v1 [cs.CV] 31 Aug 2026 Conference’17, July 2017, Washington, DC, USA Peiyang Xu, Xiaopei Zhu, Jun Zhu, and Xiaolin Hu Non-hallucinated Cases Hallucinated Cases  
+
+> User
+> LLaVA
+> Is there a person in this image? Yes, there is a person in the image. Is there a dining table in this image? Yes, there is a dining table in the image, and a young boy is standing in front of it. Is there a bowl in this image? No.
+> Is there a chair in this image? No, there is no chair in the image. The image features a dog.
+> Distribution of Non-hallucinated and Hallucinated Cases
+> Hallucinated Cases Non-hallucinated Cases
+> Cosine  similarity
+> 0.4 0.2 0-0.2 -0.4
+> User
+> LLaVA
+> User
+> LLaVA
+> User
+> LLaVA
+> Figure 1: Diagnosing visual-origin hallucination. Left: Cosine similarity distribution between image and text embeddings of non-hallucinated (blue dots) and hallucinated (red dots) samples. The blue dashed line (- - -) and red dashed line (- - -) show the average similarity. Right: Case study using Smooth Grad-CAM. Blue = correct responses, red = hallucinations. Hallucinated cases show inverted attention: dispersed when the object is present, concentrated when it is absent.
+
+feature perception and image–text misalignment, particularly when textual outputs are short. 
+
+From diagnosis to remedy. Guided by these findings, we inves-tigate contrastive learning to correct the identified visual misalign-ment. A naïve approach, ordinary contrastive fine-tuning (OCFT), pairs a matched image with a randomly selected unrelated image as the negative sample. However, OCFT yields unsatisfactory re-sults (see Section 4.6): the feature differences between positive and negative images are uncontrolled and not focused on the target ob-ject, making it difficult for the model to learn which visual features actually trigger hallucination. To address this, we propose Adversarial Contrastive Fine-Tuning (ACFT) . The key idea is to use Adversarial Hallucination Attribute Flipping (AHAF), involving targeted adversarial pertur-bations via PGD that flip an image’s hallucination attribute, to construct perfectly aligned positive-negative pairs where the only difference is the controlled perturbation. This design has two ad-vantages. First, because the pairs isolate exactly the visual features that trigger hallucination, the model can learn fine-grained rules for distinguishing hallucination-inducing from non-hallucinating inputs (we verify this via the target vs. non-target similarity gap in Figure 3). Second, AHAF doubles as a diagnostic probe : the fact that minimal pixel-level perturbations suffice to flip the model’s answer reveals that MLLM visual representations are alarmingly fragile, as they sit near hallucination decision boundaries even on clean images. ACFT integrates directly into training with no inference over-head, unlike post-hoc methods [33, 36], and requires only 0.9% of the COCO dataset [15]—orders of magnitude less than full re-training [10]. Experiments show that ACFT outperforms VCD [11], OPERA [9], VTI [18], and post-training methods (LLaVA-RLHF, DPO variants) on POPE [14] and MME [5], while preserving gen-eral visual comprehension. Our contributions are: (1) We identify and provide a systematic evidence for visual-origin hallucination—a distinct hallucination mechanism driven by visual feature extraction errors and image– text misalignment, complementing the prevailing language-prior explanation. (2) We propose AHAF, which serves both as a diagnos-tic probe revealing the fragility of MLLM visual representations and as an efficient generator of aligned contrastive training data. (3) We propose ACFT, a data-efficient contrastive fine-tuning method that achieves state-of-the-art hallucination mitigation across multiple models and benchmarks with only 0.9% of COCO data and zero inference overhead. 
+
+## 2 Related Work 2.1 Multimodal Large Language Models (MLLMs) 
+
+In recent years, Multimodal Large Language Models (MLLMs) have advanced rapidly. Proprietary models such as OpenAI’s GPT-4o [25] support both image and text inputs and show impressive perfor-mance across diverse multimodal tasks. Concurrently, numerous open-source MLLMs such as LLaVA [17], MiniGPT-4 [42], etc. have been introduced. Most of these models adopt a "visual encoder + large language model" architecture, achieving cross-modal align-ment and reasoning capabilities through pretraining and instruction tuning. 
+
+## 2.2 Mitigating Hallucinations for MLLMs 
+
+Hallucination mitigation methods can be grouped by where they intervene. Input-level decoding methods such as VCD [11] suppress hallucination-prone tokens by contrasting outputs from original versus perturbed images, and OPERA [9] penalizes overconfident decoding patterns. Post-processing methods like Woodpecker [36] verify and rewrite outputs using external grounding modules. Latent-space methods such as VTI [18] steer hidden representations dur-ing inference. Post-training methods include RLHF-based align-ment [29] and DPO variants [6, 35] that optimize preference over hallucinated vs. correct outputs. A common thread across these approaches is their language-prior perspective: they primarily address hallucinations arising from textual biases in long-output-text settings. Their effectiveness degrades in short-output-text scenarios where the model relies more on visual features. Our work complements this line by identifying Beyond Language Priors: Diagnosing and Fixing Visual-Origin Hallucinations in Multimodal LLMs Conference’17, July 2017, Washington, DC, USA 
+
+visual-origin hallucination as a distinct mechanism and proposing a targeted fix via adversarial contrastive fine-tuning from the image-prior perspective. 
+
+## 3 Methods 3.1 Mitigating Object Hallucination 
+
+Our diagnosis in Section 1 identifies two signatures of visual-origin hallucination : image–text embedding misalignment and inverted attention patterns. We now describe a two-stage framework that directly targets both (Figure 2). Stage one is AHAF, where we apply subtle adversarial perturbations on original images to construct aligned positive-negative image pairs. Stage two is ACFT, in which we design an adversarial contrastive loss function and fine-tune the MLLMs to mitigate object hallucination. 
+
+## 3.2 Adversarial Hallucination Attribute Flipping 
+
+To facilitate effective contrastive learning, we need to construct aligned positive–negative image pairs. In this study, we define a positive sample as an image that does not induce hallucinations in the model’s output, and a negative sample as one that does. While one could manually collect natural images as positive and nega-tive examples for contrast learning, doing so yields unsatisfactory results (See Section 4.6). We believe the reason is that the feature dif-ferences between positive and negative images in OCFT are highly uncontrolled and not focused specifically on the target object itself, which makes it challenging for the MLLM to for attending to dif-ferences in the target object’s features, thus impairing its ability to distinguish hallucination-inducing samples from non-hallucinating ones. To address this challenge, we propose an AHAF method to automatically construct aligned positive-negative image pairs and selectively alter key visual features for triggering targeted object hallucinations. 
+
+AHAF as a diagnostic probe. Beyond generating training data, AHAF reveals a striking property of MLLM visual representations: perturbations within a small ℓ∞ ball suffice to flip the model’s an-swer from correct to hallucinated. This indicates that the model’s visual features for many objects lie near the hallucination deci-sion boundary even on clean, unperturbed images—a finding that reinforces our diagnosis of visual-origin hallucination. As illustrated in Figure 2, AHAF first applies subtle adversar-ial perturbations generated by PGD [23] method to the original images with its adversarial loss (Equation 3). These perturbations are then optimized to flip their hallucination attributes, converting a non-hallucinating image into one that induces object halluci-nation. The AHAF method thus automatically generates aligned positive–negative sample pairs in a highly targeted and efficient way. Because each pair differs only by the controlled adversarial perturbation, the resulting samples remain perfectly aligned, en-abling precise, fine-grained analysis of the visual feature differences for the target object that gives rise to hallucination. Next, we provide a detailed description of the AHAF method. Given an original image 𝑋 and a target text set 𝑌 = {𝑦 𝑖 }𝑚 𝑖 =1, our objective is to generate an adversarial image 𝑋 𝑎𝑑𝑣 that, when input to the model, maximizes the model’s likelihood of giving the target output. The optimization objective is formulated as: 
+
+𝑋 𝑎𝑑𝑣 := arg min  
+
+> ˆ𝑋 𝑎𝑑𝑣 ∈ B
+> 𝑚
+
+∑︁ 
+
+> 𝑖 =1
+
+− log 
+
+
+
+𝑝 (𝑦 𝑖 | ˆ𝑋 𝑎𝑑𝑣 )
+
+
+
+, (1) To find suitable perturbations within the constrained space B,PGD updates the image through the following iterative process:                  
+
+> 𝑋 𝑡 +1
+> 𝑎𝑑𝑣 =ΠB ( 𝑋 ,𝜖 )
+> 
+> 𝑋 𝑡 𝑎𝑑𝑣 +𝛼 ·sign
+> 
+> ∇𝑋 𝑡 𝑎𝑑𝑣
+> 𝑚 ∑︁
+> 𝑖 =1
+> −log  𝑝 (𝑦 𝑖 |𝑋 𝑡 𝑎𝑑𝑣 )
+> ,
+> (2)
+
+In practice, we employ the cross-entropy loss to quantify the divergence between the model’s output and the target text: 
+
+L( 𝑋 𝑎𝑑𝑣 , 𝑌 ) = −
+
+> 𝑚
+
+∑︁ 
+
+> 𝑖 =1
+
+log (𝑝 (𝑦 𝑖 |𝑋 𝑎𝑑𝑣 )) , (3) After multiple iterations, the image 𝑋 𝑎𝑑𝑣 is used as a contrastive sample that can induce the model to produce an answer opposite to that of the original image. 
+
+## 3.3 Adversarial Contrastive Fine-tuning 
+
+Inspired by our preliminary findings (in Figure 1), we propose an ACFT method designed to enhance the alignment between visual and textual embedding and encourage the visual modality to focus on the correct image features, thus mitigating hallucinations. Based on the aligned positive–negative image pairs generated using AHAF method, the core of ACFT is to maximize the similarity between the text anchor and the positive image sample, while minimizing the similarity between the text anchor and the negative image sample in the embedding space through self-supervised contrast learning. The process of the ACFT algorithm is outlined in Algorithm 1. We design the ACFT method based on the following consid-erations. First, inspired by adversarial training [2, 22], we inject adversarially optimized negative samples, which are tailored to exploit the target model’s weaknesses, into the training process. The goal is to improve the model’s ability to defend against strong perturbations and thereby learning more robust visual features that reduce hallucinations. Many studies [12, 13, 16] have shown that adversarial training enhances model robustness to not only adversarial noise but also natural perturbations (e.g. illumination changes, blur, etc.). Second, drawing on contrastive learning [10, 26] principles, we construct aligned positive–negative sample pairs and apply a self supervised contrastive objective to sharpen the model’s discrimination between hallucination inducing and non hallucinat-ing images. Third, contrastive fine tuning offers strong generality, making ACFT applicable to a wide range of backbone architectures and ensuring both transferability and scalability. Finally, unlike full dataset retraining, our fine tuning approach requires only a modest amount of data, and unlike post post-processing technique, it imposes no extra inference-time overhead. According to the above principles, we design an adversarial contrastive loss function 𝐿 contra to measure similarity differences between positive and negative samples. To compute 𝐿 contra , we define a similarity-based contrastive objective between text and image representations. Specifically, for each anchor text 𝑇 𝑖 , we construct a corresponding positive-negative image pair (𝑋 + 
+
+> 𝑖
+
+, 𝑋 − 
+
+> 𝑖
+
+),where 𝑋 + 
+
+> 𝑖
+
+aligns with the text, while 𝑋 − 
+
+> 𝑖
+
+induces hallucination. Conference’17, July 2017, Washington, DC, USA Peiyang Xu, Xiaopei Zhu, Jun Zhu, and Xiaolin Hu Frozen  
+
+> Fine-tune
+> Original Image Adversarial Perturbation Adversarial Image Question Is there an OBJ in the image? LVLM Update
+> Adversarial Loss Aligned Pairs
+> Positive Negative
+> Text Is there an OBJ in the image? Yes/No, there ...
+> Vision-Language Connector
+> Vision Encoder
+> Text Tokenizer
+> Large Language Model
+> Positive Image Embedding Negative Image Embedding Anchor Text Embedding
+> Push
+> Pull
+> Figure 2: Pipeline of our method. Left: AHAF applies minimal adversarial perturbations to original images, constructing aligned positive–negative pairs. The small perturbation budget required to flip the model’s answer reveals the fragility of MLLM visual representations (diagnostic role). Right: ACFT maximizes the similarity between the text anchor and the positive image, while minimizing similarity with the negative image (remedial role).
+
+Using the visual encoder 𝑓 (𝑋 ) and text encoder 𝑔 (𝑇 ), we extract image and text embeddings as 𝑧 + = 𝑓 (𝑋 +), 𝑧 − = 𝑓 (𝑋 − ) and 𝑡 =
+
+𝑔 (𝑇 ), respectively. The adversarial contrastive loss for a single training instance is defined as: 
+
+ℓ (𝑖 ) 
+
+> contra
+
+= − log  exp  𝜓 (𝑡 𝑖 , 𝑧 + 
+
+> 𝑖
+
+)/ 𝜏   + log 
+
+h
+
+exp  𝜓 (𝑡 𝑖 , 𝑧 + 
+
+> 𝑖
+
+)/ 𝜏  + exp  𝜓 (𝑡 𝑖 , 𝑧 − 
+
+> 𝑖
+
+)/ 𝜏  i
+
+, (4) 
+
+where 𝜏 is a hyperparameter that controls the sharpness of the softmax distribution. The similarity between two vectors is defined as: 
+
+𝜓 (x, y) = x⊤y
+
+|x| · | y| . (5) In batch training, where each batch contains 𝑁 text-image pairs, the batch-wise adversarial contrastive loss 𝐿 contra is: 
+
+𝐿 contra = 1
+
+𝑁 
+
+> 𝑁
+
+∑︁ 
+
+> 𝑖 =1
+
+ℓ (𝑖 )
+
+> contra
+
+, (6) While mitigating hallucinations, we also aim to preserve the MLLM’s original visual-language generation capability. To this end, we introduce a classical cross-entropy generation loss 𝐿 gen during fine-tuning. This loss measures the divergence between the model’s predicted token distribution and the true distribution. Specifically, for a target sequence of length 𝑇 , the model predicts the probability of the ground-truth token 𝑦 ∗ 
+
+> 𝑡
+
+conditioned on the preceding outputs 
+
+𝑦 <𝑡 and the image features 𝐼 at each time step 𝑡 . We then compute 
+
+𝐿 gen = − 1
+
+𝑇 
+
+> 𝑇
+
+∑︁ 
+
+> 𝑡 =1
+
+log 𝑝 𝜃 
+
+ 𝑦 ∗ 
+
+> 𝑡
+
+| 𝑦 <𝑡 , 𝑋 , (7) which averages the negative log-likelihood of the correct tokens over the entire sequence. The overall objective is defined as: 
+
+𝐿 total = 𝐿 gen + 𝜆 𝐿 contra , (8) where 𝜆 is a hyperparameter that is determined empirically. 
+
+Algorithm 1 Adversarial Contrast Fine-Tuning 
+
+Input : Text inputs {𝑇 𝑖 }𝑁 𝑖 =1, image pairs { ( 𝑋 + 
+
+> 𝑖
+
+, 𝑋 − 
+
+> 𝑖
+
+) } 𝑁 𝑖 =1
+
+Param : 𝜏 , 𝜆 , visual encoder 𝑓 (·) , text encoder 𝑔 (·) 
+
+Output : Fine-tuned model parameters 
+
+1: for each training iteration do 
+
+2: for each triplet (𝑇 𝑖 , 𝑋 + 
+
+> 𝑖
+
+, 𝑋 − 
+
+> 𝑖
+
+) in batch do 
+
+3: Extract embeddings: 𝑡 𝑖 = 𝑔 (𝑇 𝑖 ), 𝑧 + 
+
+> 𝑖
+
+= 𝑓 (𝑋 + 
+
+> 𝑖
+
+), 𝑧 − 
+
+> 𝑖
+
+= 𝑓 (𝑋 − 
+
+> 𝑖
+
+).
+
+4: Compute similarities: sim (𝑡 𝑖 , 𝑧 + 
+
+> 𝑖
+
+) and sim (𝑡 𝑖 , 𝑧 − 
+
+> 𝑖
+
+).
+
+5: Compute contrastive loss ℓ (𝑖 ) 
+
+> contra
+
+using Equation (4). 
+
+6: end for 
+
+7: Compute batch contrastive loss using Equation (6). 
+
+8: for each (𝑇 𝑖 , 𝑋 + 
+
+> 𝑖
+
+) in batch do 
+
+9: Perform generation task to compute 𝐿 gen via Equation (7). 
+
+10: end for 
+
+11: Combine losses: 𝐿 total = 𝐿 gen + 𝜆𝐿 contra .
+
+12: Backpropagate and update model parameters using 𝐿 total .
+
+13: end for 
+
+14: return Fine-tuned model. 
+
+## 4 Experiments 4.1 Target MLLMs 
+
+To verify the effectiveness of our method, we adopted three MLLMs as the target models: LLaVA v1.5-7B [17], MiniGPT-4 13B [42], and Qwen2.5-VL-7B [1]. LLaVA and MiniGPT-4 are widely used as tar-get models in previous research [9, 11, 19, 36], and we specifically selected them to ensure a fair comparison with prior work. Qwen2.5-VL is a recent state-of-the-art MLLM that we include to demonstrate Beyond Language Priors: Diagnosing and Fixing Visual-Origin Hallucinations in Multimodal LLMs Conference’17, July 2017, Washington, DC, USA 
+
+Subset Method LlaVA v1.5 7B MiniGPT4 13B Qwen2.5-VL 7B 
+
+ACC Pre. Rec. F1 ACC Pre. Rec. F1 ACC Pre. Rec. F1 Adversarial 
+
+origin 0.779 0.721 0.911 0.805 0.700 0.670 0.791 0.725 0.864 0.940 0.778 0.851 VCD 0.808 0.847 0.753 0.797 0.734 0.701 0.817 0.754 0.868 0.925 0.800 0.858 OPERA 0.798 0.787 0.816 0.802 0.737 0.736 0.738 0.737 0.867 0.945 0.780 0.855 Woodpecker 0.771 0.710 0.917 0.800 0.741 0.678 0.917 0.780 0.854 0.903 0.793 0.845 VTI 0.805 0.770 0.871 0.817 0.700 0.668 0.795 0.726 0.866 0.942 0.780 0.853 Ours 0.841 0.802 0.905 0.850 0.771 0.811 0.708 0.756 0.877 0.897 0.852 0.874 
+
+Popular 
+
+origin 0.862 0.832 0.905 0.867 0.732 0.709 0.787 0.747 0.875 0.965 0.778 0.861 VCD 0.882 0.917 0.839 0.876 0.748 0.746 0.752 0.749 0.884 0.950 0.811 0.875 OPERA 0.886 0.847 0.940 0.891 0.737 0.715 0.789 0.750 0.881 0.973 0.783 0.868 Woodpecker 0.789 0.734 0.906 0.811 0.765 0.706 0.908 0.794 0.877 0.961 0.787 0.865 VTI 0.868 0.842 0.908 0.874 0.722 0.691 0.804 0.743 0.876 0.966 0.780 0.863 Ours 0.906 0.907 0.905 0.906 0.818 0.910 0.707 0.795 0.900 0.942 0.852 0.895 
+
+Random 
+
+origin 0.885 0.867 0.910 0.888 0.792 0.792 0.792 0.792 0.884 0.987 0.778 0.870 VCD 0.892 0.881 0.906 0.893 0.808 0.769 0.881 0.821 0.887 0.962 0.806 0.877 OPERA 0.878 0.918 0.831 0.873 0.817 0.819 0.814 0.816 0.886 0.990 0.780 0.872 Woodpecker 0.834 0.788 0.914 0.846 0.818 0.766 0.917 0.835 0.886 0.983 0.785 0.873 VTI 0.891 0.906 0.870 0.888 0.799 0.761 0.871 0.812 0.895 0.988 0.800 0.884 Ours 0.897 0.890 0.905 0.897 0.843 0.972 0.705 0.818 0.916 0.976 0.852 0.910 
+
+> Table 1: Results comparison on the POPE benchmark.
+
+ACFTOCFTPositive Negative    
+
+> Truck Dog Cat Table
+
+Similarity Gap 
+
+> 0.00 0.02 0.04 0.06 0.08 0.10 0.12 0.14
+
+OCFT ACFT  
+
+> Target Non-target
+> Figure 3: Comparison between OCFT and ACFT. Top: Positive and negative samples for ACFT and OCFT (target: “truck”). Bottom: Cosine similarity gaps for target and non-target objects.
+
+the applicability of ACFT to modern architectures. Furthermore, to prove that ACFT generalizes effectively across diverse model fami-lies, we extended our evaluation to InternVL-3.5-4B [31]. As shown in the SM, ACFT yields consistent performance improvements on this additional architecture. 
+
+## 4.2 Baseline Methods 
+
+We compared our ACFT method with two categories of baselines. The first category consists of four inference-time methods: two input-level decoding methods, Visual Contrastive Decoding (VCD) [11] and OPERA [9]; one post-processing method, Woodpecker [36]; and one latent-space-processing method, Visual and Textual Interven-tion (VTI) [18]. The second category consists of four post-training methods: a standard SFT baseline trained with cross-entropy loss on the same data as ACFT, LLaVA-RLHF [29], OPA-DPO [35], and CHiP-DPO [6]. Since most post-training baselines only release model weights based on LLaVA v1.5 7B, we conduct the post-training comparison on this backbone for a fair evaluation. 
+
+## 4.3 Benchmarks 
+
+We evaluated all methods using two benchmarks: POPE [14] and MME [5]. 
+
+POPE is a benchmark specifically designed to assess object hal-lucinations in images. It formulates hallucination assessment as a binary classification task: given an image and an object, the model is asked simple queries "Is there an OBJ in the image?". POPE in-cludes three subsets: Random , Popular and Adversarial . We use the official benchmark of POPE, which includes 3,000 QA pairs for each subset. 
+
+MME is a comprehensive benchmark for evaluating MLLMs across 14 tasks spanning perception and cognition. Among them, the Existence subset is the most relevant to object hallucination: it requires models to judge whether a given object or attribute exists in the image, typically answering with "Yes" or "No"— same as POPE. Conference’17, July 2017, Washington, DC, USA Peiyang Xu, Xiaopei Zhu, Jun Zhu, and Xiaolin Hu 
+
+We selected these two benchmarks because all their questions are answered with either ’Yes’ or ’No’. We believe the model’s rea-soning may rely more on image dimension when the output text is relatively short. This short-text-output setting aligns well with our focus on the image-prior perspective to explore the causes of hallucinations and corresponding mitigation methods in this study. In contrast, many previous research [11, 44] focused on the long-text-output settings (like "describe this image in detail") that align with their language-prior perspective to explore the causes of hallu-cinations. Although ACFT is targeted on short-answer QAs, it can also reduce object hallucinations in open-ended generation tasks. Evaluations on benchmarks such as CHAIR [27] and ObjectHal [37] (detailed in Section 4.8) confirm the effectiveness of ACFT. 
+
+Subset Method ACC Precision Recall F1 Score 
+
+Adversarial OCFT 0.483 0.489 0.784 0.602 ACFT 0.841 0.802 0.905 0.850 
+
+Popular OCFT 0.832 0.867 0.784 0.824 ACFT 0.906 0.907 0.905 0.906 
+
+Random OCFT 0.721 0.696 0.784 0.737 ACFT 0.897 0.890 0.905 0.897 
+
+> Table 2: Comparison between OCFT and ACFT.
+
+## 4.4 Evaluation Metrics 
+
+In our experimental setup, all questions were answered with either ’Yes’ or ’No’. Therefore, whether the model hallucinated can be formulated as a classification problem. We chose four widely used classification metrics including accuracy , precision , recall , and F1 score for evaluation. 
+
+## 4.5 Implementation Details 
+
+We present the implementation details of ACFT and baseline meth-ods like adversarial attack settings, finetuning strategies, hyperpa-rameter settings, GPU, etc. in the SM. 
+
+## 4.6 Why Aligned Pairs Matter: OCFT vs. ACFT 
+
+A central claim of this work is that aligned contrastive pairs, where positive and negative images differ only in the target object’s hallucination-relevant features, are essential for effective hallu-cination mitigation. We validate this by comparing ACFT against ordinary contrastive fine-tuning (OCFT), which pairs a matched image with a randomly sampled unrelated image. We use the same 3,000 images from the COCO dataset [15] as the training set. For ACFT, we employ AHAF to generate aligned positive-negative image pairs for contrast finetuning. In contrast, OCFT constructs image pairs by randomly sampling a "positive" image that matches a given text anchor (e.g., “cat") and a "negative" image drawn arbitrarily from other categories (e.g. “dog"), resulting in unaligned and semantically inconsistent pairs. Both methods use the same fine-tuning strategy on LLaVA v1.5 7B, and are evaluated on three subsets of the POPE benchmark. As shown in Table 2, ACFT significantly outperformed OCFT in mitigating object hallucination, with accuracy improvements of 35.8%, 7.4%, and 17.6% on the three subsets, respectively. Notably, OCFT performed particularly poorly on the Adversarial subset, only achieving an accuracy of 0.483, which was even much lower than that of the original LLaVA model. These results highlight the effectiveness of ACFT compared to OCFT. We computed the similarity gaps between positive and negative samples for the target object and non-target objects, respectively, using Equation (9). Assuming the embeddings of the positive image, negative image, and anchor text are 𝑧 +, 𝑧 − , and 𝑡 , respectively, we define the similarity gap Δ as: 
+
+Δ(𝑧 +, 𝑧 −, 𝑡 ) = |𝜓 (𝑧 +, 𝑡 ) − 𝜓 (𝑧 −, 𝑡 )| , (9) where the cosine similarity 𝜓 between two vectors is defined in Equation 5. A representative example is shown in Figure 3. More experimental details and results are provided in the SM. These re-sults indicate that for ACFT, the similarity gap between positive and negative samples for the target object is clearly distinguish-able from that for non-target objects. This property facilitates the model in learning consistent rules to focus on differences in the target object’s features, thereby enhancing its ability to distinguish hallucination-inducing samples from non-hallucinating ones. How-ever, OCFT lacks this property, which partially explains why ACFT achieves superior performance compared to OCFT.                                                                              
+
+> Model Method ACC Precision Recall F1 Score LlaVA v1.5
+> origin 0.950 0.909 1.000 0.952 VCD 0.950 0.935 0.967 0.951 OPERA 0.933 0.964 0.900 0.931 Woodpecker 0.933 0.882 1.000 0.937 VTI 0.967 0.967 0.967 0.967 Ours 0.983 1.000 0.967 0.983 MiniGPT4
+> origin 0.850 0.800 0.933 0.861 VCD 0.867 0.867 0.867 0.867 OPERA 0.850 0.838 0.867 0.852 Woodpecker 0.833 0.794 0.900 0.843 VTI 0.883 0.896 0.867 0.881 Ours 0.900 0.900 0.900 0.900 Qwen2.5-VL
+> origin 1.000 1.000 1.000 1.000
+> VCD 1.000 1.000 1.000 1.000
+> OPERA 1.000 1.000 1.000 1.000
+> Woodpecker 0.967 0.967 0.967 0.967 VTI 1.000 1.000 1.000 1.000
+> Ours 1.000 1.000 1.000 1.000
+> Table 3: Results comparison on the MME Existence subset.
+
+## 4.7 Effectiveness of ACFT on Mitigating Hallucination 
+
+We compared ACFT with other baseline methods on POPE and MME-Existence benchmarks across three target MLLMs to show its effectiveness on mitigating hallucination. 
+
+4.7.1 Evaluation on POPE. Table 1 shows that ACFT significantly outperforms all baseline methods across three different target MLLMs. For the LlaVA model, ACFT achieved accuracies of 0.841, 0.906, and 0.897 on the three subsets of POPE, surpassing the second-best baseline by 3.3%, 2.0%, and 0.5%, respectively. Similarly, for the MiniGPT-4 model, ACFT achieved the best accuracy, surpassing the second-best baseline by 3.0%, 5.3%, and 2.5%, respectively. For the Qwen2.5-VL model, despite its already strong baseline performance, ACFT still consistently improves accuracy across all three subsets Beyond Language Priors: Diagnosing and Fixing Visual-Origin Hallucinations in Multimodal LLMs Conference’17, July 2017, Washington, DC, USA After Finetuning Before Finetuning                
+
+> User
+> LLaVA
+> Is there a person in this image? No, there is no person in the image. Is there a person in this image? Yes.
+> User
+> LLaVA
+> User
+> LLaVA
+> Is there a cup in this image? Yes, there is a cup in the image. Is there a cup in this image? No, there is no cup in the image.
+> User
+> LLaVA
+> User
+> LLaVA
+> Is there a traffic lght
+> in this image? Yes. Is there a traffic lght
+> in this image? No.
+> User
+> LLaVA
+> User
+> LLaVA
+> Is there a suitcase
+> in this image? No. Is there a suitcase
+> in this image? Yes, there is a suitcase in the image.
+> User
+> LLaVA
+> Similarity: 0.12 Similarity: - 0.27 Similarity: 0.17 Similarity: 0.21 Similarity: - 0.06 Similarity: 0.08 Similarity: - 0.39 Similarity: 0.17
+> Figure 4: Visualization results of ACFT. ACFT improved cosine similarity between image and text embeddings, while Grad-CAM attention maps became more focused on target objects. Blue = correct responses, red = hallucinations.
+
+(from 0.864 to 0.877, 0.875 to 0.900, and 0.884 to 0.916), demon-strating ACFT’s effectiveness even on modern, high-performing MLLMs. The advantage stems from ACFT’s contrastive pairs during train-ing. These pairs enhance the alignment between visual and textual embedding and encourage the visual modality to focus on the cor-rect image features. In contrast, existing methods are often con-strained by their design: VCD and OPERA rely heavily on language priors or text-side decoding, limiting their effectiveness against image-induced hallucinations. Meanwhile, VTI’s inference-only adjustments lack generalization, and Woodpecker is susceptible to errors from external grounding modules. These limitations hinder baseline performance on vision-dependent tasks, whereas ACFT’s refined visual alignment yields superior results. 
+
+4.7.2 Evaluation on MME-Existence. The results in Table 3 showed that ACFT achieved the best performance on the MME-Existence subset. For the LLaVA model, although the original version already attained a relatively high accuracy of 0.950, ACFT further improved it by 3.3%. In contrast, other baseline methods such as OPERA and Woodpecker, even degraded the model’s performance. For the MiniGPT4 model, ACFT brought an improvement, 1.7%, compared to the best-performing baseline. For the Qwen2.5-VL model, both the original model and ACFT achieve perfect accuracy of 1.000, reflecting that the MME-Existence task is relatively easy for modern VLMs, leaving no headroom for further improvement. These results highlight the robustness and effectiveness of ACFT across different target models and benchmarks. 
+
+Model Method ACC Precision Recall F1 Score LlaVA v1.5 Origin 0.728 0.666 0.916 0.771 Ours 0.747 0.683 0.922 0.785 MiniGPT4 Origin 0.538 0.531 0.655 0.586 Ours 0.548 0.538 0.672 0.598 Qwen2.5-VL Origin 0.870 0.836 0.920 0.878 
+
+Ours 0.874 0.928 0.810 0.865 
+
+> Table 4: Results comparison on the MME whole benchmark.
+
+4.7.3 Comparison with Post-training Methods. We further compare ACFT with post-training baselines on LLaVA v1.5 7B, since most post-training methods only release weights for this backbone. As shown in Table 5, under a comparable data budget ( ∼6k samples), ACFT achieves the best overall performance. This indicates that the gains of ACFT stem from the adversarially constructed contrastive pairs and the contrastive loss, which more directly target the visual misalignment underlying object hallucinations, rather than simply from additional fine-tuning. 
+
+## 4.8 Generalization to Description-level Tasks 
+
+Although ACFT is trained on short-answer data, we evaluate whether it generalizes to open-ended description tasks. We conduct exper-iments on four description-level benchmarks: CHAIR [27], CCE-val [38], AMBERA [30], and ObjectHal [37], all on LLaVA v1.5-7B. As shown in Table 6, ACFT consistently reduces caption-level hal-lucination across all four benchmarks, with lower CHAIR scores Conference’17, July 2017, Washington, DC, USA Peiyang Xu, Xiaopei Zhu, Jun Zhu, and Xiaolin Hu 
+
+Bench. Subset Method ACC Pre. Rec. F1 
+
+POPE 
+
+Adv. 
+
+SFT 0.797 0.743 0.906 0.817 LLaVA-RLHF 0.813 0.835 0.780 0.806 CHiP-DPO 0.839 0.923 0.739 0.821 OPA-DPO 0.827 0.944 0.697 0.801 ACFT 0.841 0.802 0.905 0.850 
+
+Pop. 
+
+SFT 0.862 0.832 0.906 0.867 LLaVA-RLHF 0.847 0.901 0.780 0.836 CHiP-DPO 0.855 0.962 0.738 0.835 OPA-DPO 0.840 0.975 0.698 0.813 ACFT 0.906 0.907 0.905 0.906 
+
+Rand. 
+
+SFT 0.896 0.888 0.906 0.897 
+
+LLaVA-RLHF 0.867 0.943 0.780 0.854 CHiP-DPO 0.863 0.984 0.739 0.844 OPA-DPO 0.845 0.991 0.696 0.818 ACFT 0.897 0.890 0.905 0.897 
+
+MME 
+
+Exist. 
+
+SFT 0.950 0.935 0.967 0.951 LLaVA-RLHF 0.967 0.967 0.967 0.967 CHiP-DPO 0.967 1.000 0.933 0.965 OPA-DPO 0.967 1.000 0.933 0.965 ACFT 0.983 1.000 0.967 0.983 
+
+Whole 
+
+SFT 0.736 0.718 0.778 0.747 LLaVA-RLHF 0.717 0.800 0.578 0.671 CHiP-DPO 0.653 0.925 0.334 0.491 OPA-DPO 0.753 0.897 0.572 0.699 ACFT 0.747 0.683 0.922 0.785                                                 
+
+> Table 5: Post-training baselines vs. ACFT on LLaVA v1.5 7B ( ∼6k samples).
+> Benchmark Metric Original ACFT
+> CHAIR CHAIR 𝑠 ↓0.508 0.494
+> CHAIR 𝑖 ↓0.142 0.137
+> CCEval CHAIR 𝑠 ↓0.870 0.850
+> CHAIR 𝑖 ↓0.348 0.328
+> AMBERA Generative CHAIR ↓0.112 0.089
+> Hal ↓0.488 0.483
+> Cover ↑0.518 0.513 Cog ↓0.047 0.043
+> AMBERA Discrim. ACC ↑0.716 0.729
+> Precision ↑0.933 0.941
+> Recall ↑0.617 0.630
+> F1 ↑0.743 0.755
+> ObjectHal Resp. Hal ↓0.568 0.562
+> Obj Hal ↓0.283 0.277
+> Table 6: Comparison on description-level hallucination benchmarks (LLaVA v1.5 7B).
+
+and hallucination rates compared to the original model. This sup-ports our claim that strengthening visual perception and multi-modal alignment benefits not only binary settings but also transfers to open-ended description tasks. Although the absolute gains are smaller than those on binary benchmarks—unsurprising given that long-form generation is more affected by language priors—these results demonstrate that ACFT provides robust visual grounding that generalizes beyond its training distribution. 
+
+## 4.9 Effectiveness of ACFT on Visual Comprehension 
+
+Prior research [21] suggests that fine-tuning on specific tasks may compromise a model’s general capabilities. To address whether ACFT impairs general visual comprehension while mitigating hal-lucinations, we evaluated it on the full MME benchmark. As shown in Table 4, ACFT does not degrade performance; rather, it yields marginal improvements in overall scores for LLaVA and MiniGPT4, and a comparable score for Qwen2.5-VL. These results indicate that ACFT not only mitigates hallucinations but also preserves the model’s robustness in visual feature extraction and comprehension, thereby maintaining or improving its general visual understanding ability. 
+
+## 4.10 Visualization 
+
+Figure 4 visualizes how ACFT corrects the visual-origin hallucina-tion signatures identified in Section 1. After ACFT, cosine similar-ity between image and text embeddings improves markedly, and Grad-CAM attention shifts toward the semantically appropriate distribution: in Cases 1, 4 (object present), attention concentrates on the correct region; in Cases 2, 3 (object absent), it becomes properly dispersed. Entropy analysis confirms the correction: for present objects, entropy decreases by 8.7% and 2.6%; for absent objects, it increases by 7.4% and 6.4%. These results suggest that ACFT effectively addresses the two diagnostic signatures, embedding mis-alignment and inverted attention, by improving the underlying visual representations. 
+
+## 5 Conclusion 
+
+This paper challenges the prevailing language-prior explanation of object hallucination in MLLMs by identifying and systematically characterizing visual-origin hallucination , a distinct mechanism driven by incorrect visual feature extraction and image-text em-bedding misalignment. We provide quantitative evidence through cosine similarity analysis and attention entropy measurements, showing that hallucinated samples exhibit systematically lower cross-modal alignment and inverted attention patterns. Guided by this diagnosis, we propose AHAF, which serves as both a diagnostic probe revealing the fragility of MLLM visual representations and an efficient generator of aligned contrastive training pairs, and ACFT, a data-efficient contrastive fine-tuning method requiring only 0.9% of COCO data with zero inference overhead. Extensive experiments on POPE, MME, and four description-level benchmarks demonstrate state-of-the-art performance, and visualization analysis suggests that ACFT effectively mitigates the two identified hallucination signatures by improving the underlying visual representations. Beyond Language Priors: Diagnosing and Fixing Visual-Origin Hallucinations in Multimodal LLMs Conference’17, July 2017, Washington, DC, USA 
+
+## Acknowledgments 
+
+This work was supported by the National Natural Science Founda-tion of China (No.U2341228 and No.62576187). 
+
+## References 
+
+[1] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun Tang, Humen Zhong, Yuanzhi Zhu, Mingkun Yang, Zhaohai Li, Jianqiang Wan, Pengfei Wang, Wei Ding, Zheren Fu, Yiheng Xu, Jiabo Ye, Xi Zhang, Tianbao Xie, Zesen Cheng, Hang Zhang, Zhibo Yang, Haiyang Xu, and Junyang Lin. 2025. Qwen2.5-VL Technical Report. arXiv:2502.13923 [cs.CV] https://arxiv.org/abs/2502.13923 [2] Tao Bai, Jinqi Luo, Jun Zhao, Bihan Wen, and Qian Wang. 2021. Recent Advances in Adversarial Training for Adversarial Robustness. arXiv:2102.01356 [cs.LG] https://arxiv.org/abs/2102.01356 [3] Nicholas Carlini and David Wagner. 2017. Towards Evaluating the Robustness of Neural Networks. arXiv:1608.04644 [cs.CR] https://arxiv.org/abs/1608.04644 [4] Cong Chen, Mingyu Liu, Chenchen Jing, Yizhou Zhou, Fengyun Rao, Hao Chen, Bo Zhang, and Chunhua Shen. 2025. PerturboLLaVA: Reducing Multimodal Hallucinations with Perturbative Visual Training. arXiv:2503.06486 [cs.CV] https://arxiv.org/abs/2503.06486 [5] Chaoyou Fu, Peixian Chen, Yunhang Shen, Yulei Qin, Mengdan Zhang, Xu Lin, Jinrui Yang, Xiawu Zheng, Ke Li, Xing Sun, Yunsheng Wu, and Rongrong Ji. 2024. MME: A Comprehensive Evaluation Benchmark for Multimodal Large Language Models. arXiv:2306.13394 [cs.CV] https://arxiv.org/abs/2306.13394 [6] Jinlan Fu, Shenzhen Huangfu, Hao Fei, Xiaoyu Shen, Bryan Hooi, Xipeng Qiu, and See-Kiong Ng. 2025. CHiP: Cross-modal Hierarchical Direct Preference Optimization for Multimodal LLMs. Proceedings of the International Conference on Learning Representations .[7] Ian J. Goodfellow, Jonathon Shlens, and Christian Szegedy. 2015. Explaining and Harnessing Adversarial Examples. arXiv:1412.6572 [stat.ML] https://arxiv.org/ abs/1412.6572 [8] Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. 2021. LoRA: Low-Rank Adaptation of Large Language Models. arXiv:2106.09685 [cs.CL] https://arxiv.org/abs/2106.09685 [9] Qidong Huang, Xiaoyi Dong, Pan Zhang, Bin Wang, Conghui He, Jiaqi Wang, Dahua Lin, Weiming Zhang, and Nenghai Yu. 2024. OPERA: Alleviating Hal-lucination in Multi-Modal Large Language Models via Over-Trust Penalty and Retrospection-Allocation. arXiv preprint arXiv:2311.17911 (2024). [10] Chaoya Jiang, Haiyang Xu, Mengfan Dong, Jiaxing Chen, Wei Ye, Ming Yan, Qing-hao Ye, Ji Zhang, Fei Huang, and Shikun Zhang. 2024. Hallucination Augmented Contrastive Learning for Multimodal Large Language Model. arXiv preprint arXiv:2312.06968 (2024). [11] Sicong Leng, Hang Zhang, Guanzheng Chen, Xin Li, Shijian Lu, Chunyan Miao, and Lidong Bing. 2023. Mitigating Object Hallucinations in Large Vision-Language Models through Visual Contrastive Decoding. arXiv preprint arXiv:2311.16922 (2023). [12] Xiao Li, Yining Liu, Na Dong, Sitian Qin, and Xiaolin Hu. 2024. Partimagenet++ dataset: Scaling up part-based models for robust recognition. In European Con-ference on Computer Vision . Springer, 396–414. [13] Xiao Li, Ziqi Wang, Bo Zhang, Fuchun Sun, and Xiaolin Hu. 2023. Recognizing object by components with human prior knowledge enhances adversarial robust-ness of deep neural networks. IEEE Transactions on Pattern Analysis and Machine Intelligence 45, 7 (2023), 8861–8873. [14] Yifan Li, Yifan Du, Kun Zhou, Jinpeng Wang, Wayne Xin Zhao, and Ji-Rong Wen. 2023. Evaluating Object Hallucination in Large Vision-Language Models. arXiv:2305.10355 [cs.CV] https://arxiv.org/abs/2305.10355 [15] Tsung-Yi Lin, Michael Maire, Serge Belongie, Lubomir Bourdev, Ross Girshick, James Hays, Pietro Perona, Deva Ramanan, C. Lawrence Zitnick, and Piotr Dollár. 2015. Microsoft COCO: Common Objects in Context. arXiv:1405.0312 [cs.CV] https://arxiv.org/abs/1405.0312 [16] Chang Liu, Yinpeng Dong, Wenzhao Xiang, Xiao Yang, Hang Su, Jun Zhu, Yuefeng Chen, Yuan He, Hui Xue, and Shibao Zheng. 2025. A comprehensive study on robustness of image classification models: Benchmarking and rethinking. 
+
+International Journal of Computer Vision 133, 2 (2025), 567–589. [17] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee. 2023. Visual Instruc-tion Tuning. arXiv preprint arXiv:2304.08485 (2023). [18] Sheng Liu, Haotian Ye, Lei Xing, and James Zou. 2024. Reducing Hallucinations in Vision-Language Models via Latent Space Steering. arXiv:2410.15778 [cs.CV] https://arxiv.org/abs/2410.15778 [19] Sheng Liu, Haotian Ye, Lei Xing, and James Zou. 2024. Reducing Hallucina-tions in Vision-Language Models via Latent Space Steering. arXiv preprint arXiv:2410.15778 (2024). [20] Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng Li, Hao Zhang, Jie Yang, Qing Jiang, Chunyuan Li, Jianwei Yang, Hang Su, Jun Zhu, and Lei Zhang. 2024. Grounding DINO: Marrying DINO with Grounded Pre-Training for Open-Set Object Detection. arXiv:2303.05499 [cs.CV] https://arxiv.org/abs/2303.05499 [21] Zhongye Liu, Hongbin Liu, Yuepeng Hu, Zedian Shao, and Neil Zhenqiang Gong. 2024. Automatically Generating Visual Hallucination Test Cases for Multimodal Large Language Models. arXiv:2410.11242 [cs.CV] https://arxiv.org/abs/2410. 11242 [22] Aleksander Madry, Aleksandar Makelov, Ludwig Schmidt, Dimitris Tsipras, and Adrian Vladu. 2018. Towards Deep Learning Models Resistant to Adversar-ial Attacks. In International Conference on Learning Representations . https: //openreview.net/forum?id=rJzIBfZAb [23] Aleksander Madry, Aleksandar Makelov, Ludwig Schmidt, Dimitris Tsipras, and Adrian Vladu. 2019. Towards Deep Learning Models Resistant to Adversarial Attacks. arXiv:1706.06083 [stat.ML] https://arxiv.org/abs/1706.06083 [24] Daniel Omeiza, Skyler Speakman, Celia Cintas, and Komminist Weldermariam. 2019. Smooth Grad-CAM++: An Enhanced Inference Level Visualization Tech-nique for Deep Convolutional Neural Network Models. arXiv:1908.01224 [cs.CV] https://arxiv.org/abs/1908.01224 [25] OpenAI. 2023. GPT-4 Technical Report. arXiv preprint arXiv:2303.08774 (2023). [26] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, and et al. 2021. Learning Transferable Visual Models from Natural Language Supervision. In International Conference on Machine Learning (ICML) Workshop .[27] Anna Rohrbach, Lisa Anne Hendricks, Kaylee Burns, Trevor Darrell, and Kate Saenko. 2018. Object Hallucination in Image Captioning. In European Conference on Computer Vision (ECCV) . 635–651. [28] Yaqi Sun, Kyohei Atarashi, Koh Takeuchi, and Hisashi Kashima. 2025. Exploring Causes and Mitigation of Hallucinations in Large Vision Language Models. arXiv preprint arXiv:2502.16842 (2025). [29] Zhiqing Sun, Sheng Shen, Shengcao Cao, Haotian Liu, Chunyuan Li, Yikang Shen, Chuang Gan, Liang-Yan Gui, Yu-Xiong Wang, Yiming Yang, et al. 2023. Aligning large multimodal models with factually augmented rlhf. arXiv preprint arXiv:2309.14525 (2023). [30] Junyang Wang, Yuhang Wang, Guohai Xu, Jing Zhang, Yukai Gu, Haitao Jia, Ming Yan, Ji Zhang, and Jitao Sang. 2023. An LLM-free Multi-dimensional Benchmark for MLLMs Hallucination Evaluation. arXiv preprint arXiv:2311.07397 (2023). [31] Weiyun Wang, Zhangwei Gao, Lixin Gu, Hengjun Pu, Long Cui, Xingguang Wei, Zhaoyang Liu, Linglin Jing, Shenglong Ye, Jie Shao, Zhaokai Wang, Zhe Chen, Hongjie Zhang, Ganlin Yang, Haomin Wang, Qi Wei, Jinhui Yin, Wenhao Li, Erfei Cui, Guanzhou Chen, Zichen Ding, Changyao Tian, Zhenyu Wu, Jingjing Xie, Zehao Li, Bowen Yang, Yuchen Duan, Xuehui Wang, Zhi Hou, Haoran Hao, Tianyi Zhang, Songze Li, Xiangyu Zhao, Haodong Duan, Nianchen Deng, Bin Fu, Yinan He, Yi Wang, Conghui He, Botian Shi, Junjun He, Yingtong Xiong, Han Lv, Lijun Wu, Wenqi Shao, Kaipeng Zhang, Huipeng Deng, Biqing Qi, Jiaye Ge, Qipeng Guo, Wenwei Zhang, Songyang Zhang, Maosong Cao, Junyao Lin, Kexian Tang, Jianfei Gao, Haian Huang, Yuzhe Gu, Chengqi Lyu, Huanze Tang, Rui Wang, Haijun Lv, Wanli Ouyang, Limin Wang, Min Dou, Xizhou Zhu, Tong Lu, Dahua Lin, Jifeng Dai, Weijie Su, Bowen Zhou, Kai Chen, Yu Qiao, Wenhai Wang, and Gen Luo. 2025. InternVL3.5: Advancing Open-Source Multimodal Models in Versatility, Reasoning, and Efficiency. arXiv:2508.18265 [cs.CV] https: //arxiv.org/abs/2508.18265 [32] Hongliang Wei, Xingtao Wang, Xianqi Zhang, Xiaopeng Fan, and Debin Zhao. 2024. Toward a Stable, Fair, and Comprehensive Evaluation of Object Hallu-cination in Large Vision-Language Models. In Advances in Neural Information Processing Systems (NeurIPS) – Poster .[33] Junfei Wu, Qiang Liu, Ding Wang, Jinghao Zhang, Shu Wu, Liang Wang, and Tieniu Tan. 2024. Logical Closed Loop: Uncovering Object Hallucinations in Large Vision-Language Models. In Findings of the Association for Computational Linguistics: ACL 2024 .[34] Tianyun Yang, Ziniu Li, Juan Cao, and Chang Xu. 2025. Mitigating Hallucination in Large Vision-Language Models via Modular Attribution and Intervention. In The Thirteenth International Conference on Learning Representations . https: //openreview.net/forum?id=Bjq4W7P2Us [35] Zhihe Yang, Xufang Luo, Dongqi Han, Yunjian Xu, and Dongsheng Li. 2025. Mitigating Hallucinations in Large Vision-Language Models via DPO: On-Policy Data Hold the Key. arXiv preprint arXiv:2501.09695 (2025). [36] Shukang Yin, Chaoyou Fu, Sirui Zhao, Tong Xu, Hao Wang, Dianbo Sui, Yunhang Shen, Ke Li, Xing Sun, and Enhong Chen. 2024. Woodpecker: Hallucination Cor-rection for Multimodal Large Language Models. arXiv preprint arXiv:2310.16045 
+
+(2024). [37] Tianyu Yu, Haoye Zhang, Yuan Yao, Yunkai Dang, Da Chen, Xiaoman Lu, Ganqu Cui, Taiwen He, Zhiyuan Liu, Tat-Seng Chua, and Maosong Sun. 2024. RLAIF-V: Aligning MLLMs through Open-Source AI Feedback for Super GPT-4V Trust-worthiness. arXiv preprint arXiv:2405.17220 (2024). [38] Bohan Zhai, Shijia Yang, Chenfeng Xu, Sheng Shen, Kurt Keutzer, and Manling Li. 2023. HallE-Switch: Controlling Object Hallucination in Large Vision Language Models. arXiv:2310.01779 [cs.CV] [39] Jinrui Zhang, Teng Wang, Haigang Zhang, Ping Lu, and Feng Zheng. 2024. Re-flective Instruction Tuning: Mitigating Hallucinations in Large Vision-Language Models. arXiv:2407.11422 [cs.CV] https://arxiv.org/abs/2407.11422 Conference’17, July 2017, Washington, DC, USA Peiyang Xu, Xiaopei Zhu, Jun Zhu, and Xiaolin Hu 
+
+[40] Xiaofeng Zhang, Yihao Quan, Chen Shen, Xiaosong Yuan, Shaotian Yan, Liang Xie, Wenxiao Wang, Chaochen Gu, Hao Tang, and Jieping Ye. 2024. From Re-dundancy to Relevance: Information Flow in LVLMs Across Reasoning Tasks. arXiv:2406.06579 [cs.CL] https://arxiv.org/abs/2406.06579 [41] Yiyang Zhou, Chenhang Cui, Jaehong Yoon, Linjun Zhang, Zhun Deng, Chelsea Finn, Mohit Bansal, and Huaxiu Yao. 2024. Analyzing and Mitigating Object Hallucination in Large Vision-Language Models. arXiv:2310.00754 [cs.LG] https: //arxiv.org/abs/2310.00754 [42] Deyao Zhu, Jun Chen, Xiaoqian Shen, Xiang Li, and Mohamed Elhoseiny. 2023. MiniGPT-4: Enhancing Vision-Language Understanding with Advanced Large Language Models. arXiv preprint arXiv:2304.10592 (2023). [43] Lanyun Zhu, Deyi Ji, Tianrun Chen, Peng Xu, Jieping Ye, and Jun Liu. 2024. IBD: Alleviating Hallucinations in Large Vision-Language Models via Image-Biased Decoding. arXiv preprint arXiv:2402.18476 (2024). [44] Lanyun Zhu, Deyi Ji, Tianrun Chen, Peng Xu, Jieping Ye, and Jun Liu. 2024. IBD: Alleviating Hallucinations in Large Vision-Language Models via Image-Biased Decoding. arXiv:2402.18476 [cs.CV] https://arxiv.org/abs/2402.18476 Beyond Language Priors: Diagnosing and Fixing Visual-Origin Hallucinations in Multimodal LLMs Conference’17, July 2017, Washington, DC, USA 
+
+## Supplementary Material A Detailed Analysis of Hallucination Causes 
+
+We analyze the underlying causes of object hallucination in MLLMs from the perspective of visual features. We use LLaVA v1.5 7B as a representative MLLM in the following analysis. 
+
+## A.1 Quantitative Analysis 
+
+To quantitatively assess the alignment between visual feature and ground truth text, we compute the cosine similarity between the image embedding v and the corresponding ground truth text em-bedding t of MLLM. The cosine similarity is calculated as: CosineSim (v, t) = v · t
+
+|v| · | t| , (10) Higher similarity indicates better alignment between visual features and textual semantics. By comparing the average similarity across correctly predicted and hallucinated cases, we evaluate how the alignment between visual features and text semantics correlates with hallucination occurrences. In the analysis, we do not measure similarity between the image and an arbitrary input question. Instead, for each image, we first construct 10 POPE-style questions(Is there a [object] in the im-age?) based on the ground-truth annotations in COCO, and prompt the model to answer them. If all questions are answered correctly, we label the image as non-hallucinated; otherwise, we label it as hallucinated. Next, we randomly sample 500 correct cases and 500 hallucinated cases from COCO dataset [15]. For each sampled image, we take its ground-truth caption and compute the cosine similarity between the image embedding and ground-truth text embedding. As shown on the left of Figure 1, correct cases exhibit significantly higher text-image embedding similarity compared to hallucinated cases. The average similarity for correct cases is 0.158, while for hallucinated cases it drops to -0.122. This clear gap suggests that when hallucination occurs, the model’s image representation is less aligned with the ground truth text, indicating inaccurate visual perception. 
+
+## A.2 Qualitative Analysis 
+
+In qualitative analysis, we adopt Smooth Grad-CAM [40] techniques to visualize the attention maps of MLLMs on non-hallucinated versus hallucinated images. Given the output logits z = [𝑧 1, 𝑧 2, . . . , 𝑧 𝑛 ], we sum the logits to obtain: 
+
+𝑧 answer =
+
+> 𝑛
+
+∑︁ 
+
+> 𝑖 =1
+
+𝑧 𝑖 (11) For the target layer’s feature maps 𝐴 𝑘 , we compute the gradients: 
+
+𝐺 𝑘 = 𝜕𝑧 answer 
+
+𝜕𝐴 𝑘 (12) Then, global average pooling derives channel weights: 
+
+𝛼 𝑘 = 1
+
+𝑍 ∑︁ 𝑖,𝑗 
+
+𝐺 𝑘 𝑖,𝑗 (13) where 𝑍 is the spatial resolution of 𝐴 𝑘 .The Grad-CAM map is calculated as: 
+
+𝑀 Grad-CAM = ReLU  ∑︁ 
+
+> 𝑘
+
+𝛼 𝑘 𝐴 𝑘 
+
+!
+
+(14) For Smooth Grad-CAM, input image noise 𝜖 𝑖 ∼ N ( 0, 𝜎 2) is added, and the Grad-CAM maps are averaged over 𝑁 samples: 
+
+𝑀 Smooth Grad-CAM = 1
+
+𝑁 
+
+> 𝑁
+
+∑︁ 
+
+> 𝑖 =1
+
+𝑀 (𝑖 ) 
+
+> Grad-CAM
+
+(15) We further analyze the model’s internal attention using Smooth Grad-CAM. The right side of Figure 1 presents attention heatmaps for two non-hallucinated and two hallucinated examples. In non-hallucinated cases, the model focuses accurately on the main object, so that it correctly recognizes existing objects and points out nonex-istent objects. In contrast, hallucinated cases show two distinct fail-ure patterns: (1) the model incorrectly focuses on objects visually similar to the target and perceives nonexistent objects (third case); (2) the model focuses on irrelevant regions, neglecting the actual object (fourth case). These patterns reveal that object hallucination often stems from misdirected or insufficient attention to relevant visual features. 
+
+## A.3 Summary 
+
+Both quantitative and qualitative results show that object hallu-cination in MLLMs is closely linked to incorrect visual feature perception. Compared to correct cases, hallucinated instances of-ten have lower text-image embedding similarity and misaligned attention distributions. Inspired by these findings, we propose an adversarial fine-tuning framework that explicitly contrasts hallu-cinated and correct cases to help the model learn more accurate visual representations and mitigate object hallucination. 
+
+## A.4 Causal Interventions on the Visual Encoding Stage 
+
+The quantitative and qualitative analyses above establish a strong 
+
+association between visual feature quality and hallucination. To further verify that this relationship is causal rather than merely correlational, we directly intervene on the visual encoding stage and observe the effect on hallucination, using POPE as the testbed and LLaVA-v1.5-7B as the backbone. We perturb visual feature quality in both directions. To degrade it, we (1) add Gaussian noise to the input image, (2) downsample the input to 112 × 112 (to rule out the possibility that the accuracy drop is merely due to out-of-distribution noise), and (3) replace the original CLIP ViT-L/14 with a weaker CLIP ViT-B/16. To strengthen it, we (4) replace the encoder with a stronger SigLIP-SO400M. We report the average accuracy on the three POPE subsets in Table 7. POPE accuracy varies monotonically with the quality of the visual signal: each degradation lowers it, whereas the stronger encoder raises it. This causal evidence supports our claim that visual feature quality is a genuine driver of object-existence hallucination, not merely a correlate. Conference’17, July 2017, Washington, DC, USA Peiyang Xu, Xiaopei Zhu, Jun Zhu, and Xiaolin Hu 
+
+Intervention on visual encoding POPE Acc. 
+
+Base (unchanged) 0.842 (1) Gaussian-noised input 0.739 (2) Downsampled input (112 × 112) 0.751 (3) Weaker encoder (CLIP ViT-B/16) 0.822 (4) Stronger encoder (SigLIP-SO400M) 0.864 
+
+> Table 7: Causal interventions on the visual encoding stage (LLaVA-v1.5-7B, average POPE accuracy). POPE accuracy varies monotonically with visual signal quality.
+
+## B Implementation Details for Baseline Methods 
+
+In this section, we also provide the detailed hyperparameter settings used for each baseline. Most hyperparameters are kept consistent with those reported in the original papers. For VCD, we set the noise step to 500, cd-alpha to 1, and cd-beta to 0.1. For OPERA, we use a scale factor of 50.0, set the OPERA threshold to 15, the number of attention candidates to 5, the penalty weights to 1.0, and apply beam search with 5 beams. For Woodpecker, we adopt GroundingDINO [20] as the detector model, setting the box thresh-old to 0.35 and the text threshold to 0.25. For VTI, we set 𝛼 to 0.2, 𝛽 
+
+to 0.4, the beam search size to 4, and the mask ratio to 0.99. 
+
+## C Implementation Details for AHAF and ACFT 
+
+We present the detailed hyperparameters used in AHAF and ACFT. For AHAF, we mainly employed PGD to generate adversarial per-turbation and set the number of iterations to 100, the attack budget 
+
+𝜖 to 16 / 255, and the step size 𝛼 to 1. For ACFT, we fine-tuned the target MLLMs using LoRA [8]. We kept the text tokenizer frozen and fine-tuned the language model, vision-language connector, and vision encoder. We trained MLLMs on 3,000 samples for 2 epochs with a batch size of 16. The learning rates are set to 2e-4 for the language model, 2e-5 for the vision-language connector, and 1e-5 for the vision encoder. For 𝜆 in Equation(8), we conduct a hyperpa-rameter search in the range 0.1, 0.2, 0.25, 0.3, 0.4, 0.5, 1.0, and set 
+
+𝜆 = 0.25 based on the empirical results. For 𝜏 in Equation(4), we also conduct a hyperparameter search in the range 0.01, 0.03, 0.05, 0.07, 0.1, 0.2, and set 𝜏 = 0.05 based on the empirical results. All training is conducted on a single NVIDIA H100 GPU. 
+
+## D Experimental Setup and Results for Comparison between OCFT and ACFT 
+
+In this section, we present the experimental setup and supplemen-tary results for Section: Comparison between OCFT and ACFT .We randomly sampled 50 images from the COCO dataset [15] as positive images for both methods. For ACFT, we applied PGD attack to generate corresponding negative samples. For OCFT, negative samples were randomly selected from the COCO dataset. We used LLaVA v1.5 [17] to extract embeddings for both positive and negative samples, denoted as 𝑧 +
+
+> 𝐴
+
+, 𝑧 − 
+
+> 𝐴
+
+, 𝑧 + 
+
+> 𝑂
+
+, and 𝑧 − 
+
+> 𝑂
+
+, respectively. Then we selected a target object (i.e., the object intended to in-duce hallucination) along with several irrelevant non-target objects. For each, we obtained the corresponding anchor text embeddings, denoted as 𝑡 𝑡𝑎𝑟 and 𝑡 𝑛𝑜𝑛 . We then computed the cosine similarity between each image embedding and text embedding using cosine similarity 𝜓 (𝑡, 𝑧 ), and get 𝑠𝑖𝑚 + = 𝜓 (𝑡, 𝑧 +) and 𝑠𝑖𝑚 − = 𝜓 (𝑡, 𝑧 − ). The similarity gap Δ was calculated as Δ = |𝑠𝑖𝑚 + − 𝑠𝑖𝑚 − |.
+
+Negative source (ACFT pipeline fixed) POPE Acc. 
+
+Base 0.842 Language-prior negatives (GPT-5.5 captions) 0.849 AHAF visual-origin negatives (ours) 0.881 
+
+> Table 8: Counterfactual on the source of negatives (LLaVA-v1.5-7B, average POPE accuracy). The improvement is driven by visual-origin negatives.
+
+For ACFT, the average similarity gap for target object Δ𝑡𝑎𝑟 𝐴 is 0.738, while the average similarity gap for non-target objects Δ𝑛𝑜𝑛 𝐴 
+
+is 0.276, which shows an evident distinction. And the similarity gap of target objects is clearly much higher than non-target ones. In contrast, OCFT yields Δ𝑡𝑎𝑟 𝑂 = 0.104 and Δ𝑛𝑜𝑛 𝑂 = 0.121, which are nearly indistinguishable. These results suggest that ACFT can effectively manipulate the model’s perception of the target object while exerting minimal influence on non-target objects—an ability that OCFT fails to achieve. The results partially explain why ACFT achieves superior performance compared to OCFT. 
+
+## D.1 Counterfactual: Visual-Origin vs. Language-Prior Negatives 
+
+To verify that the gains of ACFT are specifically rooted in the visual-origin diagnosis rather than a generic adversarial-robustness effect, we run a counterfactual experiment that keeps the ACFT pipeline fixed and only swaps the source of the negatives. Using the same 6,000 COCO images, we replace AHAF’s visual-origin negatives with language-prior negatives: hallucinated captions generated by GPT-5.5. We then fine-tune LLaVA-v1.5-7B under the identical ACFT setup and report the average accuracy on the three POPE subsets. As shown in Table 8, the base model reaches 0.842; the language-prior variant reaches only 0.849, whereas ACFT with AHAF visual negatives attains 0.881. The gain thus depends on the negatives being visual-origin: swapping in language-prior negatives almost eliminates it. This rules out a generic adversarial-robustness effect and confirms that ACFT’s gains are rooted in the visual-origin diagnosis, consistent with the OCFT ablation above where unaligned visual negatives also fail. 
+
+## E Details about Adversarial Example Generation in AHAF 
+
+For the hyperparameter settings in AHAF, we select 𝜖 from {4/255 ,
+
+8/255 , 16 /255 , 32 /255 , 64 /255 } and the number of iterations from 
+
+{50 , 100 , 200 , 500 , 1000 }, with the step size fixed at 1. With different hyperparameter settings, we performed PGD attack on 50 randomly selected images. We observe that when 𝜖 is too small, the number of iterations required to successfully flip the hallucinated attribute becomes very high, and manual inspection is often required to make sure the attack is successful. Conversely, when 𝜖 is too large, the adversarial noise becomes visually apparent, and the generated image significantly deviates from the target. To balance visual qual-ity and attack effectiveness, we set 𝜖 to 16/255 and the number of iterations to 100. Compared to two commonly used adversarial attack methods, FGSM [7] and CW [3], PGD offers a favorable trade-off between effectiveness and computational efficiency in the AHAF task. FGSM applies a single-step perturbation, making it less robust and often yielding lower attack success rates in more challenging scenarios. Beyond Language Priors: Diagnosing and Fixing Visual-Origin Hallucinations in Multimodal LLMs Conference’17, July 2017, Washington, DC, USA 
+
+On the other hand, the CW attack involves complex optimization procedures and is computationally expensive. In contrast, PGD is both simpler to implement and more scalable to large-scale datasets and models, while still delivering strong attack performance. There-fore, we adopt PGD as the primary adversarial method in our AHAF framework. 
+
+## E.1 Locus of AHAF Perturbations 
+
+To examine whether AHAF perturbations primarily affect the visual pathway rather than merely exploiting text-side token dynamics, we perform an additional sanity check on 500 successfully flipped contrastive pairs. For each clean image 𝑋 and its adversarial coun-terpart 𝑋 adv , we measure the relative representation change at two stages: 
+
+𝜀 vis = ∥ℎadv vis − ℎclean vis ∥2
+
+∥ℎclean vis ∥2
+
+, 𝜀 LLM = ∥ℎadv LLM − ℎclean LLM ∥2
+
+∥ℎclean LLM ∥2
+
+, (16) where ℎvis denotes the projected visual token embeddings and 
+
+ℎLLM the LLM text-token hidden states measured at the deep (post-attention) layers, so that the text tokens have already integrated visual information. Averaged over all flipped samples, we obtain 
+
+𝜀 vis = 0.057 and 𝜀 LLM = 0.026. The representation change at the visual-token level is over 2 × larger than that observed in the text-token hidden states. This result suggests that AHAF perturbations are concentrated in the visual representation rather than the lan-guage model’s text-token processing, which supports our claim. 
+
+## F Computational Cost Analysis 
+
+In this section, we provide detailed analysis for both AHAF and ACFT stages. In the AHAF stage, we construct a training set with 3,000 con-trastive image samples and 3,000 normal samples. For the 3,000 contrastive samples, we run PGD on each image with 100 iterations. On a single NVIDIA A100, the average optimization time per im-age is about 15s, so constructing all 3,000 adversarial images takes roughly 12 GPU-hours. In the ACFT stage, the contrastive loss only introduces only a lightweight additional computation overhead on top of standard SFT: we reuse the last-layer image and text representations to com-pute the adversarial contrastive loss, without extra forward passes through the backbone. In practice, for LLaVA-v1.5-7B with batch size 16 on a single A100, plain SFT training on our 6k-sample set takes 30 min 57s, while ACFT takes 32 min 21s—an overhead of about 90s, which we consider negligible. For comparison, when we run CHiP-DPO [6] using the official training script on the same backbone, training requires 3 h 21 min 45 s on 4 A100 GPUs, i.e., more than 13 GPU-hours, on a dataset of comparable size. We also apply vanilla DPO to fine-tune LLaVA v1.5-7B on 6000 COCO im-ages. The DPO training process takes 1 h 33 min 27 s on 4 ×A100 GPUs (about 6 GPU-hours), whereas ACFT only requires about 0.5 GPU-hours. 
+
+## G Comparison with Training-based Baselines 
+
+Beyond the inference-time methods compared in the main text, we further compare ACFT against representative training-based 
+
+Method (same backbone/data/budget) POPE Acc. 
+
+Base 0.842 Standard SFT 0.851 Standard adversarial training 0.848 Standard DPO 0.849 CHiP-DPO 0.856 ACFT (ours) 0.881 
+
+> Table 9: Comparison with training-based baselines under identical backbone (LLaVA-v1.5-7B), data (6K COCO with generated negatives), and budget. Average POPE accuracy.
+
+Bench. Subset Method ACC Pre. Rec. F1 
+
+POPE 
+
+Adv. original 0.863 0.835 0.905 0.869 ACFT 0.876 0.864 0.893 0.878 
+
+Pop. original 0.899 0.894 0.905 0.899 ACFT 0.912 0.927 0.895 0.911 
+
+Rand. original 0.933 0.969 0.845 0.930 ACFT 0.937 0.966 0.905 0.935 
+
+MME 
+
+Exist. original 1.000 1.000 1.000 1.000 
+
+ACFT 1.000 1.000 1.000 1.000 
+
+Whole original 0.859 0.913 0.795 0.850 ACFT 0.862 0.894 0.821 0.856 
+
+> Table 10: InternVL-3.5-4B: original vs. ACFT on POPE and MME.
+
+approaches under a strictly controlled protocol: standard SFT, stan-dard adversarial training, standard DPO, and CHiP-DPO [6]. All methods use the same backbone (LLaVA-v1.5-7B), the same training data (6,000 samples from COCO with generated negatives), and the same training budget. We report the average accuracy on the three POPE subsets in Table 9. Under identical backbone, data, and budget, ACFT still delivers the best performance. A likely reason is that only ACFT directly targets the root cause of image–text misalignment: AHAF’s aligned pairs isolate the hallucination-triggering visual features, and the contrastive loss explicitly corrects this cross-modal gap. In contrast, SFT and DPO supervise only at the output or preference level, while adversarial training targets perturbation robustness rather than cross-modal alignment; none directly closes the image–text gap. 
+
+## H Generalization to Additional Architecture 
+
+To further demonstrate that ACFT is architecture-agnostic and gen-eralizes well beyond the models evaluated in the main experiments, we applied ACFT to InternVL-3.5-4B [31], a recent MLLM with a distinct architecture from LLaVA, MiniGPT-4, and Qwen2.5-VL. Results are shown in Table 10. ACFT delivers consistent gains on POPE across all three subsets, improving accuracy by 1.3%, 1.3%, and 0.4%, respectively. On MME Existence, both the original model and ACFT achieve perfect accuracy of 1.000, reflecting that this task is relatively easy for modern VLMs. On MME Whole, ACFT also brings a marginal improvement. These results confirm that ACFT transfers effectively to diverse model architectures without any architecture-specific modifications, supporting its broad appli-cability. Conference’17, July 2017, Washington, DC, USA Peiyang Xu, Xiaopei Zhu, Jun Zhu, and Xiaolin Hu 
+
+## I Generalization to Counting Hallucination 
+
+To demonstrate that ACFT transfers well to short-answer tasks other than yes/no object-existence questions, we further evaluate it on counting hallucination, where the model misperceives the number of objects in an image. We randomly sample 1,000 examples from TallyQA as the test set and use LLaVA-v1.5-7B as the base model. The base model achieves an accuracy of 0.673 on this test set, whereas our ACFT model achieves 0.705, a gain of over 3 points, even though ACFT is never specifically trained on counting tasks. This indicates that the gains reflect improved visual grounding rather than memorization of the training format, and that ACFT generalizes beyond the yes/no format.

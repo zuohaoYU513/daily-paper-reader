@@ -1,0 +1,899 @@
+Title: STAR : Sentence Translation Alignment Rate for Document-to-Document Machine Translation
+
+URL Source: https://arxiv.org/pdf/2608.27161v1
+
+Published Time: Fri, 28 Aug 2026 01:25:05 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# STAR : Sentence Translation Alignment Rate for Document-to-Document Machine Translation 
+
+Yichen Dong 1* Hao Wang 2* Junhui Li 1†
+
+Linlong Xu 2 Longyue Wang 2 Weihua Luo 21School of Computer Science and Technology, Soochow University, Suzhou, China 
+
+> 2
+
+Alibaba Group, Hangzhou, China 
+
+dong_yichen@foxmail.com, huaiyu.wh@alibaba-inc.com, jhli@suda.edu.cn 
+
+Abstract 
+
+Large Language Models (LLMs) have en-abled a shift from sentence-level to document-to-document (Doc2Doc) machine translation, promising improved global coherence. How-ever, document-to-document generation in a single pass frequently suffers from structural misalignment, manifesting as sentence omis-sions or hallucinations that violate the core re-quirement of source-target correspondence. To address this, we introduce Sentence Translation 
+
+Alignment Rate ( STAR ), an auxiliary met-ric that explicitly quantifies sentence-level structural fidelity. Building on this, we pro-pose STAR -masked Preference Optimization (StarPO ), a framework that ranks document-level hypotheses by structural quality and uti-lizes a dynamic alignment mask to focus opti-mization on misaligned segments. Experimen-tal results across news and literary domains demonstrate that StarPO significantly enhances translation quality and structural integrity. No-tably, StarPO allows compact models to surpass the performance of massive proprietary systems like GPT-4o while maintaining superior token efficiency. 1
+
+1 Introduction 
+
+Recent advances in large language models (LLMs) has significantly advanced document-level machine translation (DocMT) (Wang et al., 2023, 2025d; Karpinska and Iyyer, 2023). With long-context modeling and strong generative capabilities, LLMs make it increasingly feasible to move beyond sentence-to-sentence (Sent2Sent) translation to chunk-to-chunk (Chunk2Chunk) and document-to-document (Doc2Doc) translation, where an entire source document is translated in a single pass. De-spite this promise, Doc2Doc translation often ex-hibits sentence-level structural failures, such as sen-                                       
+
+> *Equal contribution.
+> †Corresponding author.
+> 1Our code is available at github.com/1078966865/STAR .
+> Ideal Structural Deviations 1-to-1 1-to-0 0-to-1 Other
+> LLaMA-3.1-8B 92.59 2.08 1.17 4.16 Qwen-2.5-7B 95.35 1.91 1.31 1.43 Qwen-3-4B 94.72 0.72 0.33 4.23 Deepseek-R1 95.03 4.85 0.03 0.09 GPT-4o 92.91 2.25 2.89 1.95 MixSFT (Li et al., 2026a) 96.78 0.57 2.08 0.57 KFMT (Liu et al., 2025) 95.48 1.89 2.34 0.29 Ours (on Qwen2.5-7B) 98.43 0.68 0.00 0.89
+> System
+> Doc2Doc translation in a single pass Chunk2Chunk prompting LLaMA-3.1 w. sentence boundary
+
+Table 1: Alignment distribution ( in % ) for Zh ⇒ En on News-Commentary, computed by Gemini-2.5-Flash. 
+
+tence omissions or hallucinations, that violate the core requirement of sentence-level correspondence between source and target documents (Dong et al., 2025). In this work, we aim to improve Doc2Doc translation by addressing sentence-level structural misalignments, so that better alignment directly contributes to higher translation quality. Most existing DocMT approaches implic-itly avoid structural misalignment by adopting Sent2Sent or Chunk2Chunk paradigms, where translation is still performed at the individual sen-tence level given surrounding context (Wu et al., 2024a; Hu et al., 2025; Li et al., 2026b) or sliding chunks (Liu et al., 2025; Li et al., 2026a). While these localized paradigms successfully enforce sen-tence or block correspondence, they inherently limit global text planning and incur substantial com-putational costs, as source segments are repeatedly encoded across overlapping contexts. 2
+
+Ideally, Doc2Doc translation preserves a clear correspondence between source and target sen-tences. In practice, however, model outputs of-ten contain 1-to-0 alignments (omissions), 0-to-1 alignments (hallucinations) or even generation col-
+
+> 2See Appendix A for additional discussions.
+
+1arXiv:2608.27161v1 [cs.CL] 27 Aug 2026 lapse (e.g., repetitive loops). Are non-1-to-1 align-ments, where N source sentences correspond to M
+
+(M̸ = N ) target sentences, inherently unaccept-able? Intuitively, cross-lingual syntax often justi-fies merging, splitting, or reordering for fluency, ensuring the output feels more native and adheres to the idiomatic conventions of the target language. Therefore, robust Doc2Doc systems must there-fore distinguish such legitimate restructuring from omissions or hallucinations. 3 Although splitting and merging are not categorized as pathological er-rors, effectively rectifying these structural nuances can yield substantial further performance gains. As shown in our preliminary analysis in Table 1, such errors are pervasive across model scales and persist even when sentence boundary constraints are explicitly introduced during generation (Liu et al., 2025; Li et al., 2026a). Notably, even strong proprietary models such as GPT-4o (OpenAI, 2024) exhibit non-trivial rates of structural mismatch in Doc2Doc and Chunk2Chunk settings (Liu et al., 2024; Shao et al., 2024a). These errors are partic-ularly pronounced in long or complex documents. As input context chunk length scales up, the sen-tence alignment rate drops gradually. See Ap-pendix C for a detailed quantitative analysis. This vulnerability is closely related to over-rejection (Xu et al., 2024, 2025) and reward hack-ing (Akter et al., 2026), where models adopt overly conservative strategies under safety or short-context biases. Although previous works (Hu et al., 2025; Domhan and Zhu, 2025) attempt to investigate these length-related translation failures, their analyses are largely confined to superficial comparisons of input and output lengths. Such macroscopic perspectives fail to capture the fine-grained structural breakdowns. Importantly, struc-tural misalignment is largely invisible to standard training objectives and evaluation metrics (e.g. COMET (Rei et al., 2022)), which primarily fo-cus on semantic adequacy and fluency. As a result, Doc2Doc systems may achieve high metric scores while still omitting or hallucinating. To address this limitation, we introduce Sentence 
+
+Translation Alignment Rate ( STAR ), an aux-iliary metric that explicitly measures sentence-level structural fidelity in Doc2Doc translation. Building on STAR, we propose STAR -masked 
+
+Preference Optimization ( StarPO ) framework that 
+
+> 3See Appendix B for case studies on distinguishing merg-ing/splitting from omission/hallucination, and differentiating legitimate restructuring from those masking semantic loss.
+
+ranks document-level hypotheses by alignment quality and encourage structurally faithful gener-ation. We further introduce a dynamic alignment masking strategy that downweights or excludes sentences that are already well aligned, allowing optimization to focus on misaligned segments such as omissions and hallucinations. In summary, our contributions are: • We identify sentence-level structural misalign-ment as a key bottleneck in Doc2Doc transla-tion and introduce STAR , a novel auxiliary metric for measuring structural fidelity. • We propose STAR -masked Preference 
+
+Optimization ( StarPO ) with dynamic align-ment masking to mitigate sentence omissions and hallucinations. • We demonstrate consistent and robust im-provements in document-level translation quality across multiple domains and models. 
+
+2 Methodology 
+
+In this section, we present a novel framework de-signed to enhance structural fidelity of document-level translation as illustrated in Figure 1. 
+
+2.1 Sentence Translation Alignment Rate (STAR) 
+
+We introduce Sentence Translation Alignment Rate (STAR ), a metric for quantifying sentence-level structural fidelity in Doc2Doc translation. As il-lustrate in Figure 1(a), the computation of STAR proceeds in four steps: 
+
+(1) Sentence Segmentation: Source and target documents ( S and T ) are segmented into sentences, 
+
+S = {s1, . . . , s m} and T = {t1, . . . , t n}. Specifi-cally, we segment sentences using SaT (Frohmann et al., 2024). 
+
+(2) Sentence-Level Alignment: Sentences from the source and target are aligned to form disjoint alignment units U = {u1, . . . , u K }, where each unit uk = ( sk, tk) may contain zero or more source sentences sk ⊆ S and zero or more target sentences 
+
+tk ⊆ T . These units are minimal and cannot be further decomposed. Here, we use Bertalign (Liu and Zhu, 2023) for sentence-level alignment. 
+
+(3) Unit Categorization: Each alignment unit is classified based on the number of source and target sentences: (1) 1-to-1 ( U1:1 ), where |sk| = |tk| = 1 ;(2) Deletion ( U1:0 ), where |sk| ≥ 1, |tk| = 0 ; (3) Insertion ( U0:1 ), where |sk| = 0 , |tk| ≥ 1; and 2Target ref doc 
+
+Target doc-2 
+
+> (a) Sentence Translation Alignment Rate (STAR)
+
+Target doc-3  
+
+> (b) Preference Data Generation
+> Rank by
+> STAR
+
+chosen_doc 
+
+reject_doc 
+
+> Source Document
+
+Target doc-1            
+
+> Sampling
+> (c) STAR-Masked Preference Optimization (StarPO)
+> LLMs
+> src-sent-1 src-sent-2 src-sent-3 ... src-sent-n
+> cho-sent-1 cho-sent-2 cho-sent-4 ... cho-sent-m cho-sent-3
+> rej-sent-2 ... rej-sent-k rej-sent-3 rej-sent-1
+> src-sent-1 1-to-0
+> split
+> split
+
+... 
+
+STAR  = +
+
+> Source Document
+> Target Document
+> ...
+> ...
+> tgt-sent-1
+> 0-to-1
+> src-sent-2
+> src-sent-3
+> tgt-sent-3
+> tgt-sent-2
+> k-to-k'
+> src-sent-4
+> src-sent-5
+> tgt-sent-4
+> k-to-1
+> src-sent-6
+> tgt-sent-5
+> tgt-sent-6
+> 1-to-k
+
+...  ... ...  
+
+> src-sent-n tgt-sent-m
+> 1-to-1
+
++Figure 1: Overview of the proposed framework. (a) Sentence Translation Alignment Rate (STAR): Source and target documents are segmented and aligned to compute STAR, defined as the ratio of strict 1-to-1 alignments. (b) Preference Data Generation: Translation candidates are sampled and ranked by their STAR scores. Pairs exhibiting a score disparity larger than τ are selected as chosen ( yw) and rejected ( yl) samples. (c) STAR-Masked Preference Optimization (StarPO): A sentence-level mask is applied to the CPO objective, excluding well-aligned (1-to-1) sentences to focus optimization exclusively on structurally problematic segments. 
+
+(4) Complex ( Ucomplex ), covering all other cases (|sk| + |tk| > 2 with |sk|, |tk| ≥ 1). 
+
+(4) STAR Computation: STAR is the fraction of clean 1-to-1 units among all alignment units: 
+
+STAR (S, T ) = |U 1:1 ||U 1:1 | + |U 1:0 | + |U 0:1 | + |U complex | . (1) 
+
+We also introduce a relaxed variant, STAR relax (S, T ) , which treats Ucomplex as positive to exclusively penalize omissions and hallucinations while remaining tolerant of linguis-tically justified merging or splitting since complex alignments is also acceptable in real-world scenario: 
+
+STAR relax (S, T ) = |U 1:1 | + |U complex ||U 1:1 | + |U 1:0 | + |U 0:1 | + |U complex | .
+
+(2) 
+
+Thus, higher STAR indicates better sentence-level structural fidelity while lower STAR reflects deletions, insertions. Notably, STAR can also be computed directly via an LLM-as-a-judge ap-proach, based on the four steps outlined above. 4
+
+2.2 Preference Data Generation 
+
+To support STAR-masked preference optimization (StarPO), we construct a document-level prefer-
+
+> 4
+
+See Appendix D for detailed prompts. 
+
+ence dataset from automatically generated transla-tion candidates. For each source document, we use GPT-4o (OpenAI, 2024) to generate 5 translation candidates with a temperature of 1.0. Reference translation without sentence boundaries is also in-cluded in the candidate pool when available. For each souce document S, we compute the STAR score (Section 2.1) for all candidates and form a preference pair by selecting the candidate with the highest STAR score as the chosen exam-ple ( Tw) and the one with the lowest score as the 
+
+rejected example ( Tl). To ensure meaningful su-pervision, a pair (Tw, T l) is retained only if the STAR score difference exceeds a threshold τ , i.e., 
+
+|STAR (S, T w) − STAR (S, T l)| > τ . In our exper-iments, we set τ = 0 .1.5
+
+2.3 STAR-Masked Preference Optimization (StarPO) 
+
+Following recent studies (Wang et al., 2026a; Agrawal et al., 2024; Xu et al., 2024; Sun et al., 2025a), we adopt a two-stage training paradigm. We first perform supervised fine-tuning (SFT) on high-quality parallel corpora to establish a warm-started policy πSFT . We then apply preference opti-
+
+> 5
+
+For more discussion of τ , see Appendix E. 
+
+3mization to further align the model with structural constraints. 
+
+Background: Contrastive Preference Optimiza-tion. Following contrastive preference optimiza-tion (CPO) (Xu et al., 2024, 2025), we assume a preference dataset D = {(S, T w, T l)}, where S is a source document and (Tw, T l) denote a preferred and dis-preferred translation, respectively. CPO op-timizes the policy πθ by maximizing the likelihood margin between the preferred and dis-preferred can-didates. The standard objective is formulated as:                  
+
+> LCPO (πθ) = −ED
+> h
+> log σ βlog πθ(Tw|S)
+> −βlog πθ(Tl|S)i
+> −ED
+> log πθ(Tw|S),
+> (3)
+
+where σ is sigmoid function and β is a hyperpa-rameter controlling strength of preference signal. Typically, log πθ(T |S) is computed as the sum of log-probabilities over all tokens in document T .
+
+STAR-Masked Objective. Directly applying CPO at the document-level treats all tokens equally, regardless of whether they correspond to struc-turally correct translations or not. To focus learning on sentence-level structural issues (e.g., halluci-nations, omissions, or complex alignments), we introduce a STAR-based masking strategy. Given a target document T which is segmented into n sentences T = {t1, . . . , t n} and the align-ment units defined in Section 2.1, we define a sentence-level mask M(tj ) that indicates whether sentence tj should contribute to preference loss:      
+
+> M(tj) = 1 −I1:1 (tj),(4)
+
+where I1:1 (tj ) = 1 if sentence tj belongs to a clean 1-to-1 alignment unit and 0 otherwise. As a result, well-aligned sentences receive a mask value of 0, whereas sentences associated with structural mismatches receive a value of 1. Using this mask, we define STAR-Masked log-likelihood, log πSTAR (T |S), which aggregates token-level probabilities strictly for non-1-to-1 sen-tences:          
+
+> log πSTAR (T|S) =
+> nX
+> j=1
+> 
+> M(tj)·
+> |tj|
+> X
+> k=1
+> log πθ(tj,k |t<j , t j,<k , S )
+> 
+> ,
+> (5)
+
+where |tj | is the number of tokens in sentence tj ,
+
+tj,k denotes the k-th token in the tj , t<j represents all target sentences preceding tj , and tj,<k denotes the generated tokens in tj , respectively. The inner summation corresponds to the standard token-level log-likelihood for sentence tj .We then replace the standard document-level likelihood in CPO with the masked likelihood to obtain the STAR-masked preference loss:               
+
+> LStarPO (πθ) = −ED
+> h
+> log σ βlog πSTAR (Tw|S)
+> −βlog πSTAR (Tl|S)i
+> −ED
+> log πSTAR (Tw|S).
+> (6)
+
+3 Experimentation 
+
+3.1 Experimental Settings Datasets. Following recent works (Wang et al., 2025d; Liu et al., 2025; Cui et al., 2024), we eval-uate on both news and web novels from WMT. Specifically, we use News-Commentary v18.1 from WMT25 for English (En) ⇔ { Chinese (Zh), Ger-man (De), Russion (Ru), Spanish (Es)} and Chi-nese (Zh) ⇔ German (De) and Guofeng (Wang et al., 2024) 6 from WMT25 7 for Chinese (Zh) ⇔
+
+{English (En), German (De), Russian (Ru)} transla-tion. We use the training sets to fine-tune the LLMs and to construct preference pairs. Detailed dataset statistics are provided in Appendix F. 
+
+Models and Implementation Details. We use three open-source instruction-tuned large language models: LLaMA-3.1-8B-Instruct (Team, 2024a) 8,Qwen-2.5-7B-Instruct (Team, 2024b) 9 and Qwen-3-4B-Instruct 10 . See Appendix G for more imple-mentation details. 
+
+Systems. For comprehensive comparison, we evaluate two categories of systems: (1) Training Paradigms. We report the perfor-mance of the original instruct versions of the LLMs without further fine-tuning (referred to as Base ), as well as models further fine-tuned with supervised fine-tuning ( +SFT ) following Li et al. (2026a). We use our full training set, further optimized with stan-dard contrastive preference optimization ( +CPO ), and our proposed STAR-masked preference opti-mization ( +StarPO ). 
+
+> 6github.com/longyuewangdcu/GuoFeng-Webnovel/
+> 7www2.statmt.org/wmt25/translation-task.html
+> 8huggingface.co/meta-llama/Llama-3. 1-8B-Instruct
+> 9huggingface.co/Qwen/Qwen2.5-7B-Instruct
+> 10 huggingface.co/Qwen/Qwen3-4B-Instruct-2507
+
+4(2) State-of-the-Art and Competitive Systems. We additionally compare against strong document-level translation systems, including Tower-plus-9B (Rei et al., 2024), GPT-4o (OpenAI, 2024), and Deepseek-R1 (DeepSeek-AI, 2025). 
+
+Metrics. We evaluate translation quality using document-level COMET (dCOMET) (Vernikos et al., 2022), computed by wmt22-comet-da (Rei et al., 2022). Specifically, since document-level evaluation requires sentence-level align-ments (Vernikos et al., 2022), we apply the align-ment strategy described in Section 2.1. Following Zouhar et al. (2024) and Zebaze et al. (2025), using our settings in STAR relax , we assign a score of 0 COMET to unaligned segments, including omis-sions (1-to-0) and hallucinations (0-to-1), while complex mappings (1-to-k, k-to-1, k-to-k′) retain 
+
+their computed COMET scores. To provide a more holistic evaluation, we use d-BLEU, which by-passes sentence-splitting tools by treating the entire document as a single continuous string for both in-put and output. This ensures that the evaluation re-mains uninfluenced by potential sentence-boundary artifacts. See Appendix H for our proposed STAR and STAR relax scores. 
+
+3.2 Experimental Results 
+
+Table 2 and Table 3 present the results on News-Commentary dataset. Across all backbones, su-pervised fine-tuning (+SFT) yields consistent and substantial improvement over the base models on most language pairs. Building on this, standard CPO (+CPO) further enhances translation qual-ity. Our proposed StarPO consistently outperforms standard CPO and achieves the best average per-formance across models. For instance, on LLaMA-3.1, StarPO obtains an average improvement of 0.48 COMET over standard CPO. Importantly, these gains are stable across model scales. With StarPO, the compact model outperforms strong SOTA and competitive systems, including Tower-plus-9B, GPT-4o, and DeepSeek-R1. This high-lights the effectiveness of structural alignment pref-erence optimization for document-level translation. Table 4 present dCOMET scores on Guofeng dataset. 11 It is worth noting that web novel trans-lation typically does not adhere to rigid 1-to-1 lit-eralism, often employing complex sentence map-pings for stylistic flow. Although StarPO en-
+
+> 11 See Appendix I for detailed BLEU scores on Guofeng datasets.
+
+forces 1-to-1 constraints during training, our evalu-ation remains inclusive of valid complex mappings. StarPO’s training constraints prevent pathologies like language mismatches without stifling this flexibility, as evidenced by restoring coherence where LLaMA-3.1-base fails on Zh ⇒De (52.31 COMET). These results indicate that smaller mod-els, when trained with structural-alignment prefer-ence optimization, can outperform massive gener-alist models on complex, stylized document-level translation tasks. 
+
+3.3 Comparison with Alternative Optimization Baselines 
+
+To further illustrate the effectiveness of StarPO, we compare it against a diverse set of alternative optimization baselines. We use LLaMA-3.1-8B-Instruct on Zh ⇔ En as a representative setting and report the results in Table 5. 
+
+Effect of Ranking Metrics on Preference Data Construction. We evaluate the impact of rank-ing signals by substituting STAR with COMET, COMETKiwi, BLEU, and word-level alignment coverage (Wu et al., 2024c, 2023), under a strictly controlled data budget identical to our main exper-iment. As shown in Table 5, STAR significantly outperforms all baselines despite the equalized data size. Notably, its superiority over sentence-level methods (He et al., 2024; Agrawal et al., 2024; Tang et al., 2025) confirms that discourse-level structural fidelity is best captured via sentence-to-sentence correspondence. 
+
+Comparison with RL. We further benchmark our method against standard online RL strategies (GRPO (Shao et al., 2024b), GSPO (Zheng et al., 2025)). Following recent approaches (Feng et al., 2025a, 2026; He et al., 2025), we directly inject COMET, STAR and BLEU scores into the re-ward function for these baselines. As observed in the middle section of Table 5, while online methods utilizing self-generated data generally un-derperform our offline framework, GSPO paired with STAR achieves competitive results (80.16 COMET). This indicates that while our offline op-timization (StarPO) is more effective, STAR nev-ertheless functions as a robust and high-quality reward signal within RL paradigms. Detailed analyses and comparisons with other standard offline preference optimization algorithms (e.g., DPO (Rafailov et al., 2023), SimPO (Meng et al., 2024)) are provided in Appendix J. 5⇒ ⇐ ⇒ ⇐ ⇒ ⇐ ⇒ ⇐ ⇒ ⇐                                                                                                                                                                                      
+
+> Base 72.23 74.89 71.60 80.13 72.49 58.80 80.65 80.75 80.53 78.62 75.07 + SFT 76.81 80.01 83.79 81.47 75.42 75.41 82.37 80.69 80.66 83.49 80.01 + CPO 81.10 79.94 83.98 82.42 75.50 75.05 82.51 81.43 81.45 84.60 80.80 + StarPO 81.55 80.11 84.05 82.50 76.33 77.08 82.53 81.71 82.03 84.91 81.28 Base 81.57 80.40 83.31 79.09 77.60 73.97 81.94 78.35 81.33 84.34 80.19 + SFT 82.01 80.89 83.61 80.02 77.68 74.45 82.26 81.65 81.75 84.73 80.91 + CPO 81.94 80.97 84.01 81.14 78.27 74.56 82.59 81.79 81.65 84.71 81.16 + StarPO 82.27 81.33 84.06 81.89 78.22 74.58 82.70 82.12 81.79 85.21 81.42
+> Base 81.47 80.31 83.63 80.87 77.43 76.78 81.58 84.03 80.21 84.01 81.03 + SFT 81.71 80.88 83.65 81.50 77.37 76.87 82.19 84.04 80.46 84.70 81.34 + CPO 81.77 80.90 83.56 81.55 77.79 76.92 82.23 84.01 81.20 84.67 81.46 + StarPO 82.24 81.17 83.84 82.07 78.00 76.93 82.43 84.21 81.48 84.93 81.73
+> Tower+ 80.53 80.18 84.01 82.57 75.85 76.34 82.58 81.66 82.46 84.81 81.10 GPT-4o 77.42 80.64 83.87 82.84 77.88 69.32 82.36 84.73 83.31 84.83 80.72 Deepseek-R1 79.52 79.10 82.19 82.90 77.92 75.96 81.90 84.97 82.56 82.71 80.97
+> System Zh ⇔En De ⇔En De ⇔Zh Ru ⇔En En ⇔Es Avg.
+> LLAMA -3.1-8B-I NSTRUCT
+> QWEN 2.5-7B-I NSTRUCT
+> QWEN 3-4B-I NSTRUCT
+> OTHER SYSTEMS
+
+Table 2: Performance in dCOMET score on the News-Commentary test set. Bold scores represent the global best performance and underlined scores represent the global second-best performance. Blue text background indicates that the improvement over the origin Base model achieves at least 85% accuracy with the human judgment (Xu et al., 2024; Kocmi et al., 2024b). Specifically, the improvement needs a minimin of ≥ 0.71 for wmt22-comet-da .
+
+Ablation Studies. To further dissect the source of our gains, we examine several specific variants in the bottom section of Table 5: 
+
+(1) SFT vs. Preference Optimization: Training solely on preferred responses ( yw) yields strong per-formance, yet our full framework consistently out-performs this SFT baseline , proving that the con-trastive signal in preference optimization is more effective than simple supervised imitation. 
+
+(2) Strict vs. Relaxed STAR: Using the relaxed STAR metric degrades performance, as it dilutes the discriminative power needed to establish a suffi-cient score margin for data selection during training (see Appendix K for score distribution analysis). 
+
+(3) Alignment-aware vs. Random Masking: 
+
+We further investigate the effect of loss masking by randomly masking out 90% of tokens 12 at both the sentence and token levels. While random token- or sentence-level masking acts as a helpful regularizer (Gu et al., 2025), StarPO’s semantic-aware masking consistently achieves superior re-sults. This demonstrates that focusing the optimiza-tion objective on structurally misaligned segments provides a more effective learning signal than ran-dom selection. 13 
+
+> 12
+
+See Appendix L for the distribution of unmasked token ratios during training. 
+
+> 13
+
+See Appendix M for theoretical analysis. 
+
+4 Discussions 
+
+4.1 Sensitivity to Structural Pathologies 
+
+To verify STAR’s capability in identifying struc-tural pathologies, we evaluate its performance. Starting from WMT24 (Kocmi et al., 2024a) test set, 14 we introduce several LLMs including GPT-4o, Gemini-1.5-Flash, Hunyuan(Sun et al., 2024), Qwen3-235B 15 , and DeepSeek-R1 to pro-duce translations across several language pairs: En 
+
+⇔ { De, Zh, Ru, Es }. To establish a reliable ground truth, we employ Gemini-2.5-Pro to annotate the structural alignment score (i.e. LLM implemen-tation of STAR). We then compute Spearman ( ρ)between the metric scores and the labels in two set-tings: strict mode and relaxed mode. Specifically, the strict mode treats only 1-to-1 mappings as valid alignments, enforcing a rigid sentence-level corre-spondence. In contrast, the relaxed mode accounts for "reasonable restructuring" by accepting linguis-tically justified N -to-M mappings (e.g., merging or splitting) as valid, thereby penalizing only the pathological 1-to-0 omissions and 0-to-1 hallucina-tions. The results are shown in Table 6. 
+
+Comparison with Existing Alignment Meth-ods. Both Align-then-Slide (Guo et al., 2025c) 
+
+> 14
+
+github.com/wmt-conference/wmt24-news-systems 
+
+> 15
+
+huggingface.co/Qwen/Qwen3-235B-A22B 
+
+6⇒ ⇐ ⇒ ⇐ ⇒ ⇐ ⇒ ⇐ ⇒ ⇐
+
+Base 19.25 20.03 36.37 27.08 22.89 11.56 40.31 22.21 42.15 40.25 28.21 + SFT 21.55 39.36 44.20 28.54 30.62 15.43 41.65 23.78 42.60 43.49 33.12 + CPO 30.98 38.77 44.02 28.27 34.98 16.69 42.11 24.45 43.14 43.52 34.69 + StarPO 32.88 40.20 44.36 28.77 35.90 17.94 42.45 25.72 43.99 43.68 35.59 
+
+Base 30.14 41.63 41.19 24.28 36.29 13.29 40.65 21.25 41.28 43.03 33.30 + SFT 29.62 42.27 42.97 25.34 35.08 14.45 41.63 24.05 41.57 43.59 34.06 + CPO 30.90 43.34 43.71 25.78 37.46 14.52 41.87 24.10 41.71 43.13 34.65 + StarPO 35.23 44.12 44.34 26.52 36.34 14.92 42.05 25.04 42.14 44.02 35.47 Base 27.71 41.55 42.22 26.01 31.68 14.27 38.34 25.00 40.58 43.91 33.13 + SFT 30.35 42.07 43.61 27.09 33.72 14.79 41.41 27.37 42.79 44.09 34.73 + CPO 33.68 42.54 43.80 27.24 34.41 15.33 41.80 28.11 42.68 44.46 35.41 + StarPO 35.93 43.42 43.41 28.11 33.66 15.61 42.09 28.12 42.62 45.14 35.81 Tower+ 33.37 41.89 43.16 28.52 34.22 15.08 41.97 26.95 42.85 43.16 35.12 GPT-4o 27.70 42.06 42.83 29.62 35.38 12.70 41.28 28.55 44.24 43.12 34.75 Deepseek-R1 32.33 39.27 41.68 29.83 33.59 14.00 40.44 27.28 44.06 41.64 34.41 
+
+System Zh ⇔ En De ⇔ En De ⇔ Zh Ru ⇔ En En ⇔ Es Avg. 
+
+LLAMA -3.1-8B-I NSTRUCT 
+
+QWEN 2.5-7B-I NSTRUCT 
+
+QWEN 3-4B-I NSTRUCT 
+
+OTHER SYSTEMS 
+
+Table 3: Performance in d-BLEU score on the News-Commentary test set. Unlike dCOMET, d-BLEU evaluates each document as a single continuous string without sentence alignment. Blue text background denotes a significant improvement over the Base model ( ≥ 3.35 BLEU).                                                                                                          
+
+> ⇒⇐⇒⇐⇒⇐
+> Base 53.66 64.33 52.31 66.36 60.28 62.04 + SFT 62.70 65.42 67.96 73.33 75.27 72.75 + CPO 63.01 68.70 69.04 73.95 75.22 72.92 + StarPO 63.43 72.17 72.15 74.61 77.50 73.79 Base 70.22 71.99 64.11 73.04 55.74 73.31 +SFT 70.42 69.54 66.66 73.03 75.86 72.23 +CPO 70.20 71.23 66.51 73.69 74.63 72.78 +StarPO 70.64 72.13 70.72 73.94 77.46 75.00 Base 63.61 68.64 68.01 73.76 72.98 73.04 +SFT 68.61 69.77 69.41 75.08 76.48 75.06 +CPO 68.77 71.02 69.01 74.84 76.49 73.83 +StarPO 70.13 72.21 70.20 75.20 76.53 75.44
+> Tower+ 69.39 65.92 54.41 72.89 70.39 66.48 GPT-4o 69.58 73.61 53.24 73.91 55.35 70.65 Deepseek 62.86 69.58 64.51 70.30 71.53 67.35
+> System Zh ⇔En Zh ⇔De Zh ⇔Ru
+> LLAMA -3.1-8B-I NSTRUCT
+> QWEN 2.5-7B-I NSTRUCT
+> QWEN 3-4B-I NSTRUCT
+> OTHER SYSTEMS
+
+Table 4: Performance in dCOMET on Guofeng test set. 
+
+and SEGALE (Wang et al., 2025c) utilize sen-tence alignment between source and target text for document-level evaluation. We compute STAR scores using their intermediate alignment results for a fair comparison. As shown in Table 6, our implementation achieves superior correlation with structural noise. This highlights that precise, fine-grained sentence alignment is a critical prerequisite for reliable document-level structural assessment. 
+
+Comparison with length-based Metrics. We compare STAR with length-based metrics in prior works for detecting omissions, hallucinations or collapse (Peng et al., 2025a; Guerreiro et al., 2023; Shao et al., 2024a; Hu et al., 2025; Domhan and Zhu, 2025), including Token Count Ratio , Sentence Count Ratio , and Sentence Count Difference . As shown in Table 6, these metrics exhibit weak corre-lations ( ρ < 0.2), failing to detect structural noise when overall document length is preserved. 
+
+Ablation Study on STAR Components. We ver-ify the robustness of STAR by swapping its com-ponents. Replacing SaT with Spacy 16 or switch-ing the LaBSE encoder to M3 (Chen et al., 2024) results only marginal performance fluctuations. These results demonstrate that STAR’s effective-ness is relatively robust. 
+
+4.2 Analysis of Structural Alignment and Semantic Accuracy 
+
+While complex alignments ( k-to-k′, including merging and splitting) are sometimes feasible, they frequently mask local semantic distortions or par-tial omissions. To investigate this, we conduct a fine-grained COMET analysis on Zh ⇒ En, categorizing source sentences into three groups: 
+
+Pathological Errors (1-to-0/0-to-1), Complex Re-
+
+> 16
+
+https://github.com/explosion/spaCy 
+
+7Method Zh ⇒ En En ⇒ Zh                                             
+
+> BLEU Ranking 76.55 79.71 COMET Ranking 81.01 79.78 COMETKiwi Ranking 80.56 79.73 Word-level Coverage 75.94 79.46 GRPO ( w. COMET) 77.73 79.50 GRPO ( w. STAR) 77.79 79.44 GRPO ( w. BLEU) 77.81 79.52 GRPO ( w. COMET + STAR) 77.76 79.76 GSPO ( w. COMET) 77.94 79.77 GSPO ( w. STAR) 80.16 80.00 GSPO ( w. BLEU) 77.96 79.81 GSPO ( w. COMET + STAR) 77.72 79.97 SFT on preference data 80.41 80.02 STAR (Relaxed) 80.09 79.59 Random Mask (Sentence level) 81.18 80.05 Random Mask (Token level) 81.17 80.06 CPO 81.10 79.94
+> Ours (StarPO) 81.55 80.11
+> Data Ranking Metrics Online RL Strategies Our Variants & Ablation Studies
+
+Table 5: COMET scores comparison against alterna-tive optimization strategies. Word-level Coverage is calculated via WSPAlign (Wu et al., 2023, 2024c) at the aligned sentence-pair level. 
+
+structuring (merging/splitting/swapping), and Pre-served 1-to-1 mappings. Table 7 shows that StarPO’s improvement stems from mitigating pathological errors and, more sig-nificantly, rectifying Complex restructuring. While SFT offers marginal gains, StarPO substantially boosts the COMET score for complex segments (71.87 → 81.52), confirming that enforcing struc-tural 1-to-1 correspondence recovers semantic de-tails typically lost in merging or splitting. 
+
+4.3 LLM-as-a-judge Metrics Results 
+
+Following Sun et al. (2025b), we complement automated metrics with LLM-as-a-judge metrics along multiple orthogonal dimensions, including fluency, content errors, and coherence errors. To avoid self-preference bias (Chen et al., 2025), we use Gemini-2.5-Flash for all systems. The results of News-Commentary Zh ⇒ En are shown in Ta-ble 8. StarPO consistently achieves superior perfor-mance across all dimensions and model families, outperforming both standard CPO and strong base-lines like Tower+ and GPT-4o.                         
+
+> Strict 1-to-1Relaxed N-to-M
+> Align-then-Slide 0.3804 0.5168 SEGALE 0.4193 0.4760 Token Count Ratio 0.0218 0.0211 Sentence Count Ratio 0.1218 0.1780 Sentence Count Difference 0.0649 0.1647
+> STAR (Section 2.1) 0.5808 0.5774
+> w/o SaT (use Spacy) 0.5644 0.5663
+> w/o LaBSE (use M3) 0.5104 0.5479
+> Methods Correlation ( ρ, ↑)
+> Existing Alignment Methods Simple Metrics Ours (STAR Variants)
+
+Table 6: Spearman correlation ( ρ) between LLM-annotated alignment quality and various evalua-tion methods (including STAR variants, Align-then-Slide (Guo et al., 2025c), SEGALE (Wang et al., 2025c), and length-based metrics) under both strict 1-to-1 and relaxed N -to-M matching criteria.                          
+
+> Pattern Pathological Complex 1-to-1 Overall % COMET % COMET %COMET COMET
+> Base 3.25 0.00 4.16 71.87 92.59 75.78 73.15 SFT 3.14 0.00 3.13 74.81 93.73 79.45 76.81 StarPO 2.09 0.00 2.12 81.52 95.79 83.33 81.55
+
+Table 7: Fine-grained analysis on Zh ⇒ En. 
+
+5 Related Work 
+
+5.1 Document-level Machine Translation 
+
+LLM-based document-level machine translation generally falls into two paradigms: Doc2Sent (context-aware), which treats documents as se-quences of sentence-level tasks, and Doc2Doc, which processes documents holistically. In Doc2Sent style, training-free approaches rely on prompting strategies, such as context selec-tion (Wang et al., 2023; Sia and Duh, 2023; Moslem et al., 2023; Zhang et al., 2023a; Lee et al., 2025; Lippmann et al., 2025; Cui et al., 2024; Peng et al., 2025b; Hu et al., 2025), self-refinement (Koneru et al., 2024; Li et al., 2025b) and employing memory-based agents (Wang et al., 2025d; Guo et al., 2025b). Fine-tuning relies on various data construction strategies (Li et al., 2026b; Lyu et al., 2024; Wu et al., 2024a; Zhang et al., 2023b; Stap et al., 2024), with the Tower series (Alves et al., 2024; Rei et al., 2024, 2026) being a representa-tive case. Several studies further investigate the role and utilization of contextual information in context-aware translation (M ˛ aka et al., 2025b,a; Mohammed and Niculae, 2025; Choudhary et al., 8Fluency ( ↑) Content ( ↓) Cohesion ( ↓)                                              
+
+> Base 3.67 2.33 1.95 + SFT 3.94 1.96 1.70 + CPO 3.97 1.90 1.58 + StarPO 3.99 1.40 1.27 Base 3.97 1.64 1.38 + SFT 4.12 1.63 1.30 + CPO 4.40 1.39 1.02 + StarPO 4.45 1.16 0.95
+> Base 4.39 1.46 1.13 + SFT 4.51 1.44 1.11 + CPO 4.58 1.23 0.91 + StarPO 4.59 1.17 0.89 Tower+ 4.05 1.29 1.14 GPT-4o 4.18 1.26 1.12 Deepseek-R1 4.37 1.37 1.20 LL AMA-3.1-I NSTRUCT
+> QWEN -2.5-7B-I NSTRUCT
+> QWEN -3-4B-I NSTRUCT
+> OTHER SYSTEMS
+> Table 8: LLM-as-a-judge evaluation results. Higher is better ( ↑); lower is better ( ↓).
+
+2025; Li et al., 2026b). Doc2Doc approaches aim for holistic translation through long-context training (Pang et al., 2025; Li et al., 2026a), iterative or agentic refinement (Dong et al., 2025; Li et al., 2025b; Briakou et al., 2024; Wu et al., 2024b), and input optimization strate-gies like segmentation or knowledge fusion (Hong et al., 2025; Liu et al., 2025). For evaluation, recent works (Guo et al., 2025a,c; Domhan and Zhu, 2025; Wang et al., 2025c; Steingrimsson et al., 2023) pre-dominantly rely on source-target sentence align-ment to assess document quality. 
+
+5.2 Reinforcement Learning for MT 
+
+As references are not necessarily superior to LLM generations, RL (Ouyang et al., 2022) becomes essential for advancing MT. Recent research focus on training specialized reward models to guide this process (Li et al., 2025a; Feng et al., 2025b; Ramos et al., 2026; Tan and Monz, 2025). RL approaches are generally categorized into online and offline methods. Online methods and reward-based methods, commonly use quality esti-mation models as reward models (He et al., 2024, 2025). Such online frameworks is also compatible for training large reasoning models (Feng et al., 2025a, 2026; Wang et al., 2025a,b, 2026b). Typ-ically, these methods apply various items into re-ward models. Conversely, offline methods like DPO (Rafailov et al., 2023) and its variants (Etha-yarajh et al., 2024; Meng et al., 2024; Xu et al., 2024, 2025; Zeng et al., 2024) rely on pre-curated preference datasets for stability. Various ap-proaches are proposed to construct and leverage these datasets (Agrawal et al., 2024; Yang et al., 2024; Sun et al., 2025a; Cui et al., 2025; Tang et al., 2025; Wang et al., 2026a). 
+
+6 Conclusion 
+
+To address structural misalignment in Doc2Doc translation, we introduce STAR , a metric for evaluating document-level structural fidelity, and 
+
+StarPO , a preference optimization framework uti-lizing dynamic masking to target omissions and hallucinations. Experiments demonstrate StarPO enables compact models to surpass massive pro-prietary systems in translation quality while sig-nificantly improving token efficiency. This work establishes a robust paradigm for Doc2Doc transla-tion without complex agentic workflows. 
+
+7 Acknowledgments 
+
+We thank the reviewers for their valuable and con-structive feedback. This work was supported by Alibaba Group. Yichen Dong conducted this work during his internship at Alibaba Group. 
+
+Limitations 
+
+First, in “in-one-go” Doc2Doc scenarios, estab-lishing sentence-level alignment is an unavoidable prerequisite for calculating any fine-grained quality metric (e.g., d-COMET). Second, while enforcing 1-to-1 alignment effectively mitigates hallucina-tions, it imposes a structural rigidity that could the-oretically discourage valid complex mappings in stylized texts, though our empirical results suggest this impact is minimal. Third, our experimental validation is currently concentrated on compact models (4B to 9B parameters) and high-to-medium resource languages. Validating the scalability of StarPO to larger architectures (e.g., 70B+) and low-resource languages remains a critical direction for future research. Finally, regarding data construc-tion, we currently leverage proprietary models (e.g., GPT-4o) to augment candidate diversity. Although the selection of high-quality samples is strictly gov-erned by our own STAR metric, this reliance on commercial APIs for initial generation currently prevents a fully end-to-end open-source pipeline. Future work aims to substitute this step with open-source alternatives, thereby enabling a completely offline-deployable training framework. 9References 
+
+Sweta Agrawal, José G. C. De Souza, Ricardo Rei, An-tónio Farinhas, Gonçalo Faria, Patrick Fernandes, Nuno M Guerreiro, and Andre Martins. 2024. Mod-eling user preferences with automatic metrics: Cre-ating a high-quality preference dataset for machine translation. In Proceedings of EMNLP , pages 14503– 14519. Sanjeda Akter, Ibne Farabi Shihab, and Anuj Sharma. 2026. Detecting proxy gaming in RL and LLM align-ment via evaluator stress tests. In Findings of ACL ,pages 10554–10583. Duarte M. Alves, José Pombal, Nuno M. Guerreiro, Pe-dro H. Martins, João Alves, Amin Farajian, Ben Pe-ters, Ricardo Rei, Patrick Fernandes, Sweta Agrawal, Pierre Colombo, José G. C. de Souza, and André F. T. Martins. 2024. Tower: An open multilingual large language model for translation-related tasks. CoRR ,abs/2402.17733. Eleftheria Briakou, Jiaming Luo, Colin Cherry, and Markus Freitag. 2024. Translating step-by-step: De-composing the translation process for improved trans-lation quality of long-form texts. In Proceedings of WMT , pages 1301–1317. Jianlyu Chen, Shitao Xiao, Peitian Zhang, Kun Luo, Defu Lian, and Zheng Liu. 2024. M3-embedding: Multi-linguality, multi-functionality, multi-granularity text embeddings through self-knowledge distillation. In Findings of ACL , pages 2318–2335. Zhi-Yuan Chen, Hao Wang, Xinyu Zhang, Enrui Hu, and Yankai Lin. 2025. Beyond the surface: Measur-ing self-preference in LLM judgments. In Proceed-ings of EMNLP , pages 1653–1672, Suzhou, China. Ritvik Choudhary, Rem Hida, Masaki Hamada, Hayato Futami, and Toshiyuki Sekiya. 2025. Exploring con-text strategies in LLMs for discourse-aware machine translation. In Findings of EMNLP , pages 24382– 24391. Guofeng Cui, Pichao Wang, Yang Liu, Zemian Ke, Zhu Liu, and Vimal Bhat. 2025. CRPO: Confidence-reward driven preference optimization for machine translation. In Findings of ACL , pages 560–574. Menglong Cui, Jiangcun Du, Shaolin Zhu, and Deyi Xiong. 2024. Efficiently exploring large language models for document-level machine translation with in-context learning. In Findings of ACL , pages 10885–10897. DeepSeek-AI. 2025. Deepseek-r1: Incentivizing rea-soning capability in llms via reinforcement learning. 
+
+CoRR , abs/2501.12948. Tobias Domhan and Dawei Zhu. 2025. Same evalu-ation, more tokens: On the effect of input length for machine translation evaluation using large lan-guage models. In Proceedings of EMNLP , pages 7940–7958. Yichen Dong, Xinglin Lyu, Junhui Li, Daimeng Wei, Min Zhang, Shimin Tao, and Hao Yang. 2025. Two intermediate translations are better than one: Fine-tuning LLMs for document-level translation refine-ment. In Proceedings of ACL , pages 14917–14933. Kawin Ethayarajh, Winnie Xu, Niklas Muennighoff, Dan Jurafsky, and Douwe Kiela. 2024. Model align-ment as prospect theoretic optimization. In Proceed-ings of ICML , pages 12634–12651. Zhaopeng Feng, Shaosheng Cao, Jiahan Ren, Jiayuan Su, Ruizhe Chen, Yan Zhang, Jian Wu, and Zuozhu Liu. 2025a. MT-r1-zero: Advancing LLM-based machine translation via r1-zero-like reinforcement learning. In Findings of the EMNLP , pages 18685– 18702. Zhaopeng Feng, Yupu Liang, Shaosheng Cao, Jiayuan Su, Jiahan Ren, Zhijie Zhou, Wenxuan Huang, Jian Wu, and Zuozhu Liu. 2026. MT 3: A synergistic multi-task RL framework for specializing MLLMs in text image machine translation. In Proceedings of ACL , pages 10140–10157. Zhaopeng Feng, Jiahan Ren, Jiayuan Su, Jiamei Zheng, Hongwei Wang, and Zuozhu Liu. 2025b. MT-RewardTree: A comprehensive framework for ad-vancing LLM-based machine translation via reward modeling. In Findings of EMNLP , pages 18556– 18567. Markus Frohmann, Igor Sterner, Ivan Vuli´ c, Benjamin Minixhofer, and Markus Schedl. 2024. Segment any text: A universal approach for robust, efficient and adaptable sentence segmentation. In Proceedings of EMNLP , pages 11908–11941. Yuzhe Gu, Wenwei Zhang, Chengqi Lyu, Dahua Lin, and Kai Chen. 2025. Mask-DPO: Generalizable fine-grained factuality alignment of LLMs. In Proceed-ings of ICLR .Nuno M. Guerreiro, Elena Voita, and André Martins. 2023. Looking for a needle in a haystack: A com-prehensive study of hallucinations in neural machine translation. In Proceedings of EACL , pages 1059– 1075. Jiaxin Guo, Xiaoyu Chen, Zhiqiang Rao, Jinlong Yang, Zongyao Li, Hengchao Shang, Daimeng Wei, and Hao Yang. 2025a. Automatic evaluation metrics for document-level translation: Overview, challenges and trends. CoRR , abs/2504.14804. Jiaxin Guo, Yuanchang Luo, Daimeng Wei, Ling Zhang, Zongyao Li, Hengchao Shang, Zhiqiang Rao, Shao-jun Li, Jinlong Yang, Zhanglin Wu, and Hao Yang. 2025b. Doc-guided sent2sent++: A sent2sent++ agent with doc-guided memory for document-level machine translation. In Proceedings of NLPCC , page 228–240. Jiaxin Guo, Daimeng Wei, Yuanchang Luo, Xiaoyu Chen, Zhanglin Wu, Huan Yang, Hengchao Shang, Zongyao Li, Zhiqiang Rao, Jinlong Yang, and Hao 
+
+10 Yang. 2025c. Align-then-slide: A complete evalu-ation framework for ultra-long document-level ma-chine translation. CoRR , abs/2509.03809. Minggui He, Yilun Liu, Shimin Tao, Yuanchang Luo, Hongyong Zeng, Chang Su, Li Zhang, Hongxia Ma, Daimeng Wei, Weibin Meng, and 1 others. 2025. R1-t1: Fully incentivizing translation capability in llms via reasoning learning. CoRR , abs/2502.19735. Zhiwei He, Xing Wang, Wenxiang Jiao, Zhuosheng Zhang, Rui Wang, Shuming Shi, and Zhaopeng Tu. 2024. Improving machine translation with human feedback: An exploration of quality estimation as a reward model. In Proceedings of NAACL:HLT , pages 8164–8180. Hanghai Hong, Yibo Xie, Jiawei Zheng, and Xiaoli Wang. 2025. SubDocTrans: Enhancing document-level machine translation with plug-and-play multi-granularity knowledge augmentation. In Findings of EMNLP , pages 14490–14506. Jiwoo Hong, Noah Lee, and James Thorne. 2024. Orpo: Monolithic preference optimization without refer-ence model. In Proceedings of EMNLP , pages 11170– 11189. Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. 2021. Lora: Low-rank adaptation of large language models. In Proceedings of ICLR .Hanxu Hu, Jannis Vamvas, and Rico Sennrich. 2025. Source-primed multi-turn conversation helps large language models translate documents. In Findings of EMNLP , pages 23702–23712. Marzena Karpinska and Mohit Iyyer. 2023. Large lan-guage models effectively leverage document-level context for literary translation, but critical errors per-sist. In Proceedings of WMT , pages 419–451. Tom Kocmi, Eleftherios Avramidis, Rachel Bawden, Ondrej Bojar, Anton Dvorkovich, Christian Feder-mann, Mark Fishel, Markus Freitag, Thamme Gowda, Roman Grundkiewicz, Barry Haddow, Marzena Karpinska, Philipp Koehn, Benjamin Marie, Ken-ton Murray, Masaaki Nagata, Martin Popel, Maja Popovic, Mariya Shmatova, and 2 others. 2024a. Pre-liminary wmt24 ranking of general mt systems and llms. CoRR , abs/2407.19884. Tom Kocmi, Vilém Zouhar, Christian Federmann, and Matt Post. 2024b. Navigating the metrics maze: Rec-onciling score magnitudes and accuracies. In Pro-ceedings of ACL , pages 1999–2014. Sai Koneru, Miriam Exel, Matthias Huck, and Jan Niehues. 2024. Contextual refinement of translations: Large language models for sentence and document-level post-editing. In Proceedings of NAACL:HLT ,pages 2711–2725. Minjae Lee, Youngbin Noh, and Seung Jin Lee. 2025. A testset for context-aware LLM translation in Korean-to-English discourse level translation. In Proceed-ings of COLING , pages 1632–1646. Tianjiao Li, Mengran Yu, Chenyu Shi, Yanjun Zhao, Xi-aojing Liu, Qi Zhang, Xuanjing Huang, Qiang Zhang, and Jiayin Wang. 2025a. RIVAL: Reinforcement learning with iterative and adversarial optimization for machine translation. In Findings of EMNLP 2025 ,pages 3064–3079. Yachao Li, Junhui Li, Jing Jiang, and Min Zhang. 2026a. Enhancing document-level translation of large lan-guage model via translation mixed instructions. Neu-rocomputing , 664:132041. Ying Li, Xinglin Lyu, Junhui Li, Jinlong Yang, Hengchao Shang, Min Zhang, Shimin Tao, and Daimeng Wei. 2026b. Cross-preference learning for sentence-level and context-aware machine translation. 
+
+CoRR , abs/2603.25183. Zongyao Li, Zhiqiang Rao, Hengchao Shang, Ji-axin Guo, Shaojun Li, Daimeng Wei, and Hao Yang. 2025b. Enhancing large language models for document-level translation post-editing using mono-lingual data. In Proceedings of COLING , pages 8830– 8840. Philip Lippmann, Konrad Skublicki, Joshua Tanner, Shonosuke Ishiwatari, and Jie Yang. 2025. Context-informed machine translation of manga using mul-timodal large language models. In Proceedings of COLING , pages 3444–3464. Bin Liu, Xinglin Lyu, Junhui Li, Daimeng Wei, Min Zhang, Shimin Tao, and Hao Yang. 2025. Improving llm-based document-level mt with multi-knowledge fusion. In Proceedings of NLPCC , page 175–187. Lei Liu and Min Zhu. 2023. Bertalign: Improved word embedding-based sentence alignment for chinese– english parallel corpora of literary texts. Digital Scholarship in the Humanities , 38:621–634. Nelson F. Liu, Kevin Lin, John Hewitt, Ashwin Paran-jape, Michele Bevilacqua, Fabio Petroni, and Percy Liang. 2024. Lost in the middle: How language mod-els use long contexts. Transactions of the Association for Computational Linguistics , 12:157–173. Xinglin Lyu, Junhui Li, Yanqing Zhao, Min Zhang, Daimeng Wei, Shimin Tao, Hao Yang, and Min Zhang. 2024. DeMPT: Decoding-enhanced multi-phase prompt tuning for making LLMs be better context-aware translators. In Proceedings of EMNLP ,pages 20280–20295. Paweł M ˛ aka, Yusuf Can Semerci, Jan Scholtes, and Gerasimos Spanakis. 2025a. Analyzing the attention heads for pronoun disambiguation in context-aware machine translation models. In Proceedings of COL-ING , pages 6348–6377. 
+
+11 Paweł M ˛ aka, Yusuf Can Semerci, Jan Scholtes, and Gerasimos Spanakis. 2025b. You are what you train: Effects of data composition on training context-aware machine translation models. In Proceedings of EMNLP , pages 27402–27425. Yu Meng, Mengzhou Xia, and Danqi Chen. 2024. Simpo: Simple preference optimization with a reference-free reward. In Proceedings of NIPS , pages 124198–124235. Wafaa Mohammed and Vlad Niculae. 2025. Context-aware or context-insensitive? assessing LLMs’ per-formance in document-level translation. In Proceed-ings of Machine Translation Summit XX: Volume 1 ,pages 126–137. Yasmin Moslem, Rejwanul Haque, John D. Kelleher, and Andy Way. 2023. Adaptive machine transla-tion with large language models. In Proceedings of EAMT , pages 227–237. OpenAI. 2024. GPT-4o System Card. CoRR ,abs/2410.21276. Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welin-der, Paul F. Christiano, Jan Leike, and Ryan Lowe. 2022. Training language models to follow instruc-tions with human feedback. In Proceedings of NIPS .Jianhui Pang, Fanghua Ye, Derek Fai Wong, Dian Yu, Shuming Shi, Zhaopeng Tu, and Longyue Wang. 2025. Salute the classic: Revisiting challenges of ma-chine translation in the age of large language models. 
+
+Transactions of the Association for Computational Linguistics , 13:73–95. Ziqian Peng, Rachel Bawden, and François Yvon. 2025a. Investigating length issues in document-level machine translation. In Proceedings of Machine Translation Summit XX: Volume 1 , pages 4–23. Ziqian Peng, Rachel Bawden, and François Yvon. 2025b. Self-retrieval from distant contexts for document-level machine translation. In Proceedings of WMT , pages 220–240. Rafael Rafailov, Archit Sharma, Eric Mitchell, Christo-pher D Manning, Stefano Ermon, and Chelsea Finn. 2023. Direct Preference Optimization: Your Lan-guage Model is Secretly a Reward Model. In Pro-ceedings of NIPS , pages 53728–53741. Miguel Moura Ramos, Tomás Almeida, Daniel Vareta, Filipe Azevedo, Sweta Agrawal, Patrick Fernandes, and André F. T. Martins. 2026. Fine-grained re-ward optimization for machine translation using error severity mappings. Transactions of the Association for Computational Linguistics , 14:733–754. Ricardo Rei, José G. C. de Souza, Duarte Alves, Chrysoula Zerva, Ana C Farinha, Taisiya Glushkova, Alon Lavie, Luisa Coheur, and André F. T. Martins. 2022. COMET-22: Unbabel-IST 2022 submission for the metrics shared task. In Proceedings of WMT ,pages 578–585. Ricardo Rei, Nuno M Guerreiro, José Pombal, João Alves, Amin Farajian, Pedro Teixeirinha, and Andre Martins. 2026. TOWER+: Bridging generality and translation specialization in multilingual LLMs. In 
+
+Proceedings of ACL , pages 29614–29635. Ricardo Rei, Jose Pombal, Nuno M. Guerreiro, João Alves, Pedro Henrique Martins, Patrick Fernandes, Helena Wu, Tania Vaz, Duarte Alves, Amin Fara-jian, Sweta Agrawal, Antonio Farinhas, José G. C. De Souza, and André Martins. 2024. Tower v2: Unbabel-IST 2024 submission for the general MT shared task. In Proceedings of WMT , pages 185–204. Chenze Shao, Fandong Meng, Jiali Zeng, and Jie Zhou. 2024a. Understanding and addressing the under-translation problem from the perspective of decoding objective. In Proceedings of ACL , pages 3800–3814. Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, Y. K. Li, Y. Wu, and Daya Guo. 2024b. Deepseekmath: Pushing the limits of mathemati-cal reasoning in open language models. CoRR ,abs/2402.03300. Suzanna Sia and Kevin Duh. 2023. In-context learn-ing as maintaining coherency: A study of on-the-fly machine translation using large language models. In 
+
+Proceedings of Machine Translation Summit XIX, Vol. 1: Research Track , pages 173–185. David Stap, Eva Hasler, Bill Byrne, Christof Monz, and Ke Tran. 2024. The fine-tuning paradox: Boosting translation quality without sacrificing LLM abilities. In Proceedings of ACL , pages 6189–6206. Steinthor Steingrimsson, Hrafn Loftsson, and Andy Way. 2023. SentAlign: Accurate and scalable sen-tence alignment. In Proceedings of EMNLP: System Demonstrations , pages 256–263. Haoxiang Sun, Ruize Gao, Pei Zhang, Baosong Yang, and Rui Wang. 2025a. Enhancing machine transla-tion with self-supervised preference data. In Pro-ceedings of ACL , pages 23916–23934. Xingwu Sun, Yanfeng Chen, Yiqing Huang, Ruobing Xie, Jiaqi Zhu, Kai Zhang, Shuaipeng Li, Zhen Yang, Jonny Han, Xiaobo Shu, Jiahao Bu, Zhongzhi Chen, Xuemeng Huang, Fengzong Lian, Saiyong Yang, Jianfeng Yan, Yuyuan Zeng, Xiaoqin Ren, Chao Yu, and 87 others. 2024. Hunyuan-large: An open-source moe model with 52 billion activated parameters by tencent. CoRR , abs/2411.02265. Yirong Sun, Dawei Zhu, Yanjun Chen, Erjia Xiao, Xing-hao Chen, and Xiaoyu Shen. 2025b. Fine-grained and multi-dimensional metrics for document-level 
+
+12 machine translation. In Proceedings of NAACL:HLT ,pages 1–17. Shaomu Tan and Christof Monz. 2025. ReMedy: Learn-ing machine translation evaluation from human pref-erences with reward modeling. In Proceedings of EMNLP , pages 4370–4387. Zilu Tang, Rajen Chatterjee, and Sarthak Garg. 2025. Mitigating hallucinated translations in large language models with hallucination-focused preference opti-mization. In Proceedings of NAACL:HLT , pages 3410–3433. Llama Team. 2024a. The llama 3 herd of models. CoRR ,abs/2407.21783. Qwen Team. 2024b. Qwen2.5: A party of foundation models. Giorgos Vernikos, Brian Thompson, Prashant Mathur, and Marcello Federico. 2022. Embarrassingly easy document-level MT metrics: How to convert any pretrained metric into a document-level metric. In 
+
+Proceedings of WMT , pages 118–128. Hao Wang, Linlong Xu, Heng Liu, Yangyang Liu, Xi-aohu Zhao, Bo Zeng, Liangying Shao, Yichen Dong, Xinwei Wu, Jiang Zhou, Tianyu Dong, Xiangxi-ang Zeng, Longyue Wang, and Weihua Luo. 2026a. M2po: Multi-perspective multi-pair preference opti-mization for machine translation. In Proceedings of ACL , pages 10315–10336. Jiaan Wang, Fandong Meng, Yunlong Liang, and Jie Zhou. 2025a. DRT: Deep reasoning translation via long chain-of-thought. In Findings of ACL 2025 ,pages 6770–6782. Jiaan Wang, Fandong Meng, and Jie Zhou. 2025b. Ex-trans: Multilingual deep reasoning translation via exemplar-enhanced reinforcement learning. CoRR ,abs/2505.12996. Jiaan Wang, Fandong Meng, and Jie Zhou. 2026b. DeepTrans: Deep reasoning translation via reinforce-ment learning. Transactions of the Association for Computational Linguistics , 14:47–63. Kuang-Da Wang, Shuoyang Ding, Chao-Han Huck Yang, Ping-Chun Hsieh, Wen-Chih Peng, Vitaly Lavrukhin, and Boris Ginsburg. 2025c. Extending automatic machine translation evaluation to book-length documents. In Proceedings of EMNLP , pages 32311–32327. Longyue Wang, Zefeng Du, Wenxiang Jiao, Chenyang Lyu, Jianhui Pang, Leyang Cui, Kaiqiang Song, Derek Wong, Shuming Shi, and Zhaopeng Tu. 2024. Benchmarking and improving long-text translation with large language models. In Findings ACL , pages 7175–7187. Longyue Wang, Chenyang Lyu, Tianbo Ji, Zhirui Zhang, Dian Yu, Shuming Shi, and Zhaopeng Tu. 2023. Document-level machine translation with large lan-guage models. In Proceedings of EMNLP , pages 16646–16661. Yutong Wang, Jiali Zeng, Xuebo Liu, Derek F. Wong, Fandong Meng, Jie Zhou, and Min Zhang. 2025d. Delta: An online document-level translation agent based on multi-level memory. In Proceedings of ICLR .Minghao Wu, Thuy-Trang Vu, Lizhen Qu, George Fos-ter, and Gholamreza Haffari. 2024a. Adapting large language models for document-level machine trans-lation. CoRR , abs/2401.06468. Minghao Wu, Jiahao Xu, and Longyue Wang. 2024b. TransAgents: Build your translation company with language agents. In Proceedings of EMNLP: System Demonstrations , pages 131–141. Qiyu Wu, Masaaki Nagata, Zhongtao Miao, and Yoshi-masa Tsuruoka. 2024c. Word alignment as pref-erence for machine translation. In Proceedings of EMNLP , pages 3223–3239. Qiyu Wu, Masaaki Nagata, and Yoshimasa Tsuruoka. 2023. WSPAlign: Word alignment pre-training via large-scale weakly supervised span prediction. In 
+
+Proceedings of ACL , pages 11084–11099. Haoran Xu, Kenton Murray, Philipp Koehn, Hieu Hoang, Akiko Eriguchi, and Huda Khayrallah. 2025. X-ALMA: Plug & play modules and adaptive rejec-tion for quality translation at scale. In Proceedings of ICLR .Haoran Xu, Amr Sharaf, Yunmo Chen, Weiting Tan, Lingfeng Shen, Benjamin Van Durme, Kenton Mur-ray, and Young Jin Kim. 2024. Contrastive prefer-ence optimization: Pushing the boundaries of LLM performance in machine translation. In Proceedings of ICML .Guangyu Yang, Jinghong Chen, Weizhe Lin, and Bill Byrne. 2024. Direct preference optimization for neu-ral machine translation with minimum Bayes risk decoding. In Proceedings of NAACL:HLT (Volume 2: Short Papers) , pages 391–398. Armel Randy Zebaze, Benoît Sagot, and Rachel Baw-den. 2025. In-context example selection via similar-ity search improves low-resource machine translation. In Findings of NAACL , pages 1222–1252. Jiali Zeng, Fandong Meng, Yongjing Yin, and Jie Zhou. 2024. Teaching large language models to translate with comparison. In Proceedings of AAAI , pages 19488–19496. Biao Zhang, Barry Haddow, and Alexandra Birch. 2023a. Prompting large language model for machine translation: A case study. In Proceedings of ICML ,pages 41092–41110. Xuan Zhang, Navid Rajabi, Kevin Duh, and Philipp Koehn. 2023b. Machine translation with large lan-guage models: Prompting, few-shot learning, and fine-tuning with QLoRA. In Proceedings of WMT ,pages 468–481. 
+
+13 Yuze Zhao, Jintao Huang, Jinghan Hu, Xingjun Wang, Yunlin Mao, Daoze Zhang, Zeyinzi Jiang, Zhikai Wu, Baole Ai, Ang Wang, Wenmeng Zhou, and Yingda Chen. 2025. Swift:a scalable lightweight infrastruc-ture for fine-tuning. In Proceedings of AAAI , pages 29733–29735. Chujie Zheng, Shixuan Liu, Mingze Li, Xiong-Hui Chen, Bowen Yu, Chang Gao, Kai Dang, Yuqiong Liu, Rui Men, An Yang, Jingren Zhou, and Jun-yang Lin. 2025. Group sequence policy optimization. 
+
+CoRR , abs/2507.18071. Vilém Zouhar, Pinzhen Chen, Tsz Kin Lam, Nikita Moghe, and Barry Haddow. 2024. Pitfalls and out-looks in using COMET. In Proceedings of WMT ,pages 1272–1288. 
+
+14 10 4 10 5
+
+> Token Consumption
+> 90 92 94 96 98 100
+> Score (%)
+> StarPO (Ours) Sent-wise Doc2Doc (LLMs) Doc2Doc (w/o Split Token) Doc2Doc (w. Split Token)
+> Doc2Sent (w=3) Delta Source-primed DocRefine Mix-level SFT (w/o Split) KFMT (w/o Split) Deepseek-R1 GPT-4o
+> StarPO (Ours)
+> Mix-level SFT (w. Split) KFMT (w. Split)
+
+Figure 2: Alignment score vs. Token Consump-tion. We compare our proposed StarPO against various baselines, including sentence-level systems, document-level baselines, and proprietary LLMs (e.g., GPT-4o, Deepseek-R1). Note that the x-axis is plotted on a loga-rithmic scale ( 10 n). 
+
+A Efficiency Analyses 
+
+We evaluate our framework against several repre-sentative document translation paradigms. Figure 2 compares the alignment score vs. token consump-tion among several typical Doc2Sent and Doc2Doc systems. Doc2Sent (w=3) (Wu et al., 2024a; Lyu et al., 2024; Koneru et al., 2024; Cui et al., 2024) utilizes a standard sliding window of three preceding sentences for context, while Doc2Sent (Source-primed) (Hu et al., 2025) treats transla-tion as a sequential multi-turn dialogue. Doc2Sent (DelTA) (Wang et al., 2025d) employs an agen-tic framework for autonomous context manage-ment. Among document-level models, Doc2Doc (KFMT) (Liu et al., 2025) and Doc2Doc (Mix-level SFT) (Li et al., 2026a) use multi-turn inter-actions or specialized fine-tuning, evaluated both with and without sentence delimiters. Doc2Doc (DocRefine) (Dong et al., 2025) focuses on itera-tive multi-stage refinement to improve coherence. For large-scale baselines, we include Doc2Doc (DeepSeek-R1) to represent reasoning-based mod-els and Doc2Doc (GPT-4o) as a high-performance proprietary benchmark. Finally, Doc2Doc (StarPO) is our proposed framework, which uses STAR-curated preference pairs to optimize for both struc-tural alignment and semantic fidelity. 
+
+B Detailed Case Study 
+
+While STAR prioritizes 1-to-1 alignment, Figure 3 illustrates that structural deviations range from pathological errors to valid linguistic adaptations. We categorize these patterns based on their seman-tic impact: • Pathological Deviations: 1-to-0 (Omission) and 0-to-1 (Hallucination) instances that result in clear fidelity loss (red). • Structural Adaptations: k-to-1 (Merging), 1-to-k (Splitting), and k-to-k′ (Swapping) pat-terns that often optimize cohesion or readabil-ity (green). As detailed in the figure’s notes, even valid adap-tations (Cases 3a, 4a, 5a) may harbor localized se-mantic inaccuracies (Cases 3b, 4b, 5b), necessitat-ing a nuanced evaluation that distinguishes stylistic alignment from actual information loss. 
+
+C Impact of Input Context Length on Structural Alignment 
+
+To further investigate the relationship between doc-ument length and structural fidelity in Doc2Doc translation, we evaluated the Sentence Translation Alignment Rate (STAR) across varying input con-text lengths using LLaMA-3-8B-Instruct on News-Commentary test set on Zh ⇒ En translation. As illustrated in Figure 4, there is a clear negative correlation between the input length (measured in tokens) and the alignment quality. In the standard sentence-to-sentence (Sent2Sent) translation paradigm, the model naturally achieves a perfect 100% STAR score. However, as the in-put context expands to 256 tokens, the alignment rate sharply drops to 96.69%. This highlights the critical need for explicit structural alignment objec-tives, such as our proposed StarPO, particularly for long-document translation. 
+
+D LLM-judge version of STAR 
+
+To validate the accuracy of our automated STAR metric, we implement an LLM-based version using the prompt template illustrated in Figure 5. This prompt is designed to simulate human-level judg-ment on document structure. 
+
+E Discussion of Threshold τ
+
+To investigate the impact of the margin threshold τ
+
+used in preference data construction, we conduct a sensitivity analysis across both Zh ⇒ En and En ⇒ Zh directions. As shown in Table 9, the performance variation remains minimal (less than 0.6 points) as τ ranges from 0.00 to 0.15 . This stability suggests that StarPO is robust to the choice 15 Cases 
+
+1 1-to-0(Omission) 
+
+The proposal was accepted unanimously. However, concerns regarding the budget remain. 
+
+提案全票通过。 
+
+2 0-to -1 (Hallucination) 
+
+The weather forecast predicts rain tomorrow. 
+
+天气预报显示明天有雨。  建议居民待在室内。 
+
+3a  k-to -1 (Merging) with semantic persist  ✅
+
+But will that still be true after six months? Or nine? 
+
+但六个月，或者九个月后还会是这样吗？ 
+
+3b k-to-1 (Merging) with semantic loss  ❌️ 
+
+Second, it seems likely that nominal growth in the US will rise, though the underlying mix of inflation and real growth is yet to be determined. This matters, because it will shape the US Federal Reserve’s response, affecting asset prices in America and beyond. 
+
+Base :第二，似乎美国的名义经济增长率会提高 (然而本文写作时尚未可知 )，但实际增长率是否跟随增长率提升至关重 要，因为这决定了美联储如何做出反应，从而影响美国及其以外地区的资产价格。 
+
+Ours : 其次，美国的名义增长有可能上升，尽管基础的通胀和实际增长的 混合尚未确定。这很重要，因为它将影响美国联 邦储备委员会的反应，影响美国和其他地区的资产价格。 
+
+Ref:  其次，看起来美国的名义增长很有可能会上升，尽管通胀和真实增长的决定性 组合情况尚不清楚。这很重要，因为 会影响到美联储的反应，进而影响美国和其他国家的资产价格。 
+
+Note: Merging ≠ Omission: Sentence count reduction via k -to -1 alignment can effectively enhance logical cohesion and 
+
+conciseness in different languages  (case 3a)  , distinguishing it from severe content loss where full sentences are omitted, though 
+
+local semantic loss  may still persist within the restructured output (case 3b). 
+
+4a  1-to -k (Splitting) with semantic persist  ✅
+
+Diversity, which cannot be imposed on anyone, must be demanded by society and sustained through the establishment of necessar y
+
+long -term institutions. 
+
+多元化不能强加给任何人。社会必须要求多元化，并建立起必要的长期机构来维持多元化。 
+
+4b 1-to-k (Splitting) with semantic loss  ❌️ 
+
+This new pattern - which persisted through the 1908s and 1990s, and accelerated after 2000 - caused inequality to rise sharply, weakening the foundations of globalization. 
+
+Base : 这个新的模式一直持续到 80 年代 90 年代，甚至加速了。在此期间，贫富差距急剧扩大，这削弱了全球化根基。 
+
+Ours : 这一模式——它在 20 世纪 80 年代和 90 年代持续存在， 2000 
+
+年后加速了——导致不平等急剧上升，削弱了全球化的基 础。 
+
+Ref:  这一新模式 —— 它贯穿了 20 世纪八九十年代，进入 21 
+
+世纪后更是不断加速 —— 导致了不平等性急剧升高，破坏了全 球化的基础。 
+
+Note: Splitting  ≠ Hallucination: Sentence count increase via 1 -to -k alignment can effectively enhance readability  (case 4a) ,
+
+distinguishing it from hallucinating full sentences, though  local semantic loss  may still persist  (case 4b) .
+
+5a  k-to -k’ (Swapping) with semantic persist ✅
+
+But, in my view, Trump seems to be sending a deeper message about corporate decision -making. Despite Trump’s own business 
+
+record  – which, his opponents will point out, includes multiple bankruptcies and non -payment of contractors and their workers  –
+
+it’s possible that he is now trying to change a business and investment culture that elevates  the interests of capital, corporations, 
+
+and shareholders, and treats labor as expendable. 
+
+但我的看法是，特朗普希望传递一个更深层次的信息： 
+
+资本、公司和股东的利益比工人的价值更重要。 考虑到特朗普自 
+
+己的商业记录，包括教宗破产案以及欠薪拖欠承包商和他们的工人 —— 他的政敌会争辩说，所以这是一个颠覆过去两百 
+
+年来的商业和投资思潮的时候了。 
+
+5b k-to-k’ (Swapping) with semantic loss  ❌️ 
+
+Germany stands as a significant exception to this pattern. Even before joining the Eurozone, the country was accustomed to low borrowing costs. 
+
+Base : 在进入欧元区之前，德国就习惯于低借贷成本，因此债务沉重。德国是这一模式的重要例外。 
+
+Ours : 这一模式的重要例外是德国，它在加入欧元区之前就习惯于低借贷成本。 
+
+Ref:  这一模式的重要例外是德国，德国在加入欧元区前便已习惯了低借贷成本。 
+
+Note:  Swapping  ≠ Error:  Semantic elements are redistributed across sentence boundaries . This requires treating the sequence as a 
+
+single semantic block rather than isolated units  (case 5a) ; otherwise, they may be wrongly penalized as  local omission in one 
+
+sentence and hallucination in another,  though  local semantic loss  may still persist (case 5b). Figure 3: Case study of structural alignment patterns. Green text indicates acceptable linguistic adaptations (e.g., merging for cohesion or splitting for clarity), while red text highlights genuine translation errors. These two scenarios must be carefully distinguished to avoid misjudging stylistic alignment as semantic loss. 
+
+16 Sent2Sent 256 512 768 1024 2048 2048+  
+
+> Input Length (Tokens)
+> 92 94 96 98 100
+> Sentence Translation Alignment Rate (STAR)  100% 96.69% 95.0% 93.9% 93.38% 92.87% 92.59%
+
+Figure 4: Sentence Translation Alignment Rate (STAR) across varying input context lengths from Sent2Sent to more than 2048 tokens. The results are evaluated on Zh ⇒ En translation of the News Commentary dataset using LLaMA-3.1-8B-Instruct. 
+
+τ Zh ⇒ En En ⇒ Zh 
+
+0.00 81.04 80.01 0.05 81.15 79.96 0.10 81.55 80.11 0.15 81.38 80.08 
+
+Table 9: Effect of τ on Zh ⇔ En translations. 
+
+of τ and does not require extensive hyperparameter tuning. We select τ = 0 .10 as the default for all experiments, as it yields a marginal but consistent advantage in our pilot studies. 
+
+F Data Statistics 
+
+In this section, we provide detailed statistics re-garding the bilingual parallel corpora utilized in our experiments: the News-Commentary dataset and the Guofeng dataset. The statistical summaries for these datasets are presented in Table 10 and Table 11, respectively. The News-Commentary dataset encompasses a diverse range of language pairs, including Chinese-English (ZH ⇔EN), Chinese-German (ZH ⇔DE), Russian-English (RU ⇔EN), German-English (DE ⇔EN), and Spanish-English (ES ⇔EN). The Guofeng dataset primarily focuses on pairs involving Chinese, specifically Chinese-Russian (ZH ⇔RU), Chinese-English (ZH ⇔EN), and Chinese-German (ZH ⇔DE). For each dataset and language direction, we re-port four key metrics based on document-level analysis: the quantity of documents across the training, validation, and test splits; the size of the dataset used for preference optimization; the aver-age number of tokens per document; and the maxi-
+
+Dataset #Document Train/Valid/Test #Document for StarPO Average Tokens Max Tokens 
+
+De ⇒ En 8.4K/150/150 1,008 1,797 6,540 En ⇒ De 8.4K/150/150 734 1,066 4,065 Es ⇒ En 9.7K/150/150 3,325 1,643 6,293 En ⇒ Es 9.7K/150/150 3,937 1,071 4,146 Ru ⇒ En 7.3K/150/150 1,744 1,776 7,951 En ⇒ Ru 7.3K/150/150 1,491 1,079 5,557 Zh ⇒ En 8.6K/150/150 1,253 1,377 4,425 En ⇒ Zh 8.6K/150/150 1,753 1,090 3,609 Zh ⇒ De 7.7K/150/150 2,504 1,357 5,912 De ⇒ Zh 7.7K/150/150 1,364 1,828 7,215 
+
+Table 10: Statistics of the News-Commentary dataset. 
+
+Dataset #Document Train/Valid/Test #Document for StarPO Average Tokens Max Tokens 
+
+Zh ⇒ En 22.0K/25/25 2.0K 1,853 12,961 En ⇒ Zh 22.0K/25/25 2.0K 1,624 10,956 Zh ⇒ De 6.0K/30/30 2.0K 1,927 7,962 De ⇒ Zh 6.0K/30/30 2.0K 2,392 9,909 Zh ⇒ Ru 6.0K/30/30 2.0K 1,991 6,134 Ru ⇒ Zh 6.0K/30/30 2.0K 2,470 7,514 
+
+Table 11: Statistics of the Guofeng dataset. 
+
+mum number of tokens found in a single document within the corpus. 
+
+G Implementation Details 
+
+We implement our experiments in ms-swift (Zhao et al., 2025) 17 . During fine-tuning, we adapt LoRA (Hu et al., 2021). We set LoRA rank to 8 and LoRA alpha to 16 , respectively. The models are trained for 1 epoch using AdamW optimizer with learning rate of 1 × 10 −4, warmup ratio of 0.05. We set β to 0.1. Our experiments run on one NVIDIA H100 GPU, requiring approximately 1 hour for training. Regarding evaluation efficiency, our proposed STAR metric is computationally ef-ficient, achieving a throughput of approximately 3 samples per second. During inferencing, we set temperature to 0.3, beam size to 1 in vllm 18 frame-work. The specific prompt template used in our experiments is illustrated in Figure 6. 
+
+H STAR Scores 
+
+The structural fidelity of these systems, as mea-sured by our proposed STAR score, is detailed in Tables 12 and 13. Additionally, we report the align-
+
+> 17
+
+https://github.com/modelscope/ms-swift 
+
+> 18
+
+https://github.com/vllm-project/vllm 
+
+17 ⇒ ⇐ ⇒ ⇐ ⇒ ⇐ ⇒ ⇐ ⇒ ⇐
+
+Base 90.31 96.44 87.21 93.65 92.52 94.43 95.41 95.92 78.96 93.55 82.79 89.37 97.05 98.51 93.92 96.46 90.97 96.98 94.06 95.86 90.32 95.12 + SFT 93.52 95.00 91.75 95.05 95.77 96.39 95.60 97.03 80.39 94.38 93.58 96.28 96.97 98.58 97.58 97.82 77.13 96.04 95.64 96.27 91.79 96.28 + CPO 95.00 97.05 91.72 96.62 95.99 96.90 95.52 98.76 79.83 97.93 90.41 97.42 97.30 98.91 97.65 97.88 90.64 91.87 97.50 97.82 93.16 97.12 +StarPO 95.62 98.64 93.36 98.31 96.80 97.08 95.59 98.66 80.80 98.36 
+
+97.12 
+
+97.54 97.27 98.90 
+
+98.01 
+
+98.08 90.13 92.45 
+
+97.63 
+
+98.01 94.23 97.60 Base 94.97 96.42 93.92 95.72 95.85 96.72 95.10 96.11 61.80 72.68 92.03 94.38 98.05 98.46 86.87 92.16 96.02 96.77 97.33 97.76 91.19 93.72 +SFT 95.51 96.90 92.96 98.85 94.54 96.88 94.45 96.66 88.42 92.00 93.25 97.20 97.49 98.82 95.55 98.99 81.10 95.38 96.80 97.32 93.01 96.90 +CPO 95.40 98.93 91.09 
+
+99.00 
+
+95.89 98.96 95.36 96.63 95.92 96.04 92.49 97.12 97.64 99.08 95.54 99.32 92.83 92.94 97.56 99.15 94.97 97.72 +StarPO 96.07 99.29 
+
+95.67 98.77 96.55 99.45 95.36 96.71 
+
+96.83 99.01 
+
+93.12 97.35 
+
+98.15 99.68 
+
+97.71 
+
+99.74 
+
+96.21 97.01 97.37 99.60 
+
+96.30 
+
+98.66 Base 94.67 98.73 93.41 94.02 96.33 98.08 96.45 96.81 82.66 93.10 91.01 94.79 97.69 98.08 96.92 97.12 96.12 96.21 91.38 94.95 93.66 96.19 +SFT 95.02 98.90 92.92 98.91 96.48 99.11 91.05 98.48 83.03 96.44 91.26 96.76 97.48 98.97 95.35 99.63 95.36 97.14 96.12 99.58 93.41 98.39 +CPO 95.01 98.93 93.24 98.90 96.60 
+
+100.0 
+
+95.33 
+
+98.99 
+
+92.16 96.74 92.30 97.57 97.63 99.05 97.57 97.91 92.13 96.58 97.16 
+
+99.71 
+
+94.91 98.44 +StarPO 96.07 
+
+99.13 95.65 98.99 96.55 
+
+100.0 
+
+95.36 98.62 95.85 98.45 95.85 
+
+98.92 
+
+97.88 99.35 97.58 99.70 93.80 
+
+98.89 
+
+96.45 99.62 96.10 
+
+99.17 
+
+Tower+ 93.02 94.15 94.89 95.45 93.13 95.79 95.50 96.50 94.93 96.03 93.78 96.02 96.46 98.04 96.04 98.04 
+
+96.37 
+
+98.16 95.43 97.78 94.96 96.60 GPT-4o 93.07 94.66 91.28 96.76 91.58 97.38 92.10 97.26 94.82 98.23 92.86 96.39 93.74 97.53 93.76 97.46 93.88 97.54 93.14 96.80 93.02 97.00 Deepseek-R1 93.56 94.04 
+
+96.51 
+
+97.81 
+
+97.33 
+
+97.44 
+
+97.38 
+
+97.88 96.22 96.26 94.12 98.03 90.39 92.49 93.25 97.05 93.08 97.22 97.09 97.12 94.89 96.53 
+
+System Zh ⇔ En De ⇔ En De ⇔ Zh Ru ⇔ En En ⇔ Es Avg. 
+
+LL AMA-3.1-8B-I NSTRUCT 
+
+QWEN 2.5-7B-I NSTRUCT 
+
+QWEN 3-4B-I NSTRUCT 
+
+OTHER SYSTEMS 
+
+Table 12: Performance in STAR scores on News-Commentary test set. In each cell, the top value is the Strict score and the bottom value (in gray) is the Relaxed score. 
+
+18 Prompts for LLM-judging STAR You are an expert in Bitext Alignment and Translation Quality Assessment. Please split the source and target documents into sentences, align the source sentences and target sentences and calculate the Sentence Translation Alignment Rate. - Task: Segment the texts into aligned groups/units. - Classify Units: Classify each unit into one of the following categories: - 1-to-1 (Strict Match): 1 Source sentence aligns exactly to 1 Target sentence. - 1-to-k (Split): 1 Source sentence is split into N Target sentences (k>1). - k-to-1 (Merge): k Source sentences are merged into 1 Target sentence (k>1). - k-to-k ’ (Cross/Complex): k Source sentences align to k ’ Target sentences as a block (k>1, k ’>1). - 1-to-0 (Omission): 1 Source sentence has no corresponding translation. - 0-to-1 (Hallucination): 1 Target sentence has no corresponding source sentence. - Calculation Formula: Count the number of Alignment Units (relationships), not sentences. For example, a "1-to-3" split counts as 1 unit. $$ Score = \frac{Count_{1:1}}{Count_{Total}} $$ where $Count_{Total}$ is the sum of the counts of all 6 types listed above. - Output Format: First, provide a "Reasoning Step" listing any non-1-to-1 alignments found (e.g., "Source [5] -> Target [5,6] (Split)"). Then, strictly output the metrics in JSON format: ```json {"count_1_to_1": <int>, "count_1_to_n": <int>, "count_n_to_1": <int>, "count_n_to_m": <int>, "count_1_to_0": <int>, "count_0_to_1": <int>, "total_units": <int>, "alignment_rate": <float>} ``` - Input Data: - Source Text: ``` 
+
+<src_doc> 
+
+``` - Target Text: ``` 
+
+<tgt_doc> ``` Figure 5: The prompt template used for the LLM-as-a-judge implementation of STAR. The final score is calculated strictly based on the ratio of 1-to-1 matches to total alignment units, serving as a high-precision reference for validating our automated metric. Prompts for In-one-go Document-level Translation Translate this document into <tgt_lang> without any explanations. ``` 
+
+<src_doc> ``` 
+
+Figure 6: The universal prompt template used for document-level translation. To ensure a fair compar-ison and eliminate prompt engineering variance, we apply this standardized Doc2Doc instruction across all experiments. <tgt_lang> represents the target language, and <src_doc> represents the source document, respec-tively. 
+
+ment results on the News-Commentary Zh ⇒ En dataset evaluated by Gemini-2.5-Flash using the prompt from Appendix D, as shown in Table 14. 
+
+I Detailed BLEU Scores on Guofeng Dataset 
+
+Table 15 shows detailed BLEU Scores on Guofeng Dataset. 
+
+J Details in Preference Optimization 
+
+We first highlight the practical advantages of STAR over existing model-based metrics. While employ-ing COMET as a reward function for GRPO/GSPO training is computationally expensive, it also ex-hibits training instability, with the reward loss fre-19 ⇒ ⇐ ⇒ ⇐ ⇒ ⇐
+
+Base 30.12 38.84 57.60 72.33 16.40 23.30 28.65 35.57 18.37 35.53 31.70 44.35 + SFT 70.94 80.51 61.46 83.67 42.68 78.67 60.62 69.59 78.63 80.89 50.25 62.60 + CPO 72.80 80.74 74.15 77.01 73.41 80.06 80.96 85.98 75.81 80.03 87.34 98.58 + StarPO 74.29 82.37 76.84 83.05 75.97 79.39 84.39 88.32 80.34 85.40 87.94 97.39 Base 60.30 95.83 75.01 91.61 69.90 93.56 42.02 91.93 64.10 92.94 82.58 91.63 +SFT 58.42 94.71 90.47 93.79 75.36 95.44 61.71 88.59 63.39 78.87 80.81 93.93 +CPO 71.16 97.13 89.04 94.39 72.75 90.66 75.09 93.50 81.81 88.60 81.39 93.91 +StarPO 74.64 96.91 91.48 92.93 
+
+78.07 
+
+93.79 86.23 95.70 
+
+82.21 
+
+95.06 87.47 94.25 Base 54.98 95.62 76.23 77.27 28.15 94.85 84.42 87.47 69.53 89.53 55.95 91.06 +SFT 77.63 89.92 89.55 92.07 43.49 85.10 81.99 84.73 71.58 91.98 81.56 97.63 +CPO 78.29 89.87 
+
+90.11 
+
+92.48 67.10 87.67 87.16 87.45 72.77 82.37 76.54 85.71 +StarPO 83.74 
+
+89.82 89.65 93.11 77.04 95.45 87.47 88.31 76.87 87.04 83.18 97.20 Tower+ 62.68 90.83 84.39 93.52 72.87 90.37 
+
+86.46 
+
+94.01 69.10 87.47 
+
+91.44 
+
+96.21 GPT-4o 65.09 90.06 82.74 90.04 70.31 80.81 72.73 87.23 77.58 89.84 66.88 93.29 Deepseek 64.00 89.87 66.57 82.72 69.84 90.24 64.52 93.30 67.78 92.74 62.72 90.84 
+
+System Zh ⇔ En Zh ⇔ De Zh ⇔ Ru 
+
+LL AMA-3.1-I NSTRUCT 
+
+QWEN 2.5-7B-I NSTRUCT 
+
+QWEN 3-4B-I NSTRUCT 
+
+OTHER SYSTEMS 
+
+Table 13: STAR scores on Guofeng test set. In each cell, the top value is the Strict score and the bottom value (in gray) is the Relaxed score. 
+
+Ideal Structural Deviations 1-to-1 1-to-0 0-to-1 Other 
+
+Base 92.59 2.08 1.17 4.16 +SFT 93.73 2.72 0.42 3.13 +CPO 95.42 0.33 0.75 3.50 +StarPO 95.79 1.95 0.14 2.12 Base 95.35 1.91 1.31 1.43 +SFT 96.63 0.98 1.60 0.79 +CPO 97.46 0.35 1.52 0.67 +StarPO 98.43 0.68 0.00 0.89 Base 94.72 0.72 0.33 4.23 +SFT 95.36 0.80 0.00 3.84 +CPO 98.02 0.22 0.00 1.76 +StarPO 98.09 0.64 0.00 1.27 Tower+ 94.48 2.68 0.74 2.10 GPT-4o 92.91 2.25 2.89 1.95 Deepseek-R1 95.03 4.85 0.03 0.09 
+
+System 
+
+LL AMA-3.1-8B-I NSTRUCT 
+
+QWEN -2.5-7B-I NSTRUCT 
+
+QWEN 3-4B-I NSTRUCT 
+
+OTHER SYSTEMS 
+
+Table 14: Calculating STAR scores in Chinese ⇒ En-glish language direction on News-Commentary test set by Gemini-2.5-Flash using prompts in Figure 5.                                                                                                          
+
+> ⇒⇐⇒⇐⇒⇐
+> Base 8.36 16.56 4.41 6.13 13.57 12.68 + SFT 9.41 17.45 14.83 15.55 19.78 14.09 + CPO 11.25 19.19 17.24 16.13 21.67 18.45 + StarPO 12.08 19.60 18.20 20.49 23.24 19.39 Base 18.73 18.46 14.70 18.46 14.23 9.13 +SFT 19.19 20.35 16.99 18.98 15.72 17.19 +CPO 18.96 21.54 18.65 19.37 22.05 17.01 +StarPO 19.22 22.17 21.92 20.10 23.15 18.92 Base 17.68 17.73 12.68 14.65 11.24 15.18 +SFT 18.37 17.95 14.67 13.72 14.78 16.50 +CPO 17.60 19.47 18.65 19.38 21.83 17.42 +StarPO 18.86 23.84 19.79 20.54 25.79 17.65 Tower+ 19.74 21.23 23.21 20.98 23.34 14.98 GPT-4o 17.31 29.08 16.15 27.07 25.63 27.32
+> Deepseek 18.57 19.65 14.94 21.22 20.38 16.51
+> System Zh ⇔En Zh ⇔De Zh ⇔Ru
+> LLAMA -3.1-8B-I NSTRUCT
+> QWEN 2.5-7B-I NSTRUCT
+> QWEN 3-4B-I NSTRUCT
+> OTHER SYSTEMS
+
+Table 15: Performance in BLEU on Guofeng test set. 
+
+20 Method COMET COMETKiwi 
+
+DPO 36.86 22.61 DPO ( w. SFT loss) 80.69 75.60 SimPO 70.48 70.94 ORPO 80.23 74.94 KTO 80.30 75.04 CPO (Standard) 81.10 75.24 
+
+Ours (StarPO) 81.55 77.15 
+
+Table 16: Comparison of different offline preference optimization algorithms. 
+
+quently fluctuating around zero. Furthermore, us-ing COMETKiwi as a reward signal may even lead to off-the-target language generation, where the model erroneously translates the source into an unintended language. In contrast, STAR offers a significantly more efficient and robust alternative, enabling rapid reward calculation (approx. 3 sam-ples/s) while ensuring stable convergence during preference optimization. To contextualize our method within the broader RLHF landscape, we compare STAR-Masked Pref-erence Optimization against established offline al-gorithms, including DPO (Rafailov et al., 2023), SimPO (Meng et al., 2024), KTO (Ethayarajh et al., 2024), and ORPO (Hong et al., 2024). Specifi-cally, we evaluate on the Chinese-to-English sub-set of the News-Commentary dataset. The results are presented in Table 16, indicating that vanilla DPO suffers from severe output collapse; however, adding an SFT loss allows DPO (+SFT) to match the performance of CPO. SimPO also exhibits oc-casional output collapse on specific entries. While KTO and SimPO prove to be effective, they yield slightly inferior results compared to CPO. Overall, our method demonstrates superior robustness and performance stability. 
+
+K STAR Score Distribution 
+
+To further investigate the impact of structural con-straints on preference pair construction, we visu-alize the score distributions of the standard STAR and its relaxed variant (STAR relax ) in Figure 7. As illustrated in the top panel, a vast majority of samples are clustered at the perfect score of 1.0 in the STAR (Relaxed) settings. The bottom panel of Figure 7 provides a more granular view by excluding perfect 1.0 scores. Here, the contrast becomes more evident. 0.800 0.825 0.850 0.875 0.900 0.925 0.950 0.975 1.000         
+
+> STAR Score
+> 020 40 60 80
+> Percentage (%)
+> STAR Distribution (Include 1.0) Range: [0.8, 1.0]
+> STAR(Original) STAR(Relax)
+> 0.800 0.825 0.850 0.875 0.900 0.925 0.950 0.975 1.000
+> STAR Score
+> 0246810 12 14 16
+> Percentage (%)
+> STAR Distribution (Exclude 1.0) Range: [0.8, 1.0) relative to Total Count
+> STAR(Original) STAR(Relax)
+
+Figure 7: Histograms of metric scores for STAR (Orig-inal) and STAR (Relaxed). The top plot displays the full distribution including perfect matches (score=100 
+
+%) The bottom plot zooms in by excluding perfect matches, highlighting that STAR (Original) maintains a dense distribution of high-quality candidates, whereas STAR (Relaxed) has sparse coverage in the near-perfect region. 0.00 0.05 0.10 0.15 0.20 
+
+> Unmasked Token Ratio
+> 0246810
+> Density Unmasked Ratio
+
+Figure 8: Frequency distribution of unmasked tokens. To provide a clear view of the token preservation statis-tics, the distribution is normalized 
+
+21 L Masked Token Distribution 
+
+Figure 8 illustrates the probability density distribu-tion of the unmasked token ratio. 
+
+M Theoretical Justification and In-Depth Analysis of Masking Strategies 
+
+Below, we provide a theoretical justification for the experimental observations above. We analyze how the masking mechanism affects the reward margins, the loss magnitude, and the gradient flow, specifically how it prevents the vanishing gradient problem often encountered in preference optimiza-tion. 
+
+1. Margin Scaling via Masking Let the standard log-likelihood margin between the preferred target 
+
+yw and the dis-preferred target yl be denoted as 
+
+∆full :
+
+∆full (x, y w, y l) = log πθ(yw|x) − log πθ(yl|x).
+
+(7) In the STAR-Masked objective, the likelihood is computed over a subset of sentences where the mask M(tj ) = 1 . Let Smask ⊂ { 1, . . . , n } be the set of indices for sentences retained by the mask. The masked margin ∆STAR is: 
+
+∆STAR (x, y w, y l) = log πSTAR (yw|x)
+
+− log πSTAR (yl|x). (8) Since log πSTAR aggregates log-probabilities over a subset of tokens relative to the full docu-ment, the masked margin can be viewed as a scaled version of the full margin. Assuming the preference signal is distributed across the document, removing a portion of tokens (via M) reduces the accumu-lated difference between yw and yl. Specifically, if the mask retains a ratio ρ ∈ (0 , 1) of the effective information: 
+
+|∆STAR | ≈ ρ · | ∆full | < |∆full |. (9) This derivation aligns with the empirical observa-tion that reward margins decrease after introducing the mask, as shown in Figure 9. 
+
+2. Impact on Initial Loss Magnitude The pref-erence loss component in CPO is defined as: 
+
+L(∆) = − log σ(β · ∆) , (10) where ∆ is the margin. The function f (z) =
+
+− log σ(z) is strictly monotonically decreasing. Assuming the model has a basic capability to distin-guish yw from yl (i.e., ∆ > 0), the reduced margin caused by masking implies: 
+
+0 < β ∆STAR < β ∆full . (11) Due to the monotonicity of the loss function: 
+
+− log σ(β∆STAR ) > − log σ(β∆full ). (12) Thus, LSTAR-CPO > LCPO at the early stages of training. This theoretically confirms why the ini-tial loss is higher and decays more slowly: the model perceives the "distance" between candidates as smaller, interpreting the optimization task as more difficult. 
+
+3. Gradient Saturation and Sustained Learning 
+
+The efficacy of the optimization depends on the magnitude of the gradients. The gradient of the loss with respect to the model parameters θ is: 
+
+∇θL = ∂L
+
+∂∆ · ∇ θ∆. (13) We focus on the scalar coefficient ∂L 
+
+> ∂∆
+
+, which mod-ulates the strength of the update. For the CPO loss: 
+
+∂L
+
+∂∆ = ∂∂∆
+
+  − log σ(β∆)  = −β ·  1 − σ(β∆) .
+
+(14) We compare the gradient coefficients in two scenar-ios: 
+
+Scenario A: Full Objective (Standard CPO). 
+
+If the model easily distinguishes yw from yl us-ing simple patterns (e.g., trivial lexical differences in unmasked regions), ∆full becomes large. As 
+
+β∆full → ∞ , σ(β∆full ) → 1. Consequently, the gradient coefficient approaches zero: 
+
+|∇L CPO | ∝ | 1 − σ(β∆full )| ≈ 0. (15) This leads to gradient saturation, where the model stops learning effectively even if structural errors persist. 
+
+Scenario B: Masked Objective (StarPO). By masking out easy-to-align sentences (or random segments), we force ∆STAR to be smaller. The value of σ(β∆STAR ) stays further from 1 (closer to the linear regime of the sigmoid function). 
+
+|1 − σ(β∆STAR )| > |1 − σ(β∆full )|. (16) Therefore, the masking mechanism acts as a reg-ularizer that prevents the model from achieving 22 Figure 9: Analysis of training margins. The left panel compares the margins of Ours, DPO with SFT loss, standard DPO loss, and standard CPO loss. The right panel provides a zoomed-in view focusing on the comparison between standard CPO loss and Ours (indicated as “CPO Loss with Mask” in the legend). 
+
+a trivial margin on the training data. By artifi-cially reducing the margin ( ∆STAR ), the objective ensures that the gradient magnitude remains signifi-cant throughout the training process. This explains why, despite a slower decrease in loss, the model performs better in later steps: it avoids early satu-ration and continues to optimize the policy on the complex, structurally critical segments represented by the unmasked tokens. 23

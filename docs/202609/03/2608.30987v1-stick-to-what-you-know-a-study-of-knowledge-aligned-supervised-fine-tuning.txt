@@ -1,0 +1,949 @@
+Title: Stick to What You Know: A Study of Knowledge-Aligned Supervised Fine-Tuning
+
+URL Source: https://arxiv.org/pdf/2608.30987v1
+
+Published Time: Tue, 01 Sep 2026 03:11:34 GMT
+
+Number of Pages: 37
+
+Markdown Content:
+# Stick to What You Know: A Study of Knowledge-Aligned Supervised Fine-Tuning 
+
+Arthur Becker *,1,2 Jakob Kemmler *,1 David Thulke ‡,1,3 
+
+Christine Schäfer 1 Christian Dugast 1 Hermann Ney 1,3 
+
+> 1
+
+AppTek GmbH, Aachen, Germany 
+
+> 2
+
+F-Bureaucracy UG, Aachen, Germany 
+
+> 3
+
+Machine Learning and Human Language Technology, RWTH Aachen University, Germany 
+
+Abstract 
+
+Supervised fine-tuning (SFT) trains a base lan-guage model to imitate target responses, and these targets may require knowledge the base model has not robustly internalized. We study this as a source of hallucinations and frame a group of mitigation methods as knowledge-aligned SFT : constraining SFT training tar-gets to the base model’s parametric knowl-edge. Under a unified setup, we compare ex-isting generation-based and estimation-based knowledge-alignment methods and introduce two new variants: Evidence Rewrite , which ver-ifies base-model generations using external evi-dence, and Recall Rewrite , which retains claims only when they can be consistently recalled by the base model. Experiments with Qwen 3 4B and OLMo 3 7B show that knowledge-aligned SFT can reduce factual hallucinations on Wild-Halu and Biography while largely preserving general capabilities. Recall Rewrite yields the strongest factuality gains and improves refusal behavior on UnknownBench. It thereby con-firms that SFT targets beyond the base model’s knowledge drive hallucination behavior. 
+
+1 Introduction 
+
+Large language models (LLMs) often generate fluent answers that contain unsupported or false claims, a failure mode commonly referred to as hallucination. We focus on factuality hallucina-tions : generated claims that contradict real-world facts (Huang et al., 2025b). This is especially prob-lematic for instruction-following models, where users frequently rely on detailed answers in do-mains where errors are difficult to detect. Supervised fine-tuning (SFT) is a central step for turning a pre-trained base model into an instruction-following model (Ouyang et al., 2022). Instruction tuning exposes models to broad task mixtures to        
+
+> *Equal contribution.
+> ‡Corresponding author: dthulke@apptek.com
+> Standard SFT
+> K(Mbase )K(D)
+> SFT
+> G(MSFT )W
+> Knowledge-Aligned SFT
+> K(Mbase )K(D∗)
+> SFT
+> G(MSFT )W
+> Hallucination Zone
+
+Figure 1: Left: comparing the dataset knowledge K(D)
+
+used for SFT with the base model’s parametric knowl-edge K(Mbase ); Right: the resulting generation space 
+
+G(MSFT ) relative to world knowledge W. The hatched area marks the hallucination zone : generations out-side W. Top: Standard SFT on D includes claims beyond K(Mbase ), encouraging generation beyond what the model knows. Bottom: Knowledge-aligned SFT constructs D∗ within K(Mbase ), reducing the part of 
+
+G(MSFT ) outside W.
+
+improve instruction following and generalization to new tasks and domains (Wei et al., 2022; Longpre et al., 2023). However, factual SFT examples pro-vide two intertwined signals: they teach the model 
+
+how to answer, while also requiring it to produce factual claims. If these claims are not robustly in-ternalized during pre-training, models are pushed to produce plausible claims beyond their paramet-ric knowledge. Prior work established that this is a driver of hallucinations in SFT (Gekhman et al., 2024; Lin et al., 2024; Wu et al., 2025; Kaplan et al., 2026). More broadly, SFT is a poor vehicle for injecting new knowledge, because learning new factual associations reliably requires extensive ev-idence (Kandpal et al., 2023) and the SFT stage is comparatively small (Guo et al., 2025; Team 1arXiv:2608.30987v1 [cs.CL] 31 Aug 2026 OLMo, 2025). Retrieval augmentation or contin-ued pre-training are better suited for this purpose (Ovadia et al., 2024; Xu et al., 2023). Additionally, SFT strongly shapes the model’s response behavior: it teaches when to answer, how much detail to provide, and how confidently to present claims. If supervision targets require knowledge outside the base model’s parameters, SFT rewards valid-looking answers under uncer-tainty rather than respect for the model’s knowl-edge boundary. This encourages guessing rather than refusing, echoing the argument that common training and evaluation setups reward answers un-der uncertainty while penalizing expressions of un-certainty (Kalai et al., 2025). We study this problem through the lens of knowl-edge alignment : matching SFT targets to the fac-tual knowledge already available in the base model. Knowledge-aligned SFT therefore aims to preserve SFT’s behavioral benefits while reducing the incen-tive to guess beyond the base model’s knowledge. Figure 1 summarizes our framing. Standard SFT may require the model to imitate responses contain-ing facts it does not know, which expands the space of plausible-looking but unsupported generations. Knowledge-aligned SFT instead constrains factual supervision to what the base model can support. In this work, we provide a controlled compar-ison of knowledge-aligned SFT methods under a unified framework. We compare generation-based alignment, represented by FLAME (Lin et al., 2024), with estimation-based alignment, rep-resented by uncertainty-aware filtering UNIT cut 
+
+(Wu et al., 2025), and introduce two variants: Ev-idence Rewrite , which filters base-model genera-tions through external claim verification, and Re-call Rewrite , which probes whether claims can be consistently recalled by the base model. Across fac-tuality, refusal, and general capability evaluations, knowledge-aligned supervision reduces measured hallucinations while preserving broad model capa-bilities. Our contribution is to operationalize this premise on real instruction-tuning data. We clas-sify each individual claim of a training response as known or unknown to the base model and intervene on the SFT targets accordingly. In Section 4.4 we additionally reproduce the causal effect within our pipeline by varying only the share of known claims in otherwise identical training data. We release the Recall Rewrite training data for both base mod-els together with all intermediate pipeline outputs (Section 4.1, Footnote 3). 
+
+2 Framework 
+
+We now formalize knowledge-aligned SFT. Let W
+
+denote real-world knowledge, and let K(Mbase ) de-note the parametric knowledge of a base model 
+
+Mbase . This knowledge is inherently incomplete: it reflects what the model encountered and robustly internalized during pre-training, not the totality of 
+
+W. Following Figure 1, let G(M ) denote the set of factual claims a model may generate after instruc-tion tuning. We define the hallucination zone as 
+
+G(M ) \ W , i.e., generations that fall outside real-world knowledge. Our goal is not to make SFT inject new factual knowledge, but to reduce the pressure for MSFT to generate claims unsupported by Mbase , thereby shrinking the hallucination zone. Let D = {(P, R )} be an SFT dataset of prompt-response pairs. We decompose each response 
+
+R into a set of atomic claims C(R | P ) =
+
+{c1, . . . , c N }, restricting to claims that are (i) fac-tual, procedural, or structural, and (ii) not already provided in P , i.e., claims the model must supply from its own parametric knowledge. Importantly, this decomposition includes meta-knowledge that is implicit but necessary for constructing R under 
+
+P . For instance, to "Write a haiku about..." , one requires knowledge of the form’s three-line struc-ture and syllabic constraints. We write K(D) = S 
+
+> (P,R )∈D
+
+C(R | P ) for the knowledge contained in the dataset under this claim decomposition. We say a claim c is known to Mbase if c ∈ K (Mbase )
+
+and unknown otherwise. Section A collects this and the related terminology used throughout the paper. A training example is knowledge-aligned iff all its claims are known. The objective is therefore to construct D∗ such that C(R∗ | P ) ⊆ K (Mbase )
+
+for all (P, R ∗) ∈ D ∗. Knowledge-aligned SFT is any procedure that constructs such a D∗ from D
+
+and fine-tunes Mbase on it. It addresses one spe-cific subset of the broader SFT alignment problem: the factual knowledge that supervision requires, rather than mismatches in style, skills, or out-of-distribution behavior. Since K(Mbase ) is latent, it must be approxi-mated. Each method therefore comes with its own way of classifying claims as known or unknown. We distinguish two strategies. 
+
+Knowledge Alignment via Generation. One ap-proach constructs supervision from the model’s own outputs: a response ˆR ∼ Mbase replaces the gold target R, on the assumption that self-generated content is implicitly constrained to K(Mbase ). This 2assumption is imperfect in two ways. Mbase may hallucinate, so ˆR can contain claims that are not knowledge-aligned. And K(Mbase ) may contain false beliefs, so even knowledge-aligned claims in 
+
+ˆR can be factually wrong. 
+
+Knowledge Alignment via Estimation. An al-ternative approach estimates, for each claim c ∈C(R | P ), whether it lies within K(Mbase ), and removes or modifies those that do not. In practice, this relies on heuristic proxy signals such as model confidence (Wu et al., 2025). 
+
+3 Methods 
+
+We instantiate both alignment strategies from Sec-tion 2 with concrete methods and propose improved variants. 
+
+3.1 Existing Work 
+
+We provide a short overview of existing methods. Further details are provided in Section C. 
+
+Alignment via Generation (FLAME). Lin et al. (2024) present FLAME , which replaces gold re-sponses R with outputs ˆR ∼ Mbase , implicitly assuming self-generated content is constrained to 
+
+K(Mbase ). For prompts that are not knowledge-seeking , i.e., that can be answered without fac-tual knowledge (e.g., summarization), the gold re-sponse is retained. Under our framework, FLAME implicitly classifies every self-generated claim in 
+
+C( ˆR | P ) as known. ˆR may contain factually incor-rect claims, and training on these may reinforce rather than reduce hallucination behavior. Fur-thermore, as ˆR replaces R entirely, claims within 
+
+K(Mbase ) that are present in R but not generated are lost. 
+
+Alignment via Estimation (UNIT cut ). Wu et al. (2025) suggest UNIT cut , which filters atomic claims from each response R based on their claim-conditioned probability (CCP): the likelihood the model assigns to a claim given its context. UNIT cut 
+
+thus classifies a claim c ∈ C (R | P ) as known iff its CCP exceeds a threshold, and R∗ retains only these claims. While computationally efficient, CCP is a token-level signal sensitive to phrasing and posi-tion, and confidence-based truthfulness estimation has been found to underperform reference-based verification (Tian et al., 2023).                   
+
+> Prompt P?
+> FLAME response ˆR!
+> knowledge-seeking
+> sample from Mbase
+> Claim c1
+> Claim c2
+> Rewritten response R∗
+> !
+> fact checking D
+> filtering out unsupported summarizing with Mrewriter
+> Gold response R!
+> non -knowledge-seeking
+> Response ˆR
+> ... Claim c1Claim cn
+> ... Evidence e1,1Evidence e1,5
+> Mverifier
+> decompose retrieve from Wiki
+> Mverifier decides whether the claim is supported or unsupported.
+> DFact Checking (expanded)
+
+Figure 2: Evidence Rewrite. For knowledge-seeking prompts, a base-model response ˆR is decomposed, ver-ified against retrieved evidence, filtered to supported claims, and rewritten as R∗.
+
+3.2 Proposed Methods 
+
+Both proposed methods, as well as the two baselines above, are instances of a single data-construction procedure that differs only in the source response and in how claims are classified as known. We make this common structure explicit in Section B. 
+
+3.2.1 Evidence Rewrite 
+
+Evidence Rewrite (Figure 2) refines the generation-based alignment strategy of FLAME by adding an external verification step. FLAME treats every self-generated claim as known even though it may be factually incorrect, so we filter out claims that are not supported by external evidence. As in FLAME, prompts that are not knowledge-seeking keep their gold response. For each knowledge-seeking prompt P , we sample a long-form response ˆR ∼ Mbase . We apply a standard fact-checking pipeline (claim decomposition, ev-idence retrieval, and verification; Section D) to classify each claim in ˆR as supported or unsup-ported. We then use a rewriter model Mrewriter , con-ditioned on the prompt and the supported claims, to compose a fluent aligned response R∗. Under our framework, Evidence Rewrite thus classifies a claim as known iff it is self-generated and veri-fied as supported. If the supported claims provide insufficient information to address P , the prompt 3Gold response R!                         
+
+> Claim cn
+> Claim cn
+> Claim cn
+> Rewritten response R∗
+> !
+> Claim cn
+> ... Question qn, 1Question qn,J
+> ... Answer yn, 1,1Answer yn, 1,K
+> ... entails contradicts generate sample Mbase
+> A question is entailing (contradicting ) if at least ke(kc) of its answers entail (contra-dict) cn.
+> cnis known iff at least jequestions are entailing and at most jcare contradicting (Equation (1)); otherwise it is unknown.
+> DKnowledge Probing (expanded) decomposition knowledge-dependent: probe non-knowledge-dependent
+> D
+> filtering out unknown summarizing with Mrewriter
+
+Figure 3: Recall Rewrite. Each knowledge-dependent claim of the gold response R is probed with generated questions, answers sampled from Mbase , and an entail-ment check of each answer against the claim. Claims classified as unknown are filtered out. The remaining content is rewritten as R∗.
+
+instructs Mrewriter to refuse to respond instead. To mitigate response shortening caused by claim filter-ing, we introduce an additional brainstorming step before fact-checking that instructs the base model to generate a longer, more detailed response given an initial short generation (see Figure 11). 
+
+3.2.2 Recall Rewrite 
+
+Recall Rewrite , our primary contribution (Figure 3), approximates K(Mbase ) without external evidence: it probes whether the base model can consistently recall each claim and treats such claims as known. In contrast to UNIT, which relies on token-level confidence scores, we estimate knowledge through probing questions. Our method adapts QA-based factual consistency ideas (Honovich et al., 2021; Manakul et al., 2023) to closed-book, claim-level probing of the base model’s parametric knowledge. Given a prompt P and its gold response R,we partition C(R | P ) into knowledge-dependent 
+
+claims, which encode verifiable factual, proce-dural, or structural information (including meta-knowledge), and non-knowledge-dependent claims, which are purely contextual, subjective, or rely on general reasoning. The latter require no paramet-ric knowledge and are therefore always considered known and preserved. For each knowledge-dependent claim cn, an aux-iliary teacher model generates J diverse, context-independent probing questions {qn,j }Jj=1 (Fig-ure 13). For each question, we sample K answers 
+
+{yn,j,k }Kk=1 from Mbase . Only these answers come from Mbase . Question generation, the entailment judgment below, and the final rewriting are per-formed by the teacher model (Table 6; instantiated in Section 4.1). Then, for each question–answer pair we evaluate whether yn,j,k entails, contradicts, or is unrelated to the original claim cn (Figure 16). Let en,j and dn,j 
+
+denote how many of the K answers to question 
+
+qn,j entail, respectively contradict, cn. A question inherits the label that enough of its answers carry: we call it entailing if it yields at least ke entailing answers ( en,j ≥ ke) and contradicting if it yields at least kc contradicting answers ( dn,j ≥ kc). A knowledge-dependent claim cn is consistently re-called by Mbase iff (i) { j : en,j ≥ ke }
+
+| {z }
+
+> entailing questions
+
+≥ je and (ii) { j : dn,j ≥ kc }
+
+| {z }
+
+> contradicting questions
+
+≤ jc. (1) Condition (i) requires the claim to be recovered from several independently phrased questions, guarding against probes that leak the answer. Con-dition (ii) tolerates a small number of contradic-tions, which typically stem from underspecified probes (Section F). Recall Rewrite classifies cn as 
+
+known iff it is consistently recalled and as unknown 
+
+otherwise. Finally, a rewriter model Mrewriter produces the rewritten response R∗ by removing any content that entails or implies a claim classified as un-known . The rewriter preserves the structure, style, and non-knowledge-dependent claims of the orig-inal response. As in Evidence Rewrite, Mrewriter 
+
+may return a refusal if the remaining information is insufficient. 
+
+4 Experiments 
+
+4.1 Experimental Settings Training Details. We utilize Qwen3-4B-Base 
+
+(Yang et al., 2025) as the base model Mbase . Fol-lowing Lin et al. (2024), we use the English sub-set of Open Assistant 1 (OASST1) (Köpf et al., 2023) as the SFT dataset, which consists of crowd-sourced multi-turn conversation trees. We follow the standard approach of using the first turn in each 4WildHalu Bios Approach Dataset #Ref. #Supp. %Supp. FActScore #Ref. #Supp. %Supp. FActScore Qwen 3 Instruct - 85 8,722 85.9 87.1 243 6,100 60.5 79.3 Standard SFT Tülu 3 1 6,452 79.1 77.2 1 2,689 34.4 33.3 Standard SFT OASST1 2 8,059 76.6 74.4 ∗∗∗ 4 5,061 36.0 34.1 ∗∗∗                                              
+
+> FLAME OASST1 67,882 73.0 74.4 ∗∗∗ 65,066 34.0 33.4 ∗∗∗
+> UNIT cut OASST1 08,111 81.2 79.4 ∗35,043 45.1 43.1 ∗∗∗
+> Evidence Rewrite (ours) OASST1 17,842 80.1 78.3 63,663 42.3 39.9
+> - w/o brainstorming OASST1 46,344 79.2 76.8 14 2,453 37.8 36.7 Recall Rewrite (ours) OASST1 55 6,157 84.2 84.1 252 2,561 56.2 76.4
+
+Table 1: Factuality results for all SFT approaches using Qwen 3 4B. The top block shows the fully post-trained instruct model from Alibaba 1 and a large-data SFT baseline (Tülu 3); the bottom block compares knowledge-aligned methods on OASST1. #Ref.: number of refusals; #Supp.: number of claims in non-refusal responses judged supported; %Supp.: percentage of claims in non-refusal responses that are supported; FActScore: mean per-example supported-claim ratio, treating refusals as fully supported. Significance markers ( ∗∗∗ p < 0.001 , ∗ p < 0.05 )indicate Wilcoxon signed-rank tests against Recall Rewrite 2. Best results of models on OASST1 are bolded ; second best are underlined. 
+
+conversation tree, resulting in 3,468 data points. All models are trained using SFT implemented via the TRL library (von Werra et al., 2020), maintain-ing consistent hyperparameters across all variants (see Section E). Specifically, we train standard SFT, FLAME, UNIT cut , Evidence Rewrite, and Recall Rewrite models. Additional baseline implementa-tion details are provided in Section C. 
+
+Evidence Rewrite Model. We apply the Ev-idence Rewrite pipeline from Section 3.2.1 to OASST1 using gpt-4o-mini (OpenAI, 2024) for all pipeline steps. The fact-checking pipeline com-prises three components: VeriScore claim decom-position (Song et al., 2024), a hierarchical evidence retrieval step (Section D), and FActScore claim ver-ification (Min et al., 2023). We use VeriScore rather than FActScore decomposition because FActScore frequently produces unverifiable claims on open-domain instruction-following data, such as claims with unresolved pronouns or meta-commentary about the response itself, consistent with obser-vations by Song et al. (2024). Evidence is retrieved from Wikipedia. The final rewriting step is per-formed by gpt-4o-mini (Figure 2). 
+
+Recall Rewrite Model. We apply the Recall Rewrite pipeline from Section 3.2.2 to OASST1 using gpt-5-mini for all stages (claim decomposi-tion, question generation, entailment check and re-sponse rewriting). For each knowledge-dependent claim, we generate five probing questions ( J=5 ) 
+
+> 1Qwen/Qwen3-4B-Instruct-2507
+> 2Differences between Recall Rewrite and Qwen 3 Instruct were not statistically significant ( p > 0.05 ) on either dataset.
+
+and sample two responses per question ( K=2 )from Mbase at temperature 0.5 using a few-shot QA prompt (Figure 17). As the default filter in Equation (1) we use je=2 , k e=1 , j c=2 , k c=1 , ab-breviated as je/k e/j c/k c = 2 /1/2/1. A claim is thus known iff at least two questions receive an entailing answer and at most two questions re-ceive any contradicting answer. Statistics for the application of the pipeline are reported in Table 9. Under the default filter, 79.4% ( Qwen3-4B-Base )of the knowledge-dependent claims are classified as known and retained, so that together with the non-knowledge-dependent claims 87–88% of all claims survive the rewrite. API costs are listed in Table 10. We release the resulting knowledge-aligned training data for both base models together with all intermediate pipeline outputs, i.e. the de-composed claims, probing questions, base-model answers and entailment labels 3.
+
+Factuality Evaluation. We follow the evalua-tion framework of Wu et al. (2025), which com-bines two long-form factual generation bench-marks: WildHalu (Zhao et al., 2024) and Biogra-phy generation (Bios) (Min et al., 2023). WildHalu evaluates responses about 500 real-world entities, about half of which lack Wikipedia pages, span-ning domains such as computing, finance, culture, and geography. Verification uses evidence retrieved from Google Search. Biography asks models to an-swer “Question: Tell me a bio of X” for 500 people with Wikipedia pages, using the linked Wikipedia page as the sole evidence source in the retrieval 
+
+> 3https://huggingface.co/datasets/apptek-com/ recall-rewrite-oasst1
+
+5phase. Responses are fact-checked by decomposing them into atomic claims, retrieving evidence, and verifying entailment as described in detail in Sec-tion D. Following Wu et al. (2025), we use gpt-4 
+
+for claim decomposition and gpt-4o-mini for claim verification. We report #Supp. , the num-ber of supported claims in non-refusal responses; 
+
+%Supp. , the percentage of claims in non-refusal responses that are supported; and FActScore , the per-example percentage of supported claims with refusals treated as fully supported. Claims the veri-fier labels as Not known are excluded from all three metrics (Section D). 
+
+4.2 Main Results 
+
+Table 1 summarizes the performance of all methods on the WildHalu and Biography tasks. Across both datasets, all knowledge-aligned variants (except FLAME) consistently outperform standard SFT in terms of %Supp. and FActScore, indicating re-duced hallucinations. This is consistent with the premise that aligning supervision with the model’s parametric knowledge reduces hallucinations, and Section 4.4 tests it directly. Recall Rewrite achieves the highest %Supp. and FActScore on both datasets, but at the cost of fewer supported claims (#Supp.) and substantially in-creased refusal rates. In contrast, UNIT cut and Evidence Rewrite retain more supported claims but achieve lower %Supp., reflecting a consistent trade-off between hallucination reduction and coverage: stricter filtering yields more reliable but less infor-mative outputs. Refusal behavior is central to this trade-off because FActScore treats refusals as fully supported. Methods with higher FActScore, partic-ularly Recall Rewrite and Qwen 3 Instruct, exhibit higher refusal rates, especially on the Biography task, which contains many long-tail facts. A per-entity comparison (Section I.2) shows that these re-fusals almost exclusively concern entities on which standard SFT hallucinates, while over-refusals on well-known entities do occur on WildHalu. Recall Rewrite’s higher FActScore should therefore not be interpreted as improved factual generation at equal coverage. It instead reflects a more conservative response policy: the fraction of supported claims among non-refusal responses rises, while the total number of supported claims falls. Comparing generation- and estimation-based ap-proaches, FLAME does not improve over standard SFT, suggesting that naive generation is an unre-liable proxy for parametric knowledge. Adding filtering or verification (Evidence Rewrite) con-sistently improves over FLAME. Similarly, while UNIT cut outperforms generation-based methods, Recall Rewrite achieves higher measured factuality, suggesting a more reliable but more conservative knowledge-alignment strategy. The official Qwen 3 Instruct model remains stronger than all OASST1-trained variants. This comparison is not controlled: the official model differs in instruction data scale and composition, post-training stages, and possible benchmark con-tamination. Our goal is therefore not to outperform the complete post-training recipe of Qwen 3 In-struct, but to isolate whether knowledge-aligned SFT data improves factuality under a shared train-ing setup. The Tülu 3 SFT (Lambert et al., 2025) baseline suggests that simply increasing SFT data scale does not remove the problem. 
+
+4.3 Multi-Stage Post-Training 
+
+For Qwen 3 Instruct the data mixture and inter-mediate checkpoints after SFT are not available. To better understand the potential impact of dif-ferent training stages, we turn to OLMo 3 Instruct (Team OLMo, 2025), for which public checkpoints after SFT, preference optimization (DPO) and rein-forcement learning with verifiable rewards (RLVR) are available. Table 2 shows the results for differ-ent post-training checkpoints of the 7B parameter model. Compared to SFT, the DPO checkpoint in-creases the number of supported claims (#Supp.) while also increasing refusals. The RLVR check-point further improves %Supp. and FActScore. These trends suggest that additional training stages can improve factual reliability. For comparison, we train a standard SFT and Recall Rewrite model on OASST1 starting from the OLMo 3 7B base model. Although Recall Rewrite relies solely on SFT with knowledge-aligned data, it consistently achieves higher %Supp. and FActScore on WildHalu than all OLMo check-points, while maintaining a comparable number of supported claims. Taken together, these results suggest that, in our setup, knowledge-aligned data construction can achieve gains comparable to ad-ditional post-training stages; whether these gains stack with factuality-oriented RL remains open. 
+
+4.4 Varying the Share of Known Claims 
+
+To test whether more knowledge-aligned training targets indeed improve factuality, we vary only the 6WildHalu Bios Model Data #Ref. #Supp. %Supp. FActScore #Ref. #Supp. %Supp. FActScore SFT Dolci 7 6,939 77.9 75.6 9 4,638 30.7 34.7 DPO Dolci 25 7,566 76.6 76.5 200 5,230 45.7 66.3 RLVR Dolci 29 7,235 78.5 78.4 229 4,860 51.8 72.4                   
+
+> SFT (ours) OASST1 67,830 77.9 75.8 35,347 37.3 35.2 RR (ours) OASST1 40 6,730 82.7 82.5 120 3,730 47.3 56.6
+
+Table 2: Results on WildHalu and Biography for OLMo 3 Instruct across post-training stages compared to our variants trained on OASST1. The top block shows official checkpoints trained on Dolci; the bottom block shows our reproduced SFT baseline and Recall Rewrite (RR). Best results per column are bolded ; second best are underlined.                                       
+
+> Train (OASST1) WildHalu Bios %Known Avg.Cl. #Ref. #Supp. %Supp. FActScore #Ref. #Supp. %Supp. FActScore 100 16.5 97 5,418 84.7 86.1 214 2,679 51.8 69.9
+> 50 13.8 45 5,806 78.7 80.4 13 4,268 39.5 38.7 012.6 22 4,458 79.0 79.5 43,680 39.1 38.4
+
+Table 3: Effect of the share of known claims in the Recall Rewrite training targets on factuality (Qwen 3 4B). %Known is the percentage of known claims among the retained knowledge-dependent claims (not the filter share of Table 11); the number of non-refusal (1,777) and refusal (302) training examples is identical in all rows. Avg.Cl. reports claims per response in training. Evaluation columns as in Table 1. Best results per column are bold .
+
+proportion of knowledge-dependent claims classi-fied as known in the targets (%Known), keeping the prompts, the number of non-refusal (1,777) and re-fusal (302) examples, and all training settings fixed. Non-knowledge-dependent claims are always re-tained (Section 3.2.2). Among the knowledge-dependent claims of each response, we retain the largest randomly sampled subset that matches the target ratio of known to unknown claims. At 100%, only known knowledge-dependent claims are re-tained, at 50% equally many known and unknown claims, and at 0% only unknown claims. Table 3 shows that increasing %Known improves %Supp. and FActScore, with the 100% setting achieving the strongest reduction in hallucinations. However, this comes at the cost of fewer supported claims (#Supp.) and increased refusal rates. The 50% setting retains more supported claims but yields lower %Supp. and FActScore. These trends mirror the main results in Table 1 and highlight a consistent trade-off: stricter knowledge align-ment reduces hallucinations but limits informative-ness. Figure 5 (Section F) visualizes this coverage– factuality trade-off for all models, including the filter-threshold ablation. The one factor we do not control is the number of retained claims per re-sponse (Avg.Cl.), which is lower at 0% because unknown claims are rarer than known ones. 
+
+4.5 Refusal Behavior 
+
+Evaluating refusal behavior provides a complemen-tary perspective on hallucinations: a model should ideally refuse unanswerable questions while re-sponding to those within its knowledge boundary. To evaluate this dimension, we use UnknownBench 
+
+(Liu et al., 2024), which comprises three subtasks. Each subtask pairs answerable with unanswerable prompts, and the subtasks differ in how the unan-swerable questions are constructed. FalseQA con-sists of 4,730 questions where the unanswerable instances assume non-existent relations between entities, i.e., they are based on false premises. NEC 
+
+(Non-Existing Concepts) contains 4,144 instances and challenges the model to identify plausible but fabricated concepts based on invented words. The unanswerable prompts for RefuNQ (4,346 instances total) are created by replacing random nouns with non-existent concepts. To ensure a balanced evalu-ation, we randomly downsampled instances from each subtask so that the classes of answerable and unanswerable questions are equal in size. Table 4 presents the results on UnknownBench. Recall Rewrite, which refuses most frequently in the factuality evaluation (Section 4.2), achieves substantially higher recall across all subtasks, in-dicating that it refuses more reliably when a ques-tion is unanswerable. Conversely, Recall Rewrite exhibits the lowest precision, reflecting a higher 7FalseQA NEC RefuNQ Model A P R F A P R F A P R FStandard SFT 72.6 83.1 56.6 67.4 66.1 79.0 43.9 56.4 63.3 67.7 50.7 58.0 FLAME 71.8 82.4 55.5 66.4 65.6 77.7 43.9 56.1 63.9 67.8 53.1 59.5 UNIT cut 71.1 77.8 59.1 67.2 61.7 72.5 37.7 49.7 64.8 65.9 61.7 63.7 Evidence Rewrite (ours) 72.0 83.5 54.8 66.2 63.5 76.4 39.1 51.8 62.6 67.2 49.3 56.9                         
+
+> - w/o brainstorming 73.0 82.8 58.1 68.3 67.0 75.0 50.9 60.6 65.8 68.1 59.6 63.6 Recall Rewrite (ours) 70.8 74.0 64.1 68.7 69.9 71.4 66.3 68.8 65.9 62.6 79.1 69.9
+
+Table 4: Results on UnknownBench . All scores are percentages. A = Accuracy, P = Precision, R = Recall, F = F1 score. P is the share of refusals that occur on unanswerable prompts, and R is the share of unanswerable prompts that are refused. The highest value in each column is highlighted in bold .                                                      
+
+> Approach Dataset Avg. HumanEval+ GSM8K IFEval TruthfulQA Qwen 3 Instruct -80.7 87.8 90.8 86.0 58.2 Standard SFT Tülu 3 SFT 74.2 89.3 80.7 71.7 54.9 Standard SFT OASST1 69.8 83.8 83.6 57.5 54.4 FLAME OASST1 69.4 87.8 81.3 54.3 54.2 UNIT cut OASST1 68.5 83.0 81.6 56.6 52.6 Evidence Rewrite (ours) OASST1 68.2 85.6 82.6 52.3 52.2
+> - w/o brainstorming OASST1 67.7 85.9 78.2 53.4 53.1 Recall Rewrite (ours) OASST1 68.9 84.3 81.3 54.3 55.5
+
+Table 5: Comparison of training approaches on general capability benchmarks. All methods are based on Qwen 3 4B unless otherwise specified. Best results on OASST1 are bolded ; second best are underlined. 
+
+rate of false refusals. While these results suggest a trade-off between precision and recall, Recall Rewrite outperforms the alternative methods on all subtasks in terms of F1-Score. Figure 7 (Sec-tion H) plots the precision–recall operating points of all models together with the %Known ablation. Qualitative examples of correct refusals and over-refusals, both in the training data and in the model generations, are given in Section I. 
+
+4.6 Performance on General Tasks 
+
+Beyond hallucination-focused benchmarks, we evaluate general model capabilities using four tasks implemented via OLMES (Gu et al., 2025). Hu-manEval+ (Liu et al., 2023) is a coding benchmark built around manually crafted test cases. We com-pare models using the pass@10 metric. GSM8K 
+
+(Cobbe et al., 2021) assesses mathematical rea-soning across 8.5K grade school math problems, measuring exact matches between gold labels and model generations. IFEval (Zhou et al., 2023) comprises 541 prompts with verifiable instructions and evaluates instruction-following capability via prompt-level accuracy. Finally, TruthfulQA (Lin et al., 2022) tests models on 817 multiple-choice questions regarding common human misconcep-tions. We report the percentage of questions where the model identifies all correct answers (MC2). The results are presented in Table 5. Our meth-ods perform comparably to standard SFT, indi-cating that the factuality gains do not come with clear degradation on the general capability bench-marks considered here. Figure 6 (Section G) sum-marizes this trade-off by plotting FActScore (Ta-ble 1) against the OLMES average. Recall Rewrite improves FActScore over standard SFT by 10 points on WildHalu and 42 points on Bios. Its OLMES average is only 0.9 points lower, within the 2.1-point band spanned by all OASST1 models. The largest per-benchmark differences of Recall Rewrite to standard SFT (GSM8K −2.3, IFEval 
+
+−3.2) are of the same magnitude as those among the baselines themselves (e.g., FLAME −3.2 on IFEval, Evidence Rewrite w/o brainstorming −5.4
+
+on GSM8K). A per-example analysis (Section I.3) shows that the GSM8K errors are ordinary rea-soning slips without any refusals, which points to training variance, whereas the IFEval difference is fully explained by Recall Rewrite refusing 30 of the 541 prompts, mostly creative-writing tasks. On the remaining IFEval prompts both models are on par (56.3 vs. 56.5). As expected, the model trained on the much larger Tülu 3 mixture and the official Qwen 3 Instruct model clearly outperform the models trained on the smaller OASST1 dataset. 85 Related Work 
+
+Factual hallucination detection. Hallucinations are commonly divided into inconsistencies with the input context and contradictions of real-world facts (Huang et al., 2025b; Ji et al., 2023). We fo-cus on the latter. Detecting factual hallucinations typically requires decomposing generations into atomic claims, retrieving evidence, and verifying claim support, as in FActScore (Min et al., 2023) and later open-domain variants using web search (Wei et al., 2024; Song et al., 2024). When external evidence is unavailable, prior work has used model self-evaluation or confidence-based signals as prox-ies for factuality (Kadavath et al., 2022; Tian et al., 2023; Wang et al., 2023; Fadeeva et al., 2024). Con-current to our work, Calderon et al. (2026) treat a fact as known to a model only if it consistently an-swers differently phrased questions about it, mirror-ing our consistent-recall criterion (Section 3.2.2), and find that recall, rather than encoding, is the main bottleneck for parametric factuality. 
+
+Hallucinations from fine-tuning. Controlled studies show that fine-tuning on facts unknown to the base model increases hallucinations: at the example level in closed-book QA (Gekhman et al., 2024), for long-form generation (Lin et al., 2024), and at the claim level in instruction data (Wu et al., 2025). Lin et al. (2024) and Wu et al. (2025) also propose mitigations, replacing gold targets with base-model generations and filtering claims by un-certainty, respectively. We frame these mitigations as approximations to knowledge-aligned SFT and compare them under a unified setup. Section 4.4 reproduces the effect of Gekhman et al. (2024) in open-domain instruction data. 
+
+Alternative mitigation strategies. Other ap-proaches reduce hallucinations through mecha-nisms orthogonal to knowledge-aligned SFT. Ka-plan et al. (2026) attribute SFT-induced hallucina-tions to factual forgetting , i.e., interference with pre-existing factual representations, and counter-act it with optimization-level regularization and re-duced factual plasticity. Instead of filtering SFT su-pervision to match existing model knowledge, Liu et al. (2025) inject relevant facts through continued pre-training before SFT. Thulke et al. (2025) show that removing training examples that are unfaithful to the retrieved context improves faithfulness in retrieval-augmented generation, applying an anal-ogous target-curation strategy with respect to the provided context rather than parametric knowledge. Tan et al. (2026) also use a strong post-trained model to rewrite training data, but apply rewrit-ing during pre-training and not SFT. Selective re-fusal methods (Huang et al., 2025a) and preference-based objectives such as DPO (Lin et al., 2024; Tian et al., 2023; Huang and Chen, 2024; Etha-yarajh et al., 2024) provide complementary ways to improve factuality. 
+
+6 Conclusion 
+
+We framed hallucinations from SFT as a conse-quence of mismatch between the factual claims re-quired by training targets and the parametric knowl-edge of the base model. When targets require un-supported knowledge, SFT may teach the model to answer confidently beyond its knowledge boundary. Knowledge-aligned SFT addresses this by aligning training targets with the model’s knowledge bound-ary. Our comparison shows that how this boundary is approximated matters. Naive self-generation is not sufficient: FLAME does not improve factuality over standard SFT in our setting. External verifica-tion improves generation-based alignment, but the largest metric gains in our experiments come from Recall Rewrite, which directly probes whether the base model can consistently recall the claims used for supervision. Across Qwen 3 4B and OLMo 3 7B, and both the broader WildHalu setting and the Wikipedia-centered Biography evaluation, knowledge-aligned supervision reduces measured hallucinations with-out clear losses on the general capability bench-marks considered here. Refusal behavior on Un-knownBench improves at the cost of lower factual coverage and more false refusals. Additional com-parisons suggest that the gains are not explained solely by SFT data size, and that knowledge-aligned data construction remains competitive with stronger post-training stages. These results do not imply that knowledge-aligned SFT replaces full instruct-model post-training recipes, but rather that it may target a distinct source of hallucinations that such recipes do not always address. Overall, knowledge-aligned rewriting makes the factual content of SFT targets a controllable vari-able, and controlling it reduces hallucination be-havior. Applying this control to large instruction-tuning pipelines will require cheaper approxima-tions of the knowledge probing than our current pipeline provides. 9Limitations 
+
+Our framework treats a model’s parametric knowl-edge as an object that can be approximated from model behavior, but it cannot be observed directly. Both generation-based and recall-based methods therefore provide approximations of K(Mbase ). In addition, our formulation largely treats factual knowledge as a binary property: a claim is ei-ther classified as known (and retained) or unknown (and removed). Real models may instead exhibit graded confidence, partial knowledge, or sensitivity to phrasing. Modeling these distinctions more ex-plicitly could further improve knowledge-aligned data construction. Relatedly, our method compar-isons in Table 1 are correlational with respect to the composition of the training targets. Only the ablation in Section 4.4 manipulates the share of known claims while holding the training set size and refusal ratio fixed, and it does so for a single base model and dataset. Our evaluation also depends on automatic factu-ality measurement. It is furthermore entity-centric: following standard practice in long-form factual-ity evaluation, WildHalu and Biography both elicit descriptions of a single named entity. WildHalu extends beyond Wikipedia-covered entities (about half of its entities lack Wikipedia pages (Zhao et al., 2024)), but neither benchmark tests prompts whose factual content is not organized around one entity. The claim decomposition, evidence retrieval, and verification stages can introduce errors, especially for claims that are underspecified, difficult to re-trieve, or require domain expertise. This limitation is shared with much recent work on long-form fac-tuality evaluation. To reduce its impact, we use established fact-checking pipelines and apply the same evaluation procedure across systems, so the main comparisons are based on a consistent mea-surement protocol. We focus on supervised fine-tuning and do not fully characterize how knowledge-aligned SFT in-teracts with later post-training stages. The OLMo comparison suggests that factuality-oriented DPO or RLVR can improve hallucination behavior, but we do not test whether the gains from Recall Rewrite stack with such objectives. Studying these combinations is an important direction for future work, especially for systems that already include strong factuality-oriented preference or reinforce-ment learning stages. Scalability is another limitation. Recall Rewrite requires claim decomposition, probing question generation, repeated base-model sampling, entail-ment checking, and response rewriting, making it more useful as a high-precision diagnostic interven-tion than as a complete scalable recipe for all SFT data preparation. The question-generation step also becomes more difficult for complex responses that combine many facts, reasoning steps, or implicit background assumptions. Our experiments use the English first-turn subset of OASST1, which is small compared to contemporary instruction-tuning mixtures. As a result, our findings should be tested on larger instruction-tuning mixtures and in set-tings such as multilingual or multi-turn dialogue, tool use, coding, reasoning-heavy prompts, and specialized domains. Finally, our rewriting pipelines rely on strong teacher models. These models can introduce their own biases in claim selection, question genera-tion, verification, refusal style, and the phrasing of rewritten answers. Using multiple teachers, open-weight teachers, or human audits could help sep-arate teacher-specific effects from the effects of aligning supervision with the base model’s para-metric knowledge. 
+
+Acknowledgments 
+
+Generative AI assistants (OpenAI Codex and Claude Code) were used to proofread the manuscript, to help with LaTeX formatting, and to support with the implementation of the exper-iments. All AI-generated suggestions were re-viewed and verified by the authors, who take full responsibility for the content of this work. 
+
+References      
+
+> Steven Bird and Edward Loper. 2004. NLTK: The natu-ral language toolkit. In Proceedings of the ACL In-teractive Poster and Demonstration Sessions , pages 214–217, Barcelona, Spain. Association for Compu-tational Linguistics. Nitay Calderon, Eyal Ben-David, Zorik Gekhman, Eran Ofek, and Gal Yona. 2026. Empty shelves or lost keys? Recall is the bottleneck for parametric fac-tuality. In Forty-third International Conference on Machine Learning .Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. 2021. Training verifiers to solve math word prob-lems. Preprint , arXiv:2110.14168.
+
+10 Kawin Ethayarajh, Winnie Xu, Niklas Muennighoff, Dan Jurafsky, and Douwe Kiela. 2024. Model align-ment as prospect theoretic optimization. In Proceed-ings of the 41st International Conference on Machine Learning , volume 235 of Proceedings of Machine Learning Research , pages 12634–12651. PMLR. Ekaterina Fadeeva, Aleksandr Rubashevskii, Artem Shelmanov, Sergey Petrakov, Haonan Li, Hamdy Mubarak, Evgenii Tsymbalov, Gleb Kuzmin, Alexan-der Panchenko, Timothy Baldwin, Preslav Nakov, and Maxim Panov. 2024. Fact-checking the output of large language models via token-level uncertainty quantification. In Findings of the Association for Computational Linguistics: ACL 2024 , pages 9367– 9385, Bangkok, Thailand. Association for Computa-tional Linguistics. Zorik Gekhman, Gal Yona, Roee Aharoni, Matan Eyal, Amir Feder, Roi Reichart, and Jonathan Herzig. 2024. Does fine-tuning LLMs on new knowledge encour-age hallucinations? In Proceedings of the 2024 Con-ference on Empirical Methods in Natural Language Processing , pages 7765–7784, Miami, Florida, USA. Association for Computational Linguistics. Yuling Gu, Oyvind Tafjord, Bailey Kuehl, Dany Had-dad, Jesse Dodge, and Hannaneh Hajishirzi. 2025. OLMES: A standard for language model evaluations. In Findings of the Association for Computational Linguistics: NAACL 2025 , pages 5020–5048, Al-buquerque, New Mexico. Association for Computa-tional Linguistics. Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Peiyi Wang, Qihao Zhu, Runxin Xu, Ruoyu Zhang, Shirong Ma, Xiao Bi, Xiaokang Zhang, Xingkai Yu, Yu Wu, Z. F. Wu, Zhibin Gou, Zhihong Shao, Zhuoshu Li, Ziyi Gao, Aixin Liu, and 175 oth-ers. 2025. DeepSeek-R1 incentivizes reasoning in LLMs through reinforcement learning. Nature ,645(8081):633–638. Or Honovich, Leshem Choshen, Roee Aharoni, Ella Neeman, Idan Szpektor, and Omri Abend. 2021. 
+
+q2: Evaluating factual consistency in knowledge-grounded dialogues via question generation and ques-tion answering. In Proceedings of the 2021 Confer-ence on Empirical Methods in Natural Language Pro-cessing , pages 7856–7870, Online and Punta Cana, Dominican Republic. Association for Computational Linguistics. Chao-Wei Huang and Yun-Nung Chen. 2024. FactAl-ign: Long-form factuality alignment of large lan-guage models. In Findings of the Association for Computational Linguistics: EMNLP 2024 , pages 16363–16375, Miami, Florida, USA. Association for Computational Linguistics. Lei Huang, Xiaocheng Feng, Weitao Ma, Yuchun Fan, Xiachong Feng, Yuxuan Gu, Yangfan Ye, Liang Zhao, Weihong Zhong, Baoxin Wang, Dayong Wu, Guop-ing Hu, Lingpeng Kong, Tong Xiao, Ting Liu, and Bing Qin. 2025a. Alleviating hallucinations from knowledge misalignment in large language models via selective abstention learning. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) ,pages 24564–24579, Vienna, Austria. Association for Computational Linguistics. Lei Huang, Weijiang Yu, Weitao Ma, Weihong Zhong, Zhangyin Feng, Haotian Wang, Qianglong Chen, Weihua Peng, Xiaocheng Feng, Bing Qin, and Ting Liu. 2025b. A survey on hallucination in large lan-guage models: Principles, taxonomy, challenges, and open questions. ACM Transactions on Information Systems , 43(2):1–55. Ziwei Ji, Nayeon Lee, Rita Frieske, Tiezheng Yu, Dan Su, Yan Xu, Etsuko Ishii, Ye Jin Bang, Andrea Madotto, and Pascale Fung. 2023. Survey of halluci-nation in natural language generation. ACM Comput-ing Surveys , 55(12):1–38. Saurav Kadavath, Tom Conerly, Amanda Askell, Tom Henighan, Dawn Drain, Ethan Perez, Nicholas Schiefer, Zac Hatfield-Dodds, Nova DasSarma, Eli Tran-Johnson, Scott Johnston, Sheer El-Showk, Andy Jones, Nelson Elhage, Tristan Hume, Anna Chen, Yuntao Bai, Sam Bowman, Stanislav Fort, and 17 others. 2022. Language models (mostly) know what they know. Preprint , arXiv:2207.05221. Adam Tauman Kalai, Ofir Nachum, Santosh S. Vem-pala, and Edwin Zhang. 2025. Why language models hallucinate. Preprint , arXiv:2509.04664. Nikhil Kandpal, Haikang Deng, Adam Roberts, Eric Wallace, and Colin Raffel. 2023. Large language models struggle to learn long-tail knowledge. In 
+
+Proceedings of the 40th International Conference on Machine Learning , volume 202 of Proceedings of Machine Learning Research , pages 15696–15707. PMLR. Guy Kaplan, Zorik Gekhman, Zhen Zhu, Lotem Rozner, Yuval Reif, Swabha Swayamdipta, Derek Hoiem, and Roy Schwartz. 2026. Why fine-tuning encour-ages hallucinations and how to fix it. Preprint ,arXiv:2604.15574. Andreas Köpf, Yannic Kilcher, Dimitri von Rütte, Sotiris Anagnostidis, Zhi-Rui Tam, Keith Stevens, Abdullah Barhoum, Nguyen Minh Duc, Oliver Stanley, Richárd Nagyfi, Shahul ES, Sameer Suri, David Glushkov, Arnav Dantuluri, Andrew Maguire, Christoph Schuhmann, Huu Nguyen, and Alexan-der Mattick. 2023. OpenAssistant conversations – democratizing large language model alignment. 
+
+Preprint , arXiv:2304.07327. Nathan Lambert, Jacob Morrison, Valentina Pyatkin, Shengyi Huang, Hamish Ivison, Faeze Brahman, Lester James Validad Miranda, Alisa Liu, Nouha Dziri, Xinxi Lyu, Yuling Gu, Saumya Malik, Victoria Graf, Jena D. Hwang, Jiangjiang Yang, Ronan Le Bras, Oyvind Tafjord, Christopher Wilhelm, Luca 
+
+11 Soldaini, and 4 others. 2025. Tulu 3: Pushing fron-tiers in open language model post-training. In Second Conference on Language Modeling .Sheng-Chieh Lin, Luyu Gao, Barlas Oguz, Wenhan Xiong, Jimmy Lin, Wen-tau Yih, and Xilun Chen. 2024. FLAME : Factuality-aware alignment for large language models. In The Thirty-eighth Annual Con-ference on Neural Information Processing Systems .Stephanie Lin, Jacob Hilton, and Owain Evans. 2022. TruthfulQA: Measuring how models mimic human falsehoods. In Proceedings of the 60th Annual Meet-ing of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 3214–3252, Dublin, Ireland. Association for Computational Linguistics. Genglin Liu, Xingyao Wang, Lifan Yuan, Yangyi Chen, and Hao Peng. 2024. Examining LLMs’ uncer-tainty expression towards questions outside paramet-ric knowledge. Preprint , arXiv:2311.09731. Jiawei Liu, Chunqiu Steven Xia, Yuyao Wang, and Ling-ming Zhang. 2023. Is your code generated by Chat-GPT really correct? Rigorous evaluation of large lan-guage models for code generation. In Thirty-seventh Conference on Neural Information Processing Sys-tems .Yujian Liu, Shiyu Chang, Tommi Jaakkola, and Yang Zhang. 2025. Fictitious synthetic data can improve LLM factuality via prerequisite learning. In The Thir-teenth International Conference on Learning Repre-sentations .Shayne Longpre, Le Hou, Tu Vu, Albert Webson, Hyung Won Chung, Yi Tay, Denny Zhou, Quoc V Le, Barret Zoph, Jason Wei, and Adam Roberts. 2023. The flan collection: Designing data and methods for effective instruction tuning. In Proceedings of the 40th International Conference on Machine Learning ,volume 202 of Proceedings of Machine Learning Research , pages 22631–22648. PMLR. Potsawee Manakul, Adian Liusie, and Mark Gales. 2023. SelfCheckGPT: Zero-resource black-box hallucina-tion detection for generative large language models. In Proceedings of the 2023 Conference on Empiri-cal Methods in Natural Language Processing , pages 9004–9017, Singapore. Association for Computa-tional Linguistics. Sewon Min, Kalpesh Krishna, Xinxi Lyu, Mike Lewis, Wen-tau Yih, Pang Koh, Mohit Iyyer, Luke Zettle-moyer, and Hannaneh Hajishirzi. 2023. FActScore: Fine-grained atomic evaluation of factual precision in long form text generation. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 12076–12100, Singa-pore. Association for Computational Linguistics. Jianmo Ni, Chen Qu, Jing Lu, Zhuyun Dai, Gustavo Hernandez Abrego, Ji Ma, Vincent Zhao, Yi Luan, Keith Hall, Ming-Wei Chang, and Yinfei Yang. 2022. Large dual encoders are generalizable retrievers. In 
+
+Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing , pages 9844–9855, Abu Dhabi, United Arab Emirates. As-sociation for Computational Linguistics. OpenAI: Aaron Hurst, Adam Lerer, Adam P. Goucher, Adam Perelman, Aditya Ramesh, Aidan Clark, AJ Ostrow, Akila Welihinda, Alan Hayes, Alec Radford, Aleksander M ˛ adry, Alex Baker-Whitcomb, Alex Beutel, Alex Borzunov, Alex Carney, Alex Chow, Alex Kirillov, Alex Nichol, Alex Paino, and 399 others. 2024. GPT-4o system card. Preprint ,arXiv:2410.21276. Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul F Christiano, Jan Leike, and Ryan Lowe. 2022. Training language models to follow instructions with human feedback. In Advances in Neural Information Processing Systems , volume 35, pages 27730–27744. Curran Associates, Inc. Oded Ovadia, Menachem Brief, Moshik Mishaeli, and Oren Elisha. 2024. Fine-tuning or retrieval? compar-ing knowledge injection in LLMs. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , pages 237–250, Mi-ami, Florida, USA. Association for Computational Linguistics. Yixiao Song, Yekyung Kim, and Mohit Iyyer. 2024. VeriScore: Evaluating the factuality of verifiable claims in long-form text generation. In Findings of the Association for Computational Linguistics: EMNLP 2024 , pages 9447–9474, Miami, Florida, USA. Association for Computational Linguistics. Ellen Xiaoqing Tan, Jack Lanchantin, Shehzaad Dhuli-awala, Danwei Li, Thao Nguyen, Jing Xu, Ping Yu, Ilia Kulikov, Sainbayar Sukhbaatar, Jason Weston, Xian Li, and Olga Golovneva. 2026. Self-improving pretraining: using post-trained models to pretrain better models. Preprint , arXiv:2601.21343. Team OLMo: Allyson Ettinger, Amanda Bertsch, Bailey Kuehl, David Graham, David Heineman, Dirk Groen-eveld, Faeze Brahman, Finbarr Timbers, Hamish Ivison, Jacob Morrison, Jake Poznanski, Kyle Lo, Luca Soldaini, Matt Jordan, Mayee Chen, Michael Noukhovitch, Nathan Lambert, Pete Walsh, Pradeep Dasigi, and 48 others. 2025. Olmo 3. Preprint ,arXiv:2512.13961. David Thulke, Jakob Kemmler, Christian Dugast, and Hermann Ney. 2025. Listen to the context: To-wards faithful large language models for retrieval aug-mented generation on climate questions. In Proceed-ings of the 2nd Workshop on Natural Language Pro-cessing Meets Climate Change (ClimateNLP 2025) ,pages 245–259, Vienna, Austria. Association for Computational Linguistics. Katherine Tian, Eric Mitchell, Huaxiu Yao, Christo-pher Manning, and Chelsea Finn. 2023. Fine-tuning 
+
+12 language models for factuality. In NeurIPS 2023 Workshop on Instruction Tuning and Instruction Fol-lowing .Leandro von Werra, Younes Belkada, Lewis Tunstall, Edward Beeching, Tristan Thrush, Nathan Lambert, Shengyi Huang, Kashif Rasul, and Quentin Gal-louédec. 2020. TRL: Transformer reinforcement learning. https://github.com/huggingface/ trl .Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc V Le, Ed H. Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. 2023. Self-consistency improves chain of thought reasoning in language models. In 
+
+The Eleventh International Conference on Learning Representations .Jason Wei, Maarten Bosma, Vincent Zhao, Kelvin Guu, Adams Wei Yu, Brian Lester, Nan Du, Andrew M. Dai, and Quoc V Le. 2022. Finetuned language mod-els are zero-shot learners. In International Confer-ence on Learning Representations .Jerry Wei, Chengrun Yang, Xinying Song, Yifeng Lu, Nathan Zixia Hu, Jie Huang, Dustin Tran, Daiyi Peng, Ruibo Liu, Da Huang, Cosmo Du, and Quoc V Le. 2024. Long-form factuality in large language models. In The Thirty-eighth Annual Conference on Neural Information Processing Systems .Tianyi Wu, Jingwei Ni, Bryan Hooi, Jiaheng Zhang, Elliott Ash, See-Kiong Ng, Mrinmaya Sachan, and Markus Leippold. 2025. Balancing truthfulness and informativeness with uncertainty-aware instruction fine-tuning. Preprint , arXiv:2502.11962. Shitao Xiao, Zheng Liu, Peitian Zhang, Niklas Muen-nighoff, Defu Lian, and Jian-Yun Nie. 2024. C-Pack: Packed resources for general Chinese embeddings. 
+
+Preprint , arXiv:2309.07597. Yan Xu, Mahdi Namazifar, Devamanyu Hazarika, Aish-warya Padmakumar, Yang Liu, and Dilek Hakkani-Tur. 2023. KILM: Knowledge injection into encoder-decoder language models. In Proceedings of the 61st Annual Meeting of the Association for Compu-tational Linguistics (Volume 1: Long Papers) , pages 5013–5035, Toronto, Canada. Association for Com-putational Linguistics. An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, Chujie Zheng, Day-iheng Liu, Fan Zhou, Fei Huang, Feng Hu, Hao Ge, Haoran Wei, Huan Lin, Jialong Tang, and 41 others. 2025. Qwen3 technical report. Preprint ,arXiv:2505.09388. Wenting Zhao, Tanya Goyal, Yu Ying Chiu, Liwei Jiang, Benjamin Newman, Abhilasha Ravichander, Khy-athi Chandu, Ronan Le Bras, Claire Cardie, Yuntian Deng, and Yejin Choi. 2024. WildHallucinations: Evaluating long-form factuality in LLMs with real-world entity queries. Preprint , arXiv:2407.17468. Jeffrey Zhou, Tianjian Lu, Swaroop Mishra, Siddhartha Brahma, Sujoy Basu, Yi Luan, Denny Zhou, and Le Hou. 2023. Instruction-following evaluation for large language models. Preprint , arXiv:2311.07911. 
+
+13 Appendix Overview 
+
+The appendix is organized as follows. Section A collects definitions of the closely related terms used throughout the paper, and Section B states the data-construction algorithm shared by all knowledge-aligned SFT methods. Sections C to E describe the baseline methods, the fact-checking pipeline, and the training setup, including statistics and cost of the Recall Rewrite pipeline. Sections F to I present additional results: the filter threshold ablation, the factuality–capability trade-off, the UnknownBench precision–recall trade-off, and a qualitative anal-ysis of Recall Rewrite. Finally, Section J lists all prompts used in this work. 
+
+A Glossary 
+
+The paper uses several closely related terms. This glossary collects their definitions and where they are introduced. 
+
+Known / unknown claim Framework-level prop-erty of a claim c: known iff c ∈ K (Mbase )
+
+(Section 2). Since K(Mbase ) is latent, each method approximates this property, and we write “classified as known/unknown” for the outcome. 
+
+Consistently recalled Recall Rewrite’s opera-tional test for a claim (Equation (1)): at least 
+
+je probing questions are entailing and at most 
+
+jc are contradicting, where a question inher-its a label if enough of its answers from the base model carry it. Recall Rewrite classifies a claim as known iff it is consistently recalled. 
+
+Knowledge-dependent claim A claim that en-codes verifiable factual, procedural, or struc-tural information and therefore requires para-metric knowledge (Section 3.2.2). Non-knowledge-dependent claims (contextual, sub-jective, or generic) are always retained, and only knowledge-dependent claims are probed. 
+
+Knowledge-seeking prompt A prompt that can-not be answered without factual knowledge (Section 3.1; details in Section C). FLAME and Evidence Rewrite keep the gold response for prompts that are not knowledge-seeking. 
+
+Supported / unsupported claim Verdict of fact-checking a claim against retrieved external ev-idence (Section D), used to build the Evidence Rewrite training data and, at evaluation time, to compute #Supp., %Supp. and FActScore. This is independent of known/unknown: a claim can be supported by evidence yet un-known to the base model, and vice versa. 
+
+B Unified Algorithm Framework 
+
+Table 6 summarizes the models by the role they play and the outputs they produce. Algorithm 1 states the data-construction procedure shared by all knowledge-aligned SFT methods considered in this paper, covering claim decomposition, the detection or retrieval step, filtering, rewriting, and the refusal decision, and Table 7 lists how each method instantiates its three hooks.                       
+
+> Symbol Role Output space
+> Mbase base model text
+> MSFT fine-tuned on D∗text
+> MKS knowledge-seeking {true ,false }
+> prompt classifier
+> Mdec claim decomposition {c1, . . . , c N}
+> Mverifier claim vs. evidence {SUPPORTED, NOT_SUPPORTED}
+> Mprobe probe generation {qn, 1, . . . , q n,J }
+> Mjudge answer vs. claim {ENTAILS, CONTRADICTS, UNRELATED}
+> Mrewriter composes the target text
+
+Table 6: Models by role in Algorithm 1. The first block contains the models under study; the second block con-tains pipeline components used only to construct D∗,which are never trained. Evidence Rewrite instantiates 
+
+MKS , Mdec , Mverifier and Mrewriter with gpt-4o-mini ;Recall Rewrite instantiates Mdec , Mprobe , Mjudge and 
+
+Mrewriter with gpt-5-mini and uses no MKS (Sec-tion 4.1). 
+
+C Baseline Method Details 
+
+FLAME. Previous work (Gekhman et al., 2024; Lin et al., 2024) provides empirical evidence that training on unknown information can lead to a model learning to hallucinate more. Lin et al. (2024) propose FLAME as a mitigation method whose core idea is to use responses sampled from the base model instead of the gold response R for knowledge-seeking prompts. The motivation is that R may contain information outside the base model’s parametric knowledge, whereas a sampled response ˆR ∼ Mbase is more likely to reflect what the base model can already generate. In instruction fine-tuning datasets such as OASST1, some prompts do not require the model 14 Algorithm 1 Knowledge-aligned SFT data construction. Both proposed pipelines and both baselines instantiate one template, differing in the hooks G ATE , S OURCE and U NKNOWN and in the models Mdec 
+
+and Mrewriter (Tables 6 and 7). 
+
+Require: D = {(P, R )} ▷ SFT dataset of prompt–response pairs 
+
+Mbase ▷ base model whose parametric knowledge K(Mbase ) is the alignment target 
+
+Mdec ▷ decomposition model, realizes C( · | P )
+
+Mrewriter (optional) ▷ if set, composes the aligned target R∗, or a refusal GATE (P ) ▷ hook: is the prompt processed at all? SOURCE (P, R ) ▷ hook: which response is decomposed UNKNOWN (cn) ▷ hook: flags a claim for removal 
+
+Ensure: knowledge-aligned data D∗
+
+1: D∗ ← ∅ 
+
+2: for all (P, R ) ∈ D do 
+
+3: if not GATE (P ) then 
+
+4: D∗ ← D ∗ ∪ { (P, R )}; continue ▷ gold response kept unchanged 5: end if 
+
+6: S ← SOURCE (P, R ) ▷ gold R, or ˆR ∼ Mbase 
+
+7: if Mrewriter is not set then 
+
+8: D∗ ← D ∗ ∪ { (P, S )}; continue ▷ source response used unchanged (FLAME) 9: end if 
+
+10: {c1, . . . , c N } ← Mdec (S | P ) ▷ claim decomposition C(S | P )
+
+11: Ckeep ← { cn : ¬ UNKNOWN (cn) } ▷ keep all but flagged claims 12: R∗ ← Mrewriter (P, S, Ckeep ) ▷ fluent response over Ckeep , or a refusal 13: D∗ ← D ∗ ∪ { (P, R ∗)}
+
+14: end for 
+
+15: return D∗
+
+16: procedure UNKNOWN (cn) – Evidence Rewrite 
+
+17: En ← RETRIEVE (cn) ▷ top-5 Wikipedia chunks 18: return  Mverifier (cn, E n) = NOT_SUPPORTED 
+
+19: end procedure 
+
+20: procedure UNKNOWN (cn) – Recall Rewrite 
+
+21: if not KNOWLEDGE DEPENDENT (cn) then 
+
+22: return false ▷ labeled by Mdec ; no parametric knowledge needed 23: end if 
+
+24: {qn,j }Jj=1 ← Mprobe (cn) ▷ context-independent probing questions 25: yn,j,k ∼ Mbase (qn,j ) for j ∈ [J], k ∈ [K]
+
+26: en,j ← {k : Mjudge (yn,j,k , c n) = ENTAILS }
+
+27: dn,j ← {k : Mjudge (yn,j,k , c n) = CONTRADICTS }
+
+28: consistentlyRecalled ←  |{ j : en,j ≥ ke}| ≥ je ∧ |{ j : dn,j ≥ kc}| ≤ jc
+
+ ▷ Equation (1) 29: return ¬ consistentlyRecalled 
+
+30: end procedure 
+
+Method GATE (P ) SOURCE (P, R ) Mdec UNKNOWN (cn) Mrewriter 
+
+FLAME MKS (P ) ˆR ∼ Mbase (P ) — always false —UNIT cut always true gold R Wu et al. (2025) 
+
+CCP( cn) ≤ τ Wu et al. (2025) Evidence Rewrite (ours) 
+
+MKS (P ) ˆR ∼ Mbase (P ), then 
+
+ˆR ∼ Mbase (BRAINSTORM PROMPT (P, ˆR)) 
+
+Figure 9 Alg. 1, l. 16 Figure 12 Recall Rewrite (ours) always true gold R Figure 15 Alg. 1, l. 20 Figure 14 
+
+Table 7: Instantiations of Algorithm 1: the methods differ in the three hooks, in Mdec and in Mrewriter . For our two methods Mdec and Mrewriter are instantiated by the prompt templates referenced in the corresponding cells, as is BRAINSTORM PROMPT (Figure 11); G ATE is implemented by the knowledge-seeking classifier MKS (Figure 8), which skips the prompt when it returns false ; FLAME sets no rewriter (—) and uses its sampled response unchanged. 
+
+15 Prompt P?      
+
+> FLAME response ˆR!
+> knowledge-seeking
+> sample from Mbase
+> Gold response R!
+> non -knowledge-seeking
+> Figure 4: FLAME. For knowledge-seeking prompts, the response ˆRis sampled from the base model Mbase .
+
+to draw from its internal knowledge (e.g., summa-rization and paraphrasing). Therefore, for these prompts, FLAME retains the gold response R. In our replication, we identify such prompts using a classifier based on gpt-4o-mini (OpenAI, 2024) with few-shot prompting (Figure 8). For knowledge-seeking prompts, FLAME sam-ples ˆR from Mbase in a few-shot setting. The few-shot setting is necessary because the base model has not been trained to follow instructions. When preparing FLAME training data for OASST1, we retrieve the top five similar but not identical training examples for each prompt P us-ing bge-large-en-v1.5 (Xiao et al., 2024). We remove less relevant examples to fit into 34 of the context size; if fewer than three examples remain, the prompt is removed from the training set. Fig-ure 4 illustrates this data construction procedure. 
+
+UNIT cut Wu et al. (2025) investigate the trade-off between informativeness and truthfulness in instruction fine-tuning, attributing hallucinations to the inclusion of unfamiliar, long-tail knowledge in training data. To address this, they propose uncertainty-aware instruction fine-tuning, where uncertainty estimates are used as a proxy for whether a model knows a given piece of informa-tion. In UNIT cut , each gold response R is decom-posed into atomic claims C(R | P ), and claims with high estimated uncertainty are removed be-fore training to obtain a filtered response R∗. This filtering improves truthfulness but often reduces informativeness due to the removal of content. However, this approach relies on uncertainty as an imperfect proxy for model knowledge, which may be miscalibrated or only weakly correlated with parametric knowledge. Furthermore, UNIT cut 
+
+operates solely on explicitly stated claims and does not account for implicit knowledge required to con-struct a valid response. In particular, responses often depend on meta-knowledge : factual, proce-dural, or structural information that is not directly expressed in R but is nonetheless required for gen-eration. These limitations motivate a more direct estimation of model knowledge that captures both explicit and implicit knowledge. For data preparation, we use the code provided by the authors 4 and train the models using the same training pipeline as all other models. 
+
+D Fact-Checking Pipeline 
+
+The fact-checking pipeline is used in two places in this paper: (i) to construct the Evidence Rewrite training data by verifying claims in base model gen-erations, and (ii) to evaluate all models on the Wild-Halu and Biography benchmarks. In both cases, the pipeline follows the three-step approach of Min et al. (2023). 
+
+Claim Decomposition. The generated text is first segmented into sentences using nltk (Bird and Loper, 2004). A sliding window is then applied to extract atomic claims from each sentence via LLM inference. The primary objective is to produce a comprehensive list of verifiable atomic claims — individual statements that can be independently checked against an external source. Different im-plementations vary in how they define atomicity, leading to different prompt templates (Min et al., 2023; Song et al., 2024) or additional filtering steps (Wei et al., 2024). We use the VeriScore decomposition prompt (Song et al., 2024) rather than the original FActScore prompt (Min et al., 2023). FActScore’s decomposition was designed for biography gen-eration and performs poorly on open-domain instruction-following data such as OASST1: it frequently extracts claims that cannot be verified against any external source. Common failure cases include claims with unresolved pronouns (e.g., 
+
+"He has appeared in numerous films." ) and meta-commentary about the response itself (e.g., "There are provided passages." extracted from "Based on the provided passages, here is the answer to the question:" ). VeriScore addresses this by using detailed instructions and few-shot examples that guide the model to only extract claims that are fully self-contained and can be checked against an exter-nal source, consistent with observations by Song et al. (2024). 
+
+> 4https://github.com/AndrewWTY/UNIT
+
+16 Evidence Retrieval. For Evidence Rewrite train-ing data construction and Biography evaluation, the top five pieces of supporting evidence are re-trieved from Wikipedia using a two-phase hierar-chical approach. First, the Wikimedia API 5 identi-fies the five most relevant Wikipedia pages for the claim. Second, these pages are split into chunks and reranked using gtr-t5-large (Ni et al., 2022) to select the five most pertinent chunks as evidence. We use the Wikipedia dump from 04/01/2023 pro-vided by Min et al. (2023), preprocessed into fixed-size chunks. For WildHalu evaluation, we instead follow Wu et al. (2025) and retrieve evidence from Google Search using their implementation 6.
+
+Claim Verification. Each claim is paired with its retrieved evidence chunks and passed to an LLM-based classifier, which decides whether the claim is supported by the evidence. We use 
+
+gpt-4o-mini (OpenAI, 2024) for this step in both cases, but the two use cases differ in the label set. For Evidence Rewrite training data construction, we use the FActScore verification prompt (Fig-ure 10), which labels each claim as SUPPORTED 
+
+or NOT_SUPPORTED . For evaluation, we follow the implementation of Wu et al. (2025), whose veri-fier distinguishes three labels: True , False , and 
+
+Not known for claims that the retrieved evidence neither confirms nor refutes 7. We treat True as supported and False as unsupported, and exclude claims labeled Not known from #Supp., %Supp. and FActScore. 
+
+E Training Details               
+
+> Parameter Value Devices 1×NVIDIA A100 (80GB) Number of Epochs 5Total Batch Size 32 Learning Rate 1×10 −5
+> Optimizer AdamW Scheduler Cosine Warmup Ratio 0.1 Weight Decay 0.1 Context Length 1024
+
+Table 8: Training configuration for SFT training on OASST1. 
+
+Table 8 provides the SFT configuration used for standard SFT and the different knowledge-aligned 
+
+> 5https://api.wikimedia.org/
+> 6https://github.com/AndrewWTY/UNIT
+> 7These three labels are also the ones reported for the quali-tative examples in Section I.
+
+SFT approaches. 
+
+E.1 Recall Rewrite                               
+
+> Metric Qwen 3 4B OLMo 3 7B Total examples 3,467 3,467 Total claims 64,301 64,301 Avg. claims per example 18.5 18.5 Entailed answers 62.5% 70.6% Unrelated answers 25.1% 15.3% Contradicting answers 12.4% 14.1% Non-knowl.-dep. claims 24,448 (38.0%) 24,448 (38.0%) Knowl.-dep. claims 39,853 (62.0%) 39,853 (62.0%) known (retained) 31,654 (79.4%) 32,168 (80.7%) unknown (removed) 8,199 (20.6%) 7,685 (19.3%) Retained claims 56,102 (87.2%) 56,616 (88.0%) Avg. claims after rewrite 16.5 16.6 Non-refusal responses 3,165 3,175 Refusal responses 302 292
+
+Table 9: Statistics of the Recall Rewrite pipeline on OASST1 for Qwen3-4B-Base and OLMo-3-1025-7B un-der the default filter 2/1/2/1 (Equation (1)) 8. Answer shares are over all probe answers. Percentages for non-/knowledge-dependent and retained claims are rel-ative to all claims, those for known/unknown claims relative to the knowledge-dependent claims. Non-knowledge-dependent claims are always retained, so the retained claims are the non-knowledge-dependent plus the known claims. Avg. claims after rewrite counts retained claims per non-refusal response. 
+
+Table 9 provides statistics on applying the Re-call Rewrite pipeline using both Qwen 3 4B and OLMo 3 7B on the OASST1 data. Of the 39,853 knowledge-dependent claims, 8,199 (Qwen3-4B-Base ) and 7,685 ( OLMo-3-1025-7B )are classified as unknown and removed, while all 24,448 non-knowledge-dependent claims are re-tained. Refusals concentrate on responses with a low share of known claims: among the knowledge-dependent claims of refusal responses only 60.9% (Qwen3-4B-Base ) and 59.8% ( OLMo-3-1025-7B )are known, compared to 81.7% and 83.2% in non-refusal responses. Accordingly, non-refusal re-sponses shrink from 18.5 to 16.5 ( Qwen3-4B-Base )and 16.6 ( OLMo-3-1025-7B ) claims on average. Ta-ble 10 provides the corresponding token usage and API cost for the different steps. 17 Pipeline Step # Input Tokens # Output Tokens Cost (USD) Claim Decomposition 3 M 1.2 M 1.98 Claim-Question Rewriting 63.5 M 19.7 M 27.64 Entailment Check 82.5 M 0.6 M 10.92 Answer Rewriting 23.5 M 0.5 M 3.44    
+
+> Total 172.5 M 22 M 43.98
+
+Table 10: Token usage and API cost of the Recall Rewrite pipeline per step, using gpt-5-mini-2025-08-07 with batched API calls across all 3,468 OASST1 examples for Qwen 3 4B.                                                               
+
+> Train WildHalu Bios Filter %Known #Non-Ref. Avg.Cl. #Ref. #Ref. #Supp. %Supp. FActScore #Ref. #Supp. %Supp. FActScore 2/1/2/1 79.4 3,165 16.5 100 32 6,006 82.8 82.1 66 2,989 43.9 49.7 2/1/5/3 84.7 3,273 16.9 100 15 6,877 80.5 78.4 38 3,870 43.2 42.9 2/1/0/1 62.3 2,877 14.9 100 25 5,312 84.3 82.6 40 2,802 49.3 49.3 1/1/2/1 83.2 3,211 16.9 100 11 6,603 80.9 78.9 34 3,854 43.0 45.3 3/2/2/1 53.6 2,781 13.9 100 30 5,206 82.3 81.1 65 3,198 49.8 53.2
+
+Table 11: Effect of the Recall Rewrite filter thresholds je/k e/j c/k c (Equation (1): at least je entailing and at most 
+
+jc contradicting questions) on Qwen3-4B-Base trained on OASST1. The first row is the default used in the main paper. %Known is the share of knowledge-dependent claims in the training targets that the filter classifies as known and retains (cf. Table 9; not the target ratio of Table 3); Avg.Cl. is the number of claims per non-refusal training response after rewriting. The number of refusals in the training data (#Ref. Train) is held fixed at 100. Best results are bolded .
+
+F Recall Rewrite: Filter Threshold Ablation 
+
+We study how different je/k e/j c/k c filtering thresholds (defined in Section 3.2.2) affect the Re-call Rewrite pipeline. The default used in the main paper is 2/1/2/1. To isolate the effect of claim filtering, the number of refusals in the training data is held fixed at 100 across all conditions. Results are shown in Table 11. Across all conditions we observe the same trade-off as in the main ablation (Table 3): more lenient thresholds yield more supported claims (#Supp.) at evaluation but lower %Supp. and FActScore, while stricter thresholds reduce #Supp. but im-prove %Supp. and FActScore. Figure 5 plots both ablations together with all methods of Ta-ble 1 in the coverage–factuality plane. The Recall Rewrite variants span a wide range of operating points that no single baseline covers: the stricter settings ( 3/2/2/1, 2/1/0/1, 100% known) reach FActScore levels no baseline attains, whereas the two most lenient filter settings ( 1/1/2/1, 2/1/5/3)are dominated by UNIT cut , which retains more sup-ported claims at a similar or higher FActScore. The 
+
+> 8One of the 3,468 examples is dropped by the pipeline because its claim decomposition could not be parsed (invalid JSON escape), leaving 3,467.
+
+filter threshold thus acts as a training-time knob for choosing a point on this trade-off. 
+
+Varying the contradiction tolerance ( jc/k c). 
+
+One motivation for tolerating some contradicting answers is that probing questions are sometimes 
+
+underspecified : an overly open question may ad-mit multiple valid answers that, when compared against a specific claim, are inconsistently labeled as Contradicts . Under zero contradiction toler-ance ( 2/1/0/1), a single such label disqualifies the claim. Compared to the default 2/1/2/1, this re-sults in fewer #Supp. while %Supp. and FActScore remain similar on WildHalu, and on Bios %Supp. improves but FActScore does not — suggesting that the additionally discarded claims are largely correct ones. Going in the other direction, 2/1/5/3 cannot be violated with K=2 answers per question and thus disables the contradiction criterion. It yields more #Supp. but lower %Supp. and FActScore on both datasets, indicating that dropping the contra-diction criterion retains genuinely unknown claims. 
+
+Varying the entailment requirement ( je/k e). 
+
+One motivation for requiring entailment from mul-tiple questions is that probing questions are some-times overspecified : a question that closely mirrors the wording of the original claim may elicit an entailing response even when the model lacks gen-18 4, 000 5, 000 6, 000 7, 000 8, 000 75 80 85              
+
+> SFT FLAME UNIT cut
+> ER ER w/o brainst. RR 0% 50% 100% 2/1/2/1 2/1/5/3 2/1/0/1 1/1/2/1 3/2/2/1
+> #Supp. FActScore WildHalu
+> 3,000 4,000 5,000 40 60 80
+> SFT FLAME UNIT cut
+> ER ER w/o brainst. RR 0% 50% 100% 2/1/2/1 2/1/5/3 2/1/0/1 1/1/2/1 3/2/2/1
+> #Supp. FActScore Bios Baselines Evidence Rewrite (ours) Recall Rewrite (ours) RR %Known ablation (Table 3) RR filter thresholds je/k e/j c/k c(Table 11)
+
+Figure 5: Coverage vs. factuality on WildHalu (left) and Bios (right) for all Qwen 3 4B models trained on OASST1. #Supp. is the number of supported claims over all non-refusal responses (coverage); FActScore treats refusals as fully supported. The two Recall Rewrite ablations trace the trade-off controlled at training time: the proportion of known claims in the targets (%Known, hollow diamonds, Table 3) and the filter thresholds je/k e/j c/k c (triangles, Table 11; trained with 100 instead of 302 refusal examples, hence not identical to the main Recall Rewrite model). Up and to the right is better. 
+
+uine knowledge. Compared to the default 2/1/2/1,relaxing to 1/1/2/1 yields more #Supp. but lower %Supp. and FActScore, consistent with retaining claims the model does not robustly know. Tighten-ing to 3/2/2/1 improves %Supp. and FActScore, most notably on Bios, at the cost of discarding ad-ditional training claims. At evaluation this reduces #Supp. on WildHalu, whereas on Bios the stricter model retains slightly more supported claims than the default. 
+
+Choice of default ( 2/1/2/1). The default was motivated by two observed failure modes in ques-tion generation. Requiring entailment from at least two distinct questions with at least one entailing response each ( je=2 , k e=1 ) guards against over-specified probes. Tolerating up to two questions with a single contradicting answer ( jc=2 , k c=1 )guards against underspecified ones. The results confirm that 2/1/2/1 achieves a good balance: on WildHalu it retains more supported claims than the stricter settings while maintaining higher %Supp. and FActScore than the more lenient ones. 
+
+G Factuality–Capability Trade-off 
+
+Figure 6 plots FActScore against the OLMES av-erage for all OASST1 models, complementing the discussion in Section 4.6. 
+
+H UnknownBench Precision–Recall Trade-off 
+
+Since refusal is a discrete generation decision, our models do not expose an inference-time confidence threshold. Each trained model corresponds to a sin-gle precision–recall operating point on Unknown-Bench, and its conservativeness is instead deter-mined at training time by the strength of knowledge alignment. Figure 7 therefore plots the results of Table 4 together with the %Known ablation models of Table 3 against iso-F1 contours. On all three subtasks, Recall Rewrite and its 100%-known ablation trade precision for substan-tially higher recall than the baselines, and the 100%-known model attains the highest F1 on every subtask (70.4 / 74.1 / 71.9). The ablation models trained with a larger share of unknown claims (0% and 50%) fall back to baseline-level recall on NEC and RefuNQ at a lower precision, i.e., they refuse less reliably and less selectively. The filter thresholds of Table 11 provide a finer-grained control over this operating point. 
+
+I Qualitative Analysis of Recall Rewrite 
+
+This appendix complements the aggregate results with examples of where Recall Rewrite succeeds and where it fails. We look at the three stages at which the method acts: the rewriting of the OASST1 training data (Section I.1), the gener-ations of the resulting model on WildHalu and 19 72 74 76 78 80 82 84 86 88 67 68 69 70 SFT FLAME UNIT cut ER ER w/o brainst. RR         
+
+> FActScore (WildHalu) OLMES Avg. WildHalu
+> 30 40 50 60 70 80 67 68 69 70 SFT FLAME UNIT cut ER ER w/o brainst. RR
+> FActScore (Bios) Bios Baselines Evidence Rewrite (ours) Recall Rewrite (ours)
+
+Figure 6: Factuality vs. general capability for all knowledge-alignment methods trained on OASST1 with Qwen 3 4B. Each point is one trained model: FActScore on WildHalu (left) and Bios (right, Table 1) against the average over the four general capability benchmarks (Table 5). Up and to the right is better. All models lie within a 2.1-point band on the OLMES average, while FActScore varies by 10 (WildHalu) and 43 (Bios) points.                   
+
+> 55 60 65 70 65 70 75 80 85
+> F1=60 65 70 SFT FLAME UNIT cut
+> ER ER w/o brainst. RR 0% 50% 100%
+> Recall Precision FalseQA
+> 40 60 80 65 70 75 80
+> F1=55 65 75 SFT FLAME UNIT cut
+> ER ER w/o brainst. RR 0% 50% 100%
+> Recall NEC
+> 50 60 70 80 90 60 62 64 66 68 70
+> F1=60 65 70 SFT FLAME UNIT cut
+> ER ER w/o brainst. RR 0% 50% 100%
+> Recall RefuNQ Baselines Evidence Rewrite (ours) Recall Rewrite (ours) Recall Rewrite, %Known ablation (Table 3)
+
+Figure 7: Refusal precision vs. recall on the three UnknownBench subtasks (Table 4). Each trained model yields a single operating point since refusal is a discrete generation decision; gray contours are iso-F1 lines. Hollow diamonds connect the Recall Rewrite %Known ablation models (Table 3). Recall Rewrite and the 100%-known model trade precision for substantially higher recall than all baselines. 
+
+Bios (Section I.2), and the regressions on IFEval and GSM8K (Section I.3). All examples come from the Qwen3-4B-Base pipeline and from the Recall Rewrite and standard SFT models trained on OASST1 (Table 1). Each example is shown side by side with the original and the rewritten response (Section I.1) or with the responses of standard SFT and Recall Rewrite (Sections I.2 and I.3), followed by the information that explains the outcome. 
+
+I.1 Training Data Rewrites 
+
+Examples 1 to 9 show original OASST1 responses next to their rewritten versions together with the claims that the pipeline classified as unknown. For each removed claim we report how many of the ten probe answers ( J=5 questions with K=2 answers each) entail (E), contradict (C), or are unrelated to (U) the claim. Where it explains the outcome, a Probing line additionally shows representative probing questions with the sampled base-model answers and their entailment label. 
+
+Intended behavior. In the intended case (Exam-ples 1 and 2), the base model consistently con-tradicts one specific claim of the gold response, such as the share of dark matter in the universe or the daily food intake of a groundhog, and the rewriter removes exactly this claim with a local edit while leaving the rest of the response untouched. Both removed claims are true. Recall Rewrite re-moves them not because they are wrong, but be-cause Qwen3-4B-Base does not recall them: for dark matter, all ten probe answers give 27%, which is the share of dark matter in the total mass–energy of the universe rather than in its matter. Exam-20 ple 3 shows the same mechanism leading to a re-fusal. The gold response correctly attributes the lyrics to “Dear Prudence” by The Beatles, but in all ten probe answers the base model attributes them to “Beautiful Day” by U2. Both content-bearing claims are therefore removed and the rewriter re-turns the refusal template. 
+
+Example 1 (success): A single unknown quantitative claim is removed 
+
+Prompt: what is dark matter 
+
+Gold response R
+
+Dark matter is an hypothetical form of matter, which does not interact with the electromagnetic field. It is thought to account for approximately 85% of the matter in the known universe, if it does exist. 
+
+Rewritten response R∗
+
+Dark matter is an hypothetical form of matter, which does not interact with the electromagnetic field. 
+
+Removed claim: “Dark matter is thought to account for ap-proximately 85 percent of the matter in the known universe.” (E0 / C10 / U0). All seven retained knowledge-dependent claims are entailed by at least eight of the ten answers. 
+
+Probing: Q: “Approximately what percentage of the matter in the known universe is believed to consist of dark matter?” 
+
+→ “It is believed that about 27% of the matter in the known universe consists of dark matter.” (C); “Dark matter is believed to make up around 27% of the matter in the universe, while ordinary matter accounts for about 5%.” (C). All ten answers to the five questions state 27%. 
+
+Example 2 (success): A removed quantity is paraphrased consistently throughout the response 
+
+Prompt: How much wood would a woodchuck chuck if a woodchuck could chuck wood? 
+
+Gold response R
+
+Since woodchucks (also known as Groundhogs) are pretty small animals, the amount of wood they could chuck would likely be part of their normal food consumption. Adult Groundhogs can eat up to one pound of vegetation per day. So, assuming their metabolism doesn’t change: A woodchuck would chuck 1 pound of wood if a woodchuck could chuck wood. 
+
+Rewritten response R∗
+
+Since woodchucks (also known as Groundhogs) are pretty small animals, the amount of wood they could chuck would likely be part of their normal food consumption. They consume a modest amount of vegetation each day. So, assuming their metabolism doesn’t change: A woodchuck would chuck a modest amount of wood if a woodchuck could chuck wood. 
+
+Removed claim: “Adult groundhogs can eat up to one pound of vegetation per day.” (E0 / C10 / U0). 
+
+Example 3 (success): The base model consistently recalls a different answer, so the response becomes a refusal 
+
+Prompt: [lyrics] of the verse go like this: “The sun is up, the sky is blue, it’s beautiful and so are you.” Which song is that and who is the author of the [lyrics]? 
+
+Gold response R
+
+Those are part of the lyrics of the song “Dear Prudence” by The Beatles, written by John Lennon. 
+
+Rewritten response R∗
+
+I cannot answer as I have insufficient information. 
+
+Removed claims: “The lyrics [. . .] appear in the song ‘Dear Prudence’.” (E0 / C10 / U0); “John Lennon wrote the lyrics of the song ‘Dear Prudence’.” (E0 / C7 / U3). Retained: “‘Dear Prudence’ is a song performed by the Beatles.” (E10 / C0 / U0). 
+
+Probing: Q: “Which song includes the lyric ‘The sun is up, the sky is blue, it’s beautiful and so are you.’?” → “The song ‘Beautiful Day’ by U2 contains the lyric [. . .]” (C); “The song is ‘Beautiful Day’ by U2.” (C). All ten answers to the five questions name “Beautiful Day” by U2. 
+
+Failure modes. Examples 4 to 7 show the four failure modes we observed most frequently. First, 
+
+the probing questions do not target the information that the claim adds . In Example 4, the claim to be tested contributes one piece of new information to the response, the year 1596, since Warsaw as the capital is asserted (and classified as known) by a separate claim. All five generated questions nev-ertheless ask for the city and the year. The base model recalls the year in nine of the ten answers, but three questions receive a wrong city (Lwów, Kraków, Lublin), which counts as three contra-dicting questions and removes the claim, whereas the near-identical retained claim “The capital [. . .] moved from Kraków to Warsaw in 1596” passes be-cause its questions happen to name the city. Untar-geted questions thus make the classification depend on which part of a compound question the base model gets wrong, and can classify claims carrying the same information differently. Overall, 392 of the 8,199 removed claims (4.8%) are entailed by at least six of the ten answers. Second, the probes fail to elicit related answers . 1,575 of the 8,199 removed claims (19.2%) are removed without a sin-gle contradicting answer, i.e., only because too few of the sampled answers were judged to entail the claim. Example 5 is such a case: the answers de-scribe “language models” or “NLP models”, which the entailment check does not accept as evidence for a claim about large language models, so the classification reflects the strictness of the probe and entailment step rather than the knowledge of the base model. Third, the rewriter removes more than the unknown claim . In the same example, only this 21 generic definition is classified as unknown, yet the rewriter also drops the sentence on ChatGPT’s ca-pabilities although all of its claims were retained. Fourth, the rewritten response loses coherence or changes the content . After removing all references to the song in Example 6, the remaining clarifica-tion question still asks about “the song”, although the response no longer says which song is meant. In Example 7, the rewriter reacts to the removal of a claim about match expressions by rewriting the code itself into an if /else chain and dropping the code fence. This last case is specific to code and other structured responses, where many claims describe how the response is constructed rather than what it states. Over-truncation is nonetheless rare in the non-refusal set: the median rewritten response retains 97% of the characters of the origi-nal, and 1,127 of the 3,165 responses have no claim removed at all. 
+
+Example 4 (failure): The probing questions test the city rather than the year that the claim adds 
+
+Prompt: What was the capital of Poland in 1640? 
+
+Gold response R
+
+Warsaw. It became the capital of Poland-Lithuania Commonwealth in 1596. It was chosen as the capital because it was the mid-point between the then Polish capital Cracow, and Lithuanian capital Vilnius. 
+
+Rewritten response R∗
+
+Warsaw. It was chosen as the capital because it was the mid-point between the then Polish capital Cracow, and Lithuanian capital Vilnius. 
+
+Removed claim: “Warsaw became the capital of the Polish– Lithuanian Commonwealth in 1596.” (E7 / C3 / U0). Re-tained, among others: “Warsaw was the capital of Poland in 1640.” (E8 / C2 / U0); “The capital of the Polish–Lithuanian Commonwealth moved from Kraków to Warsaw in 1596.” (E4 / C0 / U6). 
+
+Probing: All five questions ask for city and year, e.g., Q: “Name the city that assumed the role of capital for the Polish– Lithuanian Commonwealth and state the year when this hap-pened.” → “Lwów (now Lviv, Ukraine) became the capital of the Polish–Lithuanian Commonwealth in 1596.” (C); “The city of Warsaw became the capital of the Polish–Lithuanian Commonwealth in 1596.” (E). Nine of the ten answers give the year 1596; the three contradictions (Lwów, Kraków, Lublin) all concern the city. The retained near-duplicate claim was probed with questions that name Kraków as the previous capi-tal, e.g., Q: “Identify the city that replaced Kraków as the seat of the Polish–Lithuanian Commonwealth and state the year the replacement happened.” → “The city that replaced Kraków [. . .] was Warsaw. The replacement happened in 1596.” (E). 
+
+Example 5 (failure): No question entails a generic claim, and the rewriter removes more than the unknown claim 
+
+Prompt: Do you know of Chat GPT? 
+
+Gold response R
+
+ChatGPT is a large language model (LLM) developed by OpenAI, based on the GPT-3 architecture. It is designed to understand and respond to natural language input from users, and its capabilities include tasks such as language translation, answering questions, and generating human-like responses to prompts. 
+
+Rewritten response R∗
+
+Yes. ChatGPT is developed by OpenAI and is based on the GPT-3 architecture. 
+
+Removed claim: “A large language model is trained to pro-cess and generate human language.” (E2 / C0 / U8). Re-tained, among others: “ChatGPT is a large language model.” (E6 / C0 / U4); “ChatGPT can perform language translation.” (E10 / C0 / U0); “ChatGPT is designed to respond to natural language input from users.” (E9 / C0 / U1). 
+
+Probing: Q: “Which type of AI model is trained to analyze and produce natural human language?” → “A language model is an AI model specifically designed to understand and generate natural human language.” (U); “A natural language processing (NLP) model is trained to understand, interpret, and gener-ate human language.” (U). Eight of the ten answers name language or NLP models without the qualifier large and are labeled unrelated. 
+
+Example 6 (failure): The rewritten response is no longer coherent 
+
+Prompt: What is love? Baby don’t hurt me 
+
+Gold response R
+
+Sorry, could you please clarify your task? Would you like to know more about the song 1993 song “What is Love” from Haddaway? 
+
+Rewritten response R∗
+
+Sorry, could you please clarify your task? Would you like to know more about the song? 
+
+Removed claims: “The phrase ‘What is love? Baby don’t hurt me’ is a lyric from the song ‘What Is Love’.” (E3 / C4 / U3); “The song ‘What Is Love’ was released in 1993.” (E1 / C9 / U0); “The song ‘What Is Love’ was per-formed by the artist Haddaway.” (E0 / C10 / U0). 
+
+Example 7 (failure): The rewriter changes the code instead of removing a claim 
+
+Prompt: I’ve been learning Rust for a few weeks now, and have been trying my hand at the fizzbuzz problem. [ code of 
+
+fn fizzbuzz<’a>(n: usize) -> &’a str using a match 
+
+expression ] For some reason, I get a compiler error that I’m struggling to understand. [ error[E0515]: cannot return value referencing temporary value [. . .]] Could you please explain to my why this happens and how I can fix it? 
+
+Gold response R
+
+The simplest way to solve this is to just return a String rather than a & str :
+
+``` rust fn fizzbuzz(n: usize) -> String { match (n % 3, n % 5) { (0, 0) => "fizzbuzz".to_string(), (0, _) => "fizz".to_string(), (_, 0) => "buzz".to_string(), 
+
+22 _ => n.to_string(), }}
+
+``` 
+
+Rewritten response R∗
+
+The simplest way to solve this is to just return a String rather than a & str :
+
+fn fizzbuzz(n: usize) -> String { if n % 3 == 0 && n % 5 == 0 { "fizzbuzz".to_string() } else if n % 3 == 0 { "fizz".to_string() } else if n % 5 == 0 { "buzz".to_string() } else { n.to_string() }}
+
+Removed claim: “All arms of a match expression must pro-duce values of the same type.” (E7 / C3 / U0). All nine other knowledge-dependent claims (on &str , String , lifetimes, and temporaries) were retained. The prompt is abbreviated. 
+
+Over-refusals. The rewriter returns the refusal template for 302 of the 3,467 OASST1 examples. In 7 of these no claim was removed at all (Ex-ample 8), and in 114 cases at most a quarter of the knowledge-dependent claims were removed. Such refusals are over-represented for code: 95 of the 302 refusals (31%) but only 434 of the 3,165 non-refusals (14%) contain code, and 64 of the 114 refusals with few removed claims are code an-swers. Example 9 is typical. A single claim about the index range is classified as unknown, and its contradicting answers reflect the ambiguity of the claim (indexing from 0 or 1, negative extensions of the sequence) rather than missing knowledge. The code itself is unaffected, but the rewriter judges the remaining information insufficient rather than returning the unchanged code. These refusals orig-inate from the insufficient-information decision of the rewriter (Figure 14) rather than from the knowl-edge classification. Constraining this decision, for instance by never refusing when no claim was re-moved, is a straightforward improvement for future work. 
+
+Example 8 (over-refusal): No claim was removed 
+
+Prompt: All pizzas are food. I have not eaten any food today. Have I eaten any pizzas today? 
+
+Gold response R
+
+No. You stated you have not eaten any food today, and since all pizzas are food, it can be deduced that you have not eaten any pizzas today. 
+
+Rewritten response R∗
+
+I cannot answer as I have insufficient information. 
+
+Removed claims: none. Four of the five claims are non-knowledge-dependent (logical inferences over the prompt) and the fifth, “If a conditional statement ‘if P then Q’ is true and Q is false, then P is false.” (E7 / C0 / U3), is known. 
+
+Example 9 (over-refusal): One of 16 knowledge-dependent claims is removed, the code is unaffected 
+
+Prompt: Write Python code to generate N Tribonacci numbers 
+
+Gold response R
+
+``` python def tribonacci(n): if n == 0 or n == 1: return 0 if n == 2: return 1 return tribonacci(n-1) + tribonacci(n-2) + tribonacci(n-3) 
+
+``` 
+
+Rewritten response R∗
+
+I cannot answer as I have insufficient information. 
+
+Removed claim: “A Tribonacci index is a non-negative integer.” (E6 / C4 / U0). Retained, among others: “For every integer 
+
+n ≥ 3, the Tribonacci number at index n equals the sum of the Tribonacci numbers at indices n−1, n−2, and n−3.” (E7 / C0 / U3); “In Python, the keyword def begins a function definition.” (E10 / C0 / U0); “In Python, indentation deter-mines which statements belong to a block.” (E10 / C0 / U0). 
+
+Probing: Q: “What type of number is used to label positions in the Tribonacci sequence (i.e., what kind of number can a Tribonacci index be)?” → “A Tribonacci index can be any positive integer, as it represents the position in the sequence starting from 1.” (C); “A Tribonacci index can be any non-negative integer [. . .]” (E). Q: “Which category of numbers describes valid indices for the Tribonacci sequence (for exam-ple: negative numbers, positive only, or including zero)?” →
+
+“Valid indices for the Tribonacci sequence include both posi-tive and negative numbers, as well as zero, since the sequence can be extended infinitely in both directions.” (C). The last code line is wrapped for layout. 
+
+23 I.2 Model Generations 
+
+WildHalu Bios Recall Rewrite (RR) refuses 55 252 std. SFT < 40% true claims 31 224 std. SFT 40–70% true claims 15 23 std. SFT ≥ 70% true claims 8 1std. SFT also refuses 1 4Std. SFT refuses, RR answers 1 0Both models answer 444 248 RR has fewer false claims 265 215 same number of false claims 101 11 RR has more false claims 78 22 Avg. true / false claims when both answer std. SFT 17.1 / 4.5 14.7 / 15.6 RR 13.8 / 2.6 10.3 / 8.0 
+
+Table 12: Per-prompt comparison of Recall Rewrite and standard SFT on the 500 WildHalu and 500 Bios prompts, based on the fact-check verdicts (true / false / not known) of Section D. The share of true claims is computed over all claims of the standard SFT response. Refusals are identified with the evaluation pipeline’s LLM refusal detector, so the refusal counts match the #Ref. column of Table 1; the true-claim buckets cover the prompts on which standard SFT answers. 
+
+Table 12 categorizes the 500 WildHalu and 500 Bios prompts by the behavior of the two models. Examples 10 to 14 show representative genera-tions with the number of true / false / not known claims according to the fact-checking pipeline of Section D. 
+
+Refusals. Recall Rewrite refuses on 252 Bios prompts. Standard SFT answers on 248 of these prompts; for 224 (90%), fewer than 40% of its claims for the same entity are true, and only for one entity (Luiz Inácio Lula da Silva, 39 true and 13 false claims) is the standard SFT response pre-dominantly correct. Bios refusals thus almost ex-clusively concern entities on which standard SFT hallucinates, such as Maja Jager in Example 10, where standard SFT invents a Swedish singer while the entity is a Danish archer. The 40% threshold, if anything, overstates the quality of standard SFT, since the fact-checker marks generic claims such as “she has released several albums” as true even when the response describes a fictitious person. On WildHalu, whose entities are less long-tail (cf. the %Supp. of standard SFT in Table 1), the picture is more mixed. Of the 55 refusals, 31 concern enti-ties on which standard SFT is mostly wrong, but 8 concern entities on which it is mostly right. For Lovenox (Example 11), for example, all 21 claims of the standard SFT response are supported. These over-refusals are the price of the higher %Supp. (Table 1) and the higher refusal recall (Table 4). 
+
+Example 10 (correct refusal): Standard SFT describes a fictitious person 
+
+Prompt: Tell me a bio of Maja Jager. 
+
+Standard SFT 
+
+Maja Jager is a Swedish singer and songwriter who was born on March 17, 1989 in Stockholm, Sweden. She began her music career at a young age, singing in church choirs and participating in various music competitions. Jager gained widespread recognition in 2013 after winning the Swedish version of the reality TV show “The Voice”. She went on to represent Sweden in the Eurovision Song Contest that same year, where she finished in 10th place. Since then, Jager has released several albums and singles, in-cluding her debut album “Maja Jager” in 2014 and her second album “The Voice” in 2016. She has also collaborated with various artists, including fellow “The Voice” contestant Mar-cus & Martinus. In addition to her music career, Jager is also known for her hu-manitarian work, including her involvement with the Swedish Red Cross and her efforts to raise awareness for mental health issues. 
+
+Recall Rewrite 
+
+I cannot answer as I have insufficient information. 
+
+Fact-check (true / false / not known): standard SFT 1 / 21 / 0. Wikipedia: “Maja Buskbjerg Jager (born 22 December 1991) is a Danish recurve archer.” 
+
+Example 11 (over-refusal): Standard SFT is fully correct 
+
+Prompt: In a paragraph, could you tell me what you know about Lovenox? 
+
+Standard SFT 
+
+Lovenox is the brand name for enoxaparin, a low molecular weight heparin (LMWH) used to prevent and treat blood clots. It is commonly used to prevent deep vein thrombosis (DVT) and pulmonary embolism (PE) in patients who are at risk, such as those who have undergone surgery or have been bedridden for an extended period of time. It is also used to treat existing blood clots in the legs or lungs, and to prevent recurrent clots. Lovenox works by inhibiting the formation of blood clots, thereby reducing the risk of clot-related complications. It is administered via subcutaneous injection and is generally well-tolerated, although like all medications, it can cause side effects such as bleeding, bruising, and injection site reactions. As with any medication, Lovenox should only be used under the guidance of a healthcare provider. 
+
+Recall Rewrite 
+
+I cannot answer as I have insufficient information. 
+
+Fact-check: standard SFT 21 / 0 / 0. 
+
+Both models answer. When both models answer, Recall Rewrite produces shorter responses with fewer claims (WildHalu: 13.8 true and 2.6 false claims per response vs. 17.1 and 4.5 for standard SFT; Bios: 10.3 and 8.0 vs. 14.7 and 15.6) and has fewer false claims than standard SFT for 265 of the 444 WildHalu and 215 of the 248 Bios prompts. In the best cases it drops exactly the wrong details 24 (Example 12) or replaces a fabricated description with a correct one (Example 13). Recall Rewrite is not immune to hallucination, however: it produces more false claims than standard SFT on 78 Wild-Halu and 22 Bios prompts. Example 14 shows such a case. The model answers a question about an en-tity it evidently does not know instead of refusing, and fabricates a detailed description whose errors merely differ from those of standard SFT. The train-ing thus reduces how often the model guesses, but when it does guess, its output is no more reliable. 
+
+Example 12 (correction): Recall Rewrite drops exactly the wrong details 
+
+Prompt: In a paragraph, could you tell me what you know about Brandenburg Gate? 
+
+Standard SFT 
+
+The Brandenburg Gate is a neoclassical monument located in Berlin, Germany. It was built between 1788 and 1793 to commemorate the Peace of Westphalia, which ended the War of the First Coalition against France. The gate is made of white marble and features a large arch with four fluted columns supporting a triangular pediment. It has been a symbol of German unity and freedom for centuries, and has been the site of many important historical events, such as the proclamation of German reunification in 1990. Today, it is one of the most iconic landmarks in Berlin, and a popular tourist attraction. 
+
+Recall Rewrite 
+
+The Brandenburg Gate is a neoclassical monument in Berlin, Germany. It was built between 1788 and 1791 and is one of the most iconic landmarks in the city. The gate is a symbol of the unity of Germany and has been the site of many important historical events. It has been the setting for numerous political rallies and demonstrations, including the German Unification Day celebrations in 1990. 
+
+Fact-check: standard SFT 7 / 6 / 2 (false: construction years, Peace of Westphalia, white marble, four fluted columns); Re-call Rewrite 11 / 0 / 0. 
+
+Example 13 (correction): A fabricated description is re-placed by a correct one 
+
+Prompt: In a paragraph, could you tell me what you know about Monocle3? 
+
+Standard SFT 
+
+Monocle3 is a deep brain stimulation device that is used to treat movement disorders such as Parkinson’s disease. It is a small, implantable device that is placed in the chest and connected to electrodes that are implanted in specific areas of the brain. The device delivers electrical impulses to the brain to help regulate abnormal brain activity that can cause symp-toms such as tremors, rigidity, and bradykinesia. Monocle3 is designed to be programmable, allowing doctors to adjust the settings based on the patient’s individual needs. It is a wireless device that is powered by a battery, which can be replaced during a simple surgical procedure. Monocle3 is intended to be a long-term solution for patients with movement disorders, and it has been shown to be effective in reducing symptoms and improving quality of life for many patients. 
+
+Recall Rewrite 
+
+Monocle3 is a computational tool designed for the analysis of single-cell RNA sequencing (scRNA-seq) data. It provides a suite of algorithms for processing and analyzing scRNA-seq data, including quality control, normalization, dimensionality reduction, and clustering. Monocle3 also includes tools for vi-sualizing the results of scRNA-seq analysis, such as trajectory inference and pseudotime analysis. The tool is implemented in R and provides a user-friendly interface for performing these analyses. Overall, Monocle3 is a powerful and versatile tool for analyzing scRNA-seq data and gaining insights into the complex biology of single cells. 
+
+Fact-check: standard SFT 5 / 18 / 0 (the true claims are generic statements about Parkinson’s disease); Recall Rewrite 15 / 0 / 3. 
+
+Example 14 (regression): The model answers instead of refusing and fabricates the details 
+
+Prompt: In a paragraph, could you tell me what you know about Glaceon? 
+
+Standard SFT 
+
+Glaceon is a fictional Pokémon introduced in the anime series Pokémon the Series: XY. It is a Water/Ice-type Pokémon that evolves from Wailord at level 40. In the anime, Glaceon is known for its ability to control ice and its association with the winter season. It is also depicted as a gentle and peace-ful Pokémon that is often used by trainers for its defensive capabilities. In the Pokémon games, Glaceon is known for its unique design and its ability to learn a variety of powerful moves, making it a formidable opponent in battles. Overall, Glaceon is a popular and beloved Pokémon that is cherished by fans for its unique characteristics and abilities. 
+
+Recall Rewrite 
+
+Glaceon is a Pokémon introduced in Generation VII. It is a dual-type Ice/Flying Pokémon. In its base form, Glaceon has white and blue coloration with icy blue streaks running down its sides. It has small, round eyes with a white ring around them, and a small, pointed snout. Its wings are a light blue color and it has a small, triangular tail. In its evolved forms, its coloration changes and it gains additional features. As a Pokémon, Glaceon is known for its speed and agility in the air. 
+
+Fact-check: standard SFT 15 / 4 / 4; Recall Rewrite 6 / 15 / 1. Both descriptions are largely fabricated (Glaceon is an Ice-type evolution of Eevee introduced in Generation IV, without wings); Recall Rewrite invents a physical appearance and happens to state more checkable false details. 
+
+25 I.3 IFEval and GSM8K Regressions 
+
+GSM8K IFEval # prompts 1,319 541 Std. SFT correct, RR wrong 102 71 Std. SFT wrong, RR correct 71 54 Starts with refusal template 0 / 0 0 / 30 Contains a refusal phrase 0 / 0 2 / 37 Acc. on the 30 refused prompts – 66.7 / 13.3 Acc. on prompts w/o refusal phrase 83.6 / 81.3 56.5 / 56.3 Avg. response length (tokens) 117 / 113 273 / 209 
+
+Table 13: Per-example comparison of standard SFT and Recall Rewrite on GSM8K (exact match) and IF-Eval (prompt-level loose accuracy). Pairs are standard SFT / Recall Rewrite (RR); the first three rows count prompts, the remaining rows are counts of responses, accuracies in %, and tokens. “Refused prompts” are those where the Recall Rewrite response starts with the refusal template, “prompts without refusal phrase” the 504 IFEval prompts (all 1,319 GSM8K prompts) whose Recall Rewrite response contains no refusal phrase. 
+
+Table 13 contrasts the per-example predictions of the two models on the two OLMES tasks with the largest differences in Table 5. 
+
+GSM8K. The 2.3-point drop results from 102 problems that standard SFT solves and Recall Rewrite does not, against 71 problems in the oppo-site direction. None of the 1,319 responses of either model contains a refusal, every response ends in a numeric answer, and the average response length is unchanged. The errors are ordinary reasoning slips such as omitting a step (Example 15), so we see no evidence that the refusal behavior affects GSM8K and attribute the difference to training variance. 
+
+Example 15 (GSM8K): An omitted step, no refusal 
+
+Prompt: Ashley’s pizza delivery costs $15. What is the total amount that Ashley should give the delivery man if she wants to give a tip that is equal to 1/5 of the amount she ordered? 
+
+Standard SFT (correct) 
+
+The tip should be 15 / 5 = 3 dollars. So the total amount should be 15 + 3 = 18 dollars. So the answer is 18. 
+
+Recall Rewrite (wrong) 
+
+The tip should be 15 / 5 = 3. So the answer is 3. Gold answer: 18 (exact match). Typical of the 102 GSM8K problems that only standard SFT solves: both models produce a chain of arithmetic steps and a numeric answer. 
+
+IFEval. On IFEval, the picture is different. Re-call Rewrite begins its response with the refusal template for 30 of the 541 prompts and contains a refusal phrase in 37 responses (standard SFT: 0 and 2). Its accuracy on these 30 prompts is 13.3% compared to 66.7% for standard SFT, whereas on the 504 prompts without any refusal phrase the two models are on par (56.3% vs. 56.5%). Refusals therefore account for the entire IFEval difference. The refused prompts are predominantly creative-writing tasks (jokes, poems, riddles, raps) and opin-ion questions rather than knowledge-seeking ques-tions (Examples 16 and 17). The 302 refusals in the training data include refusals to such prompts (e.g., “Tell me a funny joke!” or “Please create an ASCII drawing of a cat wearing a hat.”, cf. Sec-tion I.1), which the model appears to generalize into a tendency to refuse creative tasks even though they require no factual knowledge. Reducing over-refusals of this kind in the training data is therefore the most direct lever for closing the IFEval gap. 
+
+Example 16 (IFEval): A creative-writing prompt is refused 
+
+Prompt: Write a short and funny joke about a guy who works at the IRS. Include at least one placeholder represented by square brackets. 
+
+Standard SFT (correct) 
+
+Sure, here is an example: Why did the guy who worked at the IRS make a good impres-sion on his first day? Because he was [tax] ready! 
+
+Recall Rewrite (wrong) 
+
+I cannot answer as I have insufficient information. Instruction checked: detectable_content: number_placeholders . Recall Rewrite responds with the refusal template only. 
+
+Example 17 (IFEval): A knowledge-heavy writing prompt is refused 
+
+Prompt: Write a 200 word essay on the 2000 presidential elec-tion. The title should be wrapped in double angular brackets, i.e. <<title>>. 
+
+Standard SFT (correct) 
+
+<<The 2000 Presidential Election>> The 2000 presidential election was one of the most controver-sial and closely watched elections in US history. The election was between the incumbent president, George W. Bush, and Vice President Al Gore. The election was ultimately decided by the Supreme Court in Bush v. Gore, which ruled that the Florida vote recount was unconstitutional. [. . .] 
+
+Recall Rewrite (wrong) 
+
+I cannot answer as I have insufficient information. Instruction checked: detectable_format:title . IFEval only verifies the format, so the factual errors of the standard SFT response (Bush was not the incumbent) do not count against it. The standard SFT response is truncated at [. . .]. 
+
+J Prompts 
+
+The rest of the appendix lists the different prompts used for the different components in this work. 26 Example prompt 1 
+
+Here is a question from a user : " What are the principles at play in UHPLC - MS analysis ?". To answer the above question , do you need the factual knowledge from Wikipedia ? Give an answer using the format : " Answer : Yes or No ". 
+
+Example response 1 
+
+Answer : Yes 
+
+... 
+
+Example prompt 10 
+
+Here is a question from a user : " Is the internet 's focus on engagement the root of most of its problems and shortcomings ?". To answer the above question , do you need the factual knowledge from Wikipedia ? Give an answer using the format : "Answer : Yes or No ". 
+
+Example response 10 
+
+Answer : No 
+
+Instruction 
+
+Here is a question from a user : "{ prompt }". To answer the above question , do you need the factual knowledge from Wikipedia ? Give an answer using the format : " Answer : Yes or No ". 
+
+Figure 8: Few-shot prompt for classifying instructions as knowledge-seeking or non-knowledge-seeking (non-factual), used in the FLAME pipeline to determine whether to replace a gold response with a base model generation. Examples are adapted from Lin et al. (2024). 
+
+27 You are trying to verify how factual a response to a question or request is . To do so , you need to break down a sentence and extract as many fine - grained facts mentioned in the response . Each of these fine - grained facts should be verifiable against reliable external world knowledge (e.g., via Wikipedia ). Any story , personal experiences , hypotheticals (e.g., " would be " or subjunctive ) , subjective statements (e.g., opinions ) , suggestions , advice , instructions , and other such content should not be included in the list . Biographical , historical , scientific , and other such texts are not personal experiences or stories . You should extract verifiable facts from them . Each fact should also be describing either one single event (e.g., " Nvidia is founded in 1993 in Sunnyvale , California , U.S .") or single state (e.g., " UMass Amherst has existed for 161 years .") with necessary time and location information . Quotations should be extracted verbatim with the source when available . Listed references should be ignored . Extract fine - grained facts from the sentence between <SOS > and <EOS >. You should focus on the named entities and numbers in the sentence and extract relevant information from the sentence . Do not extract claims from the question . The question and other sentences are only context for you to recover pronouns , definite phrases (e.g., " the victims " or " the pope ") , and so on . Each fact should be understandable on its own and require no additional context . This means that you need to always related the extracted claims to the question . This also means that all entities must be referred to by name but not pronoun . Use the name of entities rather than definite noun phrases (e.g., ' the teacher ') whenever possible . If a definite noun phrase is used , be sure to add modifiers (e.g., a embedded clause , a prepositional phrase , etc .) . Each fact must be situated within relevant temporal and location whenever needed . Keep each fact to one sentence with zero or at most one embedded clause . You do not need to justify what you extract . If there is no verifiable fact in the sentence , please write " No verifiable claim ." Here are some examples : Question : What NASA programs would support our college in starting a robotics program ? Response : NASA has several programs that can support colleges in starting a robotics program . Here are a few : <SOS >1. NASA Robotics Alliance Project ( RAP ): This program provides educational resources and support for robotics teams , including college - level teams , that are participating in NASA robotics competitions .< EOS > 2. NASA Minority University Research and Education Project ( MUREP ): This program provides funding and resources for colleges and universities with a significant minority student population to develop research and education programs in STEM fields , including robotics . 3. NASA 's Robotics Education Project : This project provides robotics education materials and resources for educators , including college - level educators , to use in their classrooms . 4. NASA 's Space Technology Mission Directorate ( STMD ): This directorate funds research and development in advanced technologies , including robotics , that can support NASA 's mission to explore space . Sentence to be focused on : 1. NASA Robotics Alliance Project ( RAP ): This program provides educational resources and support for robotics teams , including college - level teams , that are participating in NASA robotics competitions . Facts : - NASA has a program called NASA Robotics Alliance Project ( RAP ). - NASA Robotics Alliance Project provides educational resources for robotics teams . - NASA Robotics Alliance Project provides supports for robotics teams . - NASA Robotics Alliance Project provides supports for college - level teams that are participating in NASA robotics competitions . [...] Question : How do trees know when to stop growing ? Thanks everyone i learned a lot more about trees .(: Response : <SOS > Ah yes , tomatoes , this is a big problem with tomato plants .< EOS > Sentence to be focused on : Ah yes , tomatoes , this is a big problem with tomato plants . Facts : No verifiable claim . [...] Extract * verifiable atomic * fact . { snippet } Sentence to be focused on : { sentence } Facts : 
+
+Figure 9: Claim decomposition prompt from Song et al. (2024), used to extract verifiable atomic facts from model responses. Some few-shot examples omitted for brevity. 
+
+28 Answer the question about { topic } based on the given context . Title : { retrieved_passages [0]. title } Text : { retrieved_passages [0]. text } Title : { retrieved_passages [1]. title } Text : { retrieved_passages [1]. text } Title : { retrieved_passages [2]. title } Text : { retrieved_passages [2]. text } Title : { retrieved_passages [3]. title } Text : { retrieved_passages [3]. text } Title : { retrieved_passages [4]. title } Text : { retrieved_passages [4]. text } Input : { claim } True or False ? Output : 
+
+Figure 10: Claim verification prompt adapted from Min et al. (2023), used to classify each atomic claim as sup-ported or unsupported given retrieved Wikipedia pas-sages. 
+
+29 Example prompt 1 
+
+< USER PROMPT > Write a short biography of Lokesh Kanagaraj . < ASSISTANT RESPONSE > Lokesh Kanagaraj ( born 14 March 1986) is an Indian film director , screenwriter , and producer known for his work in Tamil cinema . He began his career with the short film in the 2016 anthology Aviyal and directed his first feature film Maanagaram (2017) . He created the Lokesh Cinematic Universe ( LCU ) with the success of Kaithi (2019) . He directed Master (2021) , a standalone film featuring Vijay , followed by Vikram (2022) , the second LCU installment . His film Leo (2023) , the third LCU installment , became a major success . < INSTRUCTION > Write a two times longer response . Use all the information from the given response , and include new facts to create a more detailed response . < LONGER ASSISTANT RESPONSE > 
+
+Example response 1 
+
+Lokesh Kanagaraj is an Indian filmmaker born on March 14 , 1986. He has established himself as a prominent figure in Tamil cinema , known for his work as a director , screenwriter , and producer . Kanagaraj 's career began with the short film segment in the 2016 anthology film " Aviyal ." This marked his entry into the filmmaking world . Subsequently , he directed his first feature film , " Maanagaram ," released in 2017. " Maanagaram " garnered critical acclaim and established Kanagaraj as a promising new talent in Tamil cinema . He further solidified his position with the 2019 film " Kaithi ." The success of "Kaithi " led to the creation of the Lokesh Cinematic Universe (LCU ) , a series of interconnected films sharing a common narrative and characters . Following " Kaithi ," Kanagaraj directed " Master " (2021) , astandalone film featuring the prominent Tamil actor , Vijay . While not directly part of the LCU , " Master " showcased Kanagaraj 's distinct style and narrative techniques . In 2022 , Kanagaraj delivered " Vikram ," the second installment in the LCU . " Vikram " received widespread critical and commercial success , further expanding the LCU 's reach and solidifying Kanagaraj 's position as a leading filmmaker in Tamil cinema . The third installment in the LCU , " Leo ," was released in 2023. " Leo " achieved significant commercial success , further enhancing the popularity and impact of the LCU within the Tamil film industry . Lokesh Kanagaraj 's contributions to Tamil cinema include his innovative storytelling , distinctive visual style , and his successful creation and development of the Lokesh Cinematic Universe . He continues to be a prominent figure in the industry , with his work garnering critical acclaim and adedicated fan following . 
+
+Prompt 
+
+< USER PROMPT > { prompt } < ASSISTANT RESPONSE > { original_response } < INSTRUCTION > Write a two times longer response . Use all the information from the given response , and include new facts to create a more detailed response . < LONGER ASSISTANT RESPONSE > 
+
+Figure 11: Few-shot prompt for the brainstorming step in Evidence Rewrite, which instructs the base model to generate a longer, more detailed response given an initial short generation. One of two few-shot examples is shown. 
+
+30 [ START USER PROMPT ] { prompt } [ END USER PROMPT ] The following claims are factually correct : 1. { claim [0]} 2. { claim [1]} 3. { claim [2]} ... n. { claim [n ]} Generate a helpful response to the user prompt by summarizing the given claims without adding new information . If there are not enough information to create a helpful response , tell the user that you cannot answer because you do not know . 
+
+Figure 12: Summarization prompt used in the final rewriting step of Evidence Rewrite, which instructs the rewriter model to compose a fluent response from the set of externally verified claims only, without introducing new information. 
+
+31 You are a TRIVIA QUIZ MASTER . You are preparing questions for a quiz show . You are given a CLAIM (a piece of information ). ================================================== INPUT ( VISIBLE FOR YOU ONLY ) ================================================== Original question : < Original question > Original response : < Original response > Claim : < Claim text > ================================================== STEP 1 — AUDIT : CAN THIS BE A GOOD TRIVIA QUESTION ? ================================================== A claim is SUITABLE only if ALL are true : • It contains a specific fact about the real world that can be asked . • It is generally true , without requiring any context from the original question or response . • A participant would need to have learned this fact . • It is clearly understandable and complete on its own , without any context from the original question or response . • It is not opinion based or an arbitraty definition . • It is not obvious , generic , or common - sense . • I can ask about it without revealing the answer . REJECT the claim if : • It describes a vague belief , attitude , or opinion . • It depends on additional information or original context to make sense . • It does not carry enough factual information to be meaningful on its own . • It would not make a meaningful quiz question . When unsure → NOT suitable . ================================================== STEP 2 — QUESTION GENERATION ( ONLY IF SUITABLE ) ================================================== Generate EXACTLY 5 questions . The participant will see ONLY each generated question . They will NOT see the claim . Each question must function as a knowledge probe : • A minimal correct answer would necessarily include ALL factual information in the claim . • The question must NOT teach , hint , or guide toward the answer . • The question must stand fully on its own . Strictly adhere to these rules : 1. No answer leakage ( no distinctive names , numbers , dates , or phrases from the claim unless unavoidable ). 2. Do not closely paraphrase the claim . 3. Do not introduce new facts or details not in the claim . 4. If the claim has multiple factual components , each question must require ALL components . 5. Use varied , natural phrasings ( avoid trivial rewrites ). 6. Avoid overly constrained questions that allow guessing without knowledge . 7. Must be answerable on its own , without needing to see the original claim , question or response . If you cannot satisfy ALL these rules , mark the claim as not suitable . ================================================== OUTPUT FORMAT ================================================== You must output ONLY valid JSON . {{ " audit_checklist ": {{ " is_independent_of_context ": " Explain if this claim is meaningful and generally true on its own , without any context from the original question or response ." , " contains_specific_fact ": " Explain if this is a hard fact or just an opinion , attitude , or arbitrary definition ." , " is_not_obvious ": " Explain if this is actual trivia or just trivial common sense ." , " can_be_asked_for ": " Explain if this claim can be turned into a meaningful trivia question ." }} , " suitability_reason ": " Your final decision on why the claim passes or fails suitability ." , " is_suitable ": true or false , " questions ": [] }} If " is_suitable " is false , the " questions " list MUST be empty []. 
+
+Figure 13: Prompt template for generating probing questions from atomic claims in the Recall Rewrite pipeline. For each claim, the model first audits whether the claim is suitable for probing, then generates five context-independent questions designed to test whether the base model can recall the claim without being guided toward the answer. 
+
+32 You are a redaction editor . Your task is to prepare responses for release by removing restricted information . You will receive : - a question - an original response - a list of all information from the original response - a list of restricted information Your task is to rewrite the original response so that the final response does not contain or reveal any of the restricted information . Editing rules : 1. The final response must not contain , imply , or reveal any of the restricted information . 2. This includes explicit statements , paraphrases , partial references , or indirect implications of the restricted information . 3. Preserve as much of the original response as possible . Make the smallest edits necessary to remove the restricted information . 4. Do not add new information , facts , or explanations that were not already present in the remaining parts of the original response . 5. Prefer local edits ( removing or slightly rewriting only the affected parts ) rather than rewriting the entire response . 6. Apart from removing restricted information , keep the wording , structure , and style of the original response as unchanged as possible . Insufficient information rule : If removing the restricted information leaves too little information to meaningfully answer the question , do not attempt to repair or guess the answer . Instead , return : "I cannot answer as I have insufficient information ." Output format : Return only valid JSON in the following format : {{ " insufficient_information ": true or false , " answer ": " your revised answer here " }} If insufficient_information is true , the " answer " field must contain exactly : "I cannot answer as I have insufficient information ." Input : Question : < Original question > Original Response : < Original Response > All Information : < List of all claims > Restricted Information : < List of all claims to remve > 
+
+Figure 14: Prompt template for the response rewriting step in the Recall Rewrite pipeline, which removes claims classified as unknown while preserving the structure and wording of the original response. If too little information remains after redaction, the model returns a fixed abstention string instead. 
+
+33 You are a CURRICULUM DESIGNER preparing students for an exam . The exam consists of ONE question . Students must produce an answer that is semantically equivalent to the provided gold answer . You are given : - The exam question - The gold answer Your task is to identify ALL knowledge that must be taught so that a student could reliably produce acorrect answer equivalent to the gold answer . Your student : - Has basic language ability . - Has basic everyday common - sense knowledge . - Does NOT possess any domain - specific , cultural , procedural , or specialized knowledge . - Does NOT possess knowledge of specific conventions unless explicitly taught . You must determine what knowledge needs to be taught . ================================================== DEFINITION OF KNOWLEDGE ================================================== Knowledge can be : 1. Explicit declarative knowledge - Concrete factual statements stated in the answer . 2. Background world knowledge - Facts assumed but not stated . 3. Procedural knowledge - Methods , techniques , patterns , or processes required to construct the answer . 4. Cultural or genre knowledge - Social norms and traditions , stylistic conventions , or domain - specific practices relied upon . 5. Structural knowledge - Required format , logical organization , or compositional constraints necessary to produce the answer . 6. Relational knowledge - Necessary relationships between facts or concepts required for correctness . ================================================== NECESSITY TEST ================================================== Include a knowledge item ONLY if : - If the student lacked this knowledge , they would likely fail to produce a correct answer . - The knowledge is specific and learnable . - The knowledge goes beyond basic language competence and everyday common sense . 
+
+Figure 15: Prompt template for knowledge decomposition in the Recall Rewrite pipeline (part 1 of 2). 
+
+34 Do NOT include : - Basic ability to understand language . - Basic reasoning ability . - Extremely general common knowledge (e.g., " movies are watched on screens ") . - Trivial restatements of the question . ================================================== OUTPUT REQUIREMENTS ================================================== 1. Output ONLY a JSON list of knowledge items . 2. Each knowledge item must : - Be a complete declarative sentence . - Express exactly ONE atomic fact . - Be generally true . - Be understandable without the original question or answer . - Contain a clear subject and predicate . - Avoid pronouns whose referent depends on other items . 3. Do NOT : - Use meta - language such as " The student must know " or " This answer requires ". - Describe abilities or vague knowledge areas (e.g., " Knowledge of Flask ") . - Combine multiple independent facts into one sentence . - Refer to the question , answer , exam , or student . 4. Knowledge items must be atomic . - If it contains multiple facts , split it into separate items . - If it can be split into two items without losing its meaning , its not atomic . ================================================== INPUT ================================================== Question : < Question > Gold Answer : < Answer > ================================================== OUTPUT FORMAT ================================================== [" Knowledge item 1" , " Knowledge item 2" , ... ]
+
+Figure 15: Prompt template for knowledge decomposition in the Recall Rewrite pipeline, which extracts all atomic knowledge items a model would need to produce a given gold response, covering explicit facts, background knowledge, procedural, cultural, structural, and relational knowledge. Only items whose absence would cause the model to fail are retained (continued). 
+
+35 You are a strict quiz grader . A student submitted an ANSWER . There is a REQUIRED FACT that the answer is supposed to contain . Your job is to decide whether the ANSWER successfully includes the REQUIRED FACT . ======================== HOW TO DECIDE ======================== 1. Mentally break the REQUIRED FACT into its smallest factual elements . 2. Check whether each element appears explicitly in the ANSWER . Use these rules : ENTAILS : - Every factual element of the REQUIRED FACT is clearly and explicitly stated in the ANSWER . - Paraphrasing is allowed . - The ANSWER is at least as specific as the REQUIRED FACT . CONTRADICTS : - The ANSWER explicitly conflicts with any factual element of the REQUIRED FACT . - A different number , date , entity , or opposite claim counts as a contradiction . UNRELATED : - Any factual element is missing . - The ANSWER is incomplete or too vague to recover the full fact . - The ANSWER discusses the topic but does not clearly state the required fact . - The ANSWER neither clearly supports nor contradicts the fact . Important : - The ANSWER may contain additional information . - Extra details are allowed and should NOT affect the label . - Only mark CONTRADICTS if the additional information directly conflicts with the REQUIRED FACT . - Do not use outside knowledge . Only use what is written . - If any required element is missing , the label cannot be ENTAILS . ======================== OUTPUT ======================== Respond with exactly one of : ENTAILS CONTRADICTS UNRELATED ======================== TASK ======================== REQUIRED FACT : "< Claim Text >" ANSWER : "< Model Answer >" 
+
+Figure 16: Prompt template for the entailment check in the Recall Rewrite pipeline, which classifies each base model response to a probing question as ENTAILS , CONTRADICTS , or UNRELATED with respect to the original claim, based solely on what is explicitly stated in the response. 
+
+36 <| im_start |> system You are a question answering system . Always provide a clear and complete answer to the user 's question . Do not repeat or restate the question . Each answer should be a full sentence that fully addresses the question . <| im_end |> <| im_start |> user What form of government is characterized by power being concentrated in the hands of a small group of people ? <| im_end |> <| im_start |> assistant An oligarchy is a form of government in which political power is held by a small , elite group . <| endoftext |> <| im_start |> user If the current time is 15:00 UTC , what would the local time be in a region that operates at UTC +2? <| im_end |> <| im_start |> assistant The local time would be 17:00 , because the region is two hours ahead of Coordinated Universal Time . <| endoftext |> <| im_start |> user In economics , what term describes a market situation where the quantity supplied exceeds the quantity demanded ? <| im_end |> <| im_start |> assistant This situation is known as a surplus , where more goods are produced than consumers are willing to buy at a given price . <| endoftext |> <| im_start |> user Which biological process enables cells to convert glucose into usable energy ? <| im_end |> <| im_start |> assistant Cells use cellular respiration , a metabolic process that converts glucose into usable energy in the form of ATP . <| endoftext |> <| im_start |> user Many administrative systems assign fixed - length numerical identifiers to individuals . What property ensures that each identifier refers to only one person ? <| im_end |> <| im_start |> assistant This property is uniqueness , meaning each identifier is assigned to a single individual and cannot be shared with others . <| endoftext |> <| im_start |> user { Question } <| im_end |> <| im_start |> assistant 
+
+Figure 17: Few-shot prompt used to query the base model with probing questions in the Recall Rewrite pipeline. The five examples establish a question-answering format and encourage complete, self-contained answers without restating the question. 
+
+37
