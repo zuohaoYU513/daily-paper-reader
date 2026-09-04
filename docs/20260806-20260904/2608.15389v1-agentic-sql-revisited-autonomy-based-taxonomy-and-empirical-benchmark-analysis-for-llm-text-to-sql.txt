@@ -1,0 +1,197 @@
+Title: Agentic-SQL Revisited: Autonomy-Based Taxonomy and Empirical Benchmark Analysis for LLM Text-to-SQL
+
+URL Source: https://arxiv.org/pdf/2608.15389v1
+
+Published Time: Tue, 18 Aug 2026 00:48:26 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# Agentic-SQL Revisited: Autonomy-Based Taxonomy and Empirical Benchmark Analysis for LLM Text-to-SQL 
+
+Changruo Zhao 1*, Zujun Peng 1*(B), Yu Tian 1*, Yuting Liu 1*, Yiyun Su 1*,Huiying Zhu 1(B), Luyan Zhang 1, and Heming Zeng 1
+
+Independent Researcher 
+
+zhaoc6@rpi.edu, zp2224@columbia.edu, tian.yu2@northeastern.edu, yutingliu@hsph.harvard.edu, yiyun.su@rutgers.edu, buds@vip.qq.com, zhang.luya@northeastern.edu, hermanzeng@foxmail.com 
+
+> *
+
+These authors contributed equally to this work. 
+
+Abstract. LLM-based Text-to-SQL progress is reported across hetero-geneous benchmarks, backbones, and inference protocols, making cross-system comparison fragile. We reframe the field as a leaderboard ag-gregation: we collect the metrics authors themselves report and organize them along an inference-autonomy axis spanning constrained, in-context, iterative, agentic, and reasoning-internalized generation, with traceable provenance for every cell. To anchor the aggregation empirically, we run a focused case study on Spider, comparing 8B open-source backbones with and without chain-of-thought (CoT) supervision against few-shot DeepSeek V3 and GLM-4 baselines. Four patterns emerge: Spider gains transfer unevenly to BIRD and Spider 2.0; autonomy buys robustness at non-trivial cost; reasoning internalization sits between answer-only decoding and externally orchestrated agents; and CoT gains concen-trate on Hard and Extra-Hard queries. We release a Python harness mirroring the autonomy axis so that future methods can be added di-rectly to the leaderboard. The code will be made available at: https: //github.com/suyiyun/llm-text2sql-taxonomy .
+
+Keywords: Text-to-SQL · Large Language Models · Benchmark · Leader-board Aggregation · Reproducibility 
+
+## 1 Introduction 
+
+LLM-based Text-to-SQL has moved past the point where a single number on a single benchmark can summarize a system. The same paper may now report Spider execution accuracy, BIRD valid efficiency score, Spider 2.0 success rate, and informal latency claims, each obtained under a different backbone and in-ference protocol. As a result, two systems with similar headline numbers can differ by an order of magnitude in inference cost, and two systems with similar protocols can differ by ten points on whichever benchmark stresses the protocol’s blind spot. Existing surveys organize this literature by training paradigm (ICL arXiv:2608.15389v1 [cs.AI] 15 Aug 2026 2 C. Zhao et al. 
+
+vs. fine-tuning vs. reinforcement-style post-training) [27], which is informative but does not isolate the inference-time structure that increasingly dominates benchmark behavior. We take a different stance: treat the literature itself as the benchmark, and let the contribution be the aggregation protocol rather than a new model. Concretely, we (i) define an autonomy axis classifying a system by how much structured reasoning it externalizes between question and final SQL, (ii) collect the metrics each system’s authors report on Spider, BIRD, and Spider 2.0, leaving cells blank where the source paper did not report or numbers are not directly comparable, and (iii) wrap the resulting tables in a Python harness that lets a new system be added with one adapter file and one configuration file. The harness does not re-run any prior system; re-running fourteen systems is expensive, partially infeasible (closed APIs change monthly), and produces numbers that drift the moment a backbone updates. A leaderboard whose every cell carries a citation is, for now, the more honest object. To anchor the aggregation in a controlled empirical setting, we run a focused case study on Spider: two 8B open-source backbones (Qwen3-8B, LLaMA3.1-8B) fine-tuned with and without CoT reasoning traces, plus 3-shot baselines on DeepSeek V3 and GLM-4 [20]. This yields six rows of directly-comparable EX/EM numbers across difficulty bands and surfaces four patterns: (1) Spider gains do not transfer uniformly to BIRD or Spider 2.0; (2) autonomy buys ro-bustness at non-trivial cost in tokens, latency, and orchestration; (3) reasoning internalization occupies a distinct point on the autonomy–cost frontier between answer-only decoding and externally orchestrated agents; and (4) CoT supervi-sion concentrates its gains on Hard and Extra-Hard queries rather than uniformly across difficulty. Our contributions are an autonomy-based taxonomy that operationalizes a measurable system property rather than a training-time property; a provenance-tracked leaderboard covering Spider, BIRD, and Spider 2.0, populated only from sourced numbers; an open-source harness with fixed dataset loaders, metric im-plementations, and method-adapter interface; a focused difficulty-stratified case study of CoT supervised fine-tuning on Spider; and a cross-benchmark analysis identifying which evaluation gaps the next round of benchmarks should close. 
+
+## 2 Background 
+
+2.1 Task Formulation 
+
+Given a natural language question Q, a database schema S = {T, C, R } (ta-bles, columns, foreign-key relations), and optional external knowledge K (entity descriptions, value evidence, domain hints as introduced in BIRD [3]), a Text-to-SQL system produces an executable SQL query ˆY such that executing ˆY on 
+
+S yields the result intended by Q. Most systems can be expressed as 
+
+ˆY = πθ (I, Q, S, K ), (1) Title Suppressed Due to Excessive Length 3
+
+where I is an instruction or system prompt and θ are the model parameters. In-context-learning systems hold θ fixed and vary I; fine-tuned systems update 
+
+θ under 
+
+LSFT = − X 
+
+> (P,Y )∈DL
+
+X
+
+> t=1
+
+log Pr  
+
+> π
+
+(yt | P, y <t ), (2) typically with parameter-efficient adaptation [5]. The benchmark proposed here is parameterization-agnostic: a system enters the leaderboard through its infer-ence behavior on the held-out splits of Spider, BIRD, or Spider 2.0, regardless of how θ was obtained. 
+
+2.2 Datasets 
+
+Three datasets anchor the leaderboard. Spider [2] is a cross-domain dataset whose train, dev, and test splits use disjoint databases, ensuring that test-time evaluation reflects unseen-schema generalization rather than memorization. The training portion ( train_spider + train_others ) covers 8,659 examples over 146 databases, and the test split contains 2,147 examples over 40 databases with no database overlap with training. Average question length is around 12 tokens and average gold-SQL length 16–18 tokens; SQL operation coverage spans single-table SELECT through joins, aggregation ( COUNT , AVG , MAX/MIN ,
+
+SUM ), grouping ( GROUP BY , HAVING ), ordering ( ORDER BY , LIMIT ), and set oper-ations ( INTERSECT , EXCEPT , UNION ). The official Spider difficulty bands assign roughly 13.8% of test examples to Easy, 51.3% to Medium, 26.4% to Hard, and 8.5% to Extra-Hard, so test performance reflects a mix that is dominated by Medium and Hard rather than by trivial queries [2]. Spider remains the canoni-cal compositional-generalization benchmark. 
+
+BIRD [3] introduces large schemas, realistic value distributions, and external knowledge K, and adds the Valid Efficiency Score, which penalizes correct-but-slow queries. Spider 2.0 [4] stresses long-horizon reasoning, dialect adaptation (BigQuery, Snowflake, ClickHouse), and multi-step workflows that interleave SQL execution with planning and debugging; its evaluation criterion is closer to a task-success rate than to per-query exact-match. WikiSQL [1] is included only as a historical reference because its single-table schema makes it inadequate for current systems. Table 1 summarizes the qualitative shift across the three primary benchmarks. 
+
+2.3 Metrics 
+
+Three metrics are used in the leaderboard. Exact Match (EM) compares the predicted query to the gold query under SQL-aware normalization (alias canon-icalization, whitespace, clause ordering); it is strict but penalizes semantically-equivalent rewrites [2]. Execution Accuracy (EX) executes both queries on the target database and compares result sets; it is the modern primary metric on Spider and BIRD but can produce false positives when two distinct queries 4 C. Zhao et al. 
+
+Table 1. Datasets that anchor the leaderboard. The shift is from compositional-generalization stress to grounding-and-realism stress to enterprise-workflow stress; the three benchmarks are not interchangeable.                            
+
+> Aspect Spider BIRD Spider 2.0
+> Primary stress Cross-domain composition Realistic grounding Workflow realism Question style Single-turn NL →SQL NL →SQL + evidence KMulti-step, debug-aware Schema scale Multi-table, medium Wide, large Very large, evolving Value realism Moderate High High External knowledge Not required Often required Frequently required SQL dialect SQLite mostly SQLite mostly BigQuery / Snowflake / etc. Headline metric EX EX, VES Success rate Dominant failure Compositional SQL Grounding / scale Long-horizon / dialect
+
+coincidentally agree on a particular instance. Valid Efficiency Score (VES) ,introduced with BIRD [3], multiplies execution correctness by a runtime ratio against the gold query and so penalizes correct-but-inefficient SQL. Spider 2.0 reports a binary success rate per task instance with task-specific tolerances. Our harness implements all three metrics and reuses each dataset’s official scorer where one is published. 
+
+## 3 Benchmark Design 
+
+3.1 The Autonomy Axis 
+
+We classify a system by inference autonomy : the amount of structured reasoning, feedback, and coordination introduced between the input question and the final SQL. The axis has five levels and is operationally measurable from the number and kind of model calls in a single answered question. 
+
+L0 — Constrained single-turn. One forward pass with grammar-level decoding constraints (PICARD [6]). 
+
+L1 — In-context single-turn. One forward pass conditioned on prompt-only structure: instructions and demonstrations. Representative: DAIL-SQL [7] and the few-shot DeepSeek V3 / GLM-4 baselines in our case study. 
+
+L2 — Iterative refinement. Multiple model calls along a fixed pipeline (link → decompose → generate → revise) without dynamic routing, instantiat-ing the broader iterative-feedback paradigm [25]. DIN-SQL [8], DART-SQL [9], DTS-SQL [10], and TS-SQL [11] live here. 
+
+L3 — Agentic collaboration. Multiple calls coordinated by a controller that branches on intermediate outputs. Representative systems include MAC-SQL [12], ExeSQL [13], and CHESS [26]; EllieSQL [14] and BAP-SQL [28] add cost-aware and budget-aware routing respectively. 
+
+L1.5 — Reasoning-internalized. A single forward pass at inference time, but the model has been supervised to emit intermediate stages (schema links, decomposition, draft, revision) inside one trajectory, building on the broader Title Suppressed Due to Excessive Length 5
+
+chain-of-thought lineage [22, 23]. STaR-SQL [15], RevDecomp-SFT [19], and the CoT-SFT case-study rows [20] occupy this slot. The axis makes a measurable property — number and structure of inference-time calls — the variable along which results are organized, so the leaderboard can be sliced by autonomy level without re-running any code. 
+
+3.2 Method Catalog 
+
+Table 2 enumerates the systems that populate v1 of the leaderboard, with au-tonomy level, training paradigm, and the backbone class as reported by the authors. Public-code availability for each entry is recorded separately in the harness rather than in this table. 
+
+Table 2. Method catalog. ICL = in-context learning; SFT = supervised fine-tuning; STR = self-taught reasoning. The autonomy column maps each system to a level in Section 3.1. The four CoT-SFT and 3-shot rows at the bottom are run under the protocol of Section 5.                                                                
+
+> System Autonomy Training Backbone class
+> PICARD [6] L0 SFT + constrained dec. T5-3B DAIL-SQL [7] L1 ICL GPT-4 / Code-LLaMA DIN-SQL [8] L2 ICL GPT-4 DART-SQL [9] L2 ICL + rewriting GPT-4 / open DTS-SQL [10] L2 SFT DeepSeek 7B / open TS-SQL [11] L2 ICL + test-driven GPT-4 / open MAC-SQL [12] L3 ICL multi-agent GPT-4 ExeSQL [13] L3 STR + bootstrap open EllieSQL [14] L3 + routing ICL + cost-aware route mixed STaR-SQL [15] L1.5 STR open RevDecomp-SFT [19] L1.5 SFT (reverse-distilled) Qwen2.5-8B + LoRA TAG [17] L3 (extended) ICL + retrieval GPT-4 + retriever RAG-T2SQL [18] L1 + retrieval ICL varied EHR-SeqSQL [16] L2 (sequential) ICL GPT-4 / open DeepSeek V3 (3-shot) [20] L1 ICL (3-shot) DeepSeek V3 GLM-4 (3-shot) [20] L1 ICL (3-shot) GLM-4 CoT-SFT (Qwen3) [20] L1.5 SFT + reasoning trace Qwen3-8B + LoRA CoT-SFT (LLaMA) [20] L1.5 SFT + reasoning trace LLaMA3.1-8B + LoRA No-CoT SFT (Qwen3) [20] L1 SFT (answer-only) Qwen3-8B + LoRA No-CoT SFT (LLaMA) [20] L1 SFT (answer-only) LLaMA3.1-8B + LoRA
+
+## 4 Aggregated Results 
+
+We adopt one rule throughout the leaderboard: every numeric cell traces to a single citation, and uncertain cells are left blank rather than filled by inference. 
+
+Numbers from source documents are entered as-is; numbers that would require us to re-derive a metric under a different scoring protocol are not entered. The six rows produced by our case study (Section 5) are reported under the uniform protocol described there. 6 C. Zhao et al. 
+
+4.1 Spider 
+
+Table 3 aggregates Spider dev/test results. EM is reported on the standard test set; EX is reported on the test set for the case-study rows and on the dev set for the literature rows unless otherwise marked.                                                                  
+
+> Table 3. Spider leaderboard, v1. Numbers are taken from the source paper of each system, cited in the System column. The bottom block is produced by our case study (Section 5) on the Spider holdout test set under a uniform protocol. Dashes indicate that the original paper did not report the metric in a directly-comparable form.
+> System Backbone Autonomy EM EX
+> PICARD [6] T5-3B L0 71.9 75.1 DAIL-SQL [7] GPT-4 L1 ––DIN-SQL+GPT-4 [8] GPT-4 L2 60.0 85.3 DART-SQL [9] GPT-4 L2 ––DTS-SQL [10] DeepSeek 7B L2 ––TS-SQL [11] GPT-4 / open L2 ––MAC-SQL [12] GPT-4 L3 ––STaR-SQL [15] open L1.5 ––RevDecomp-SFT [19] Qwen2.5-8B+LoRA L1.5 75.4 86.4
+> Case study (Section 5; Spider test, 2,147 examples):
+> DeepSeek V3 (3-shot) [20] DeepSeek V3 L1 19.56 51.47 GLM-4 (3-shot) [20] GLM-4 L1 20.49 66.28 No-CoT SFT [20] LLaMA3.1-8B+LoRA L1 31.35 76.01 No-CoT SFT [20] Qwen3-8B+LoRA L1 47.60 77.04 CoT-SFT [20] LLaMA3.1-8B+LoRA L1.5 29.02 76.01 CoT-SFT [20] Qwen3-8B+LoRA L1.5 44.67 82.24
+
+4.2 BIRD 
+
+Table 4 aggregates BIRD dev results. EX and VES are the headline metrics; we follow each source paper’s choice of dev vs. test where the test labels are held out by the BIRD authors. The case-study models in Section 5 were not run on BIRD and so do not appear here. 
+
+4.3 Spider 2.0 
+
+Spider 2.0 [4] establishes the workflow-realism axis discussed in Table 1, but the systems in this catalog have not yet published directly-comparable success-rate numbers under its scoring protocol. We therefore omit a Spider 2.0 results table from v1 of the leaderboard and will populate this track in a subsequent release once direct reports become available; the harness’s CSV format already accommodates per-task success-rate breakdowns. Title Suppressed Due to Excessive Length 7
+
+Table 4. BIRD leaderboard, v1. Same conventions as Table 3. Each numeric cell is sourced to the paper cited in the System column. 
+
+System Backbone Autonomy EX VES 
+
+DIN-SQL+GPT-4 [8] GPT-4 L2 55.90 59.44 DAIL-SQL [7] GPT-4 L1 – –DART-SQL [9] GPT-4 L2 – –DTS-SQL [10] DeepSeek 7B L2 – –TS-SQL [11] GPT-4 / open L2 – –MAC-SQL [12] GPT-4 L3 – –ExeSQL [13] open L3 – –EllieSQL [14] mixed + router L3 – –RevDecomp-SFT [19] Qwen2.5-8B+LoRA L1.5 57.20 61.50 Table 5. Case-study results on the Spider test set: difficulty-stratified Execution Ac-curacy (%). Easy / Medium / Hard / Extra-Hard buckets follow the official Spider difficulty rules. “All EX” is the aggregate over all 2,147 test examples. The two 8B SFT rows differ only in whether the supervision target includes a five-stage reasoning trace; otherwise the protocol is identical [20].                                           
+
+> Configuration Backbone Easy Medium Hard X-Hard All
+> DeepSeek V3 (3-shot) DeepSeek V3 96.62 53.22 33.33 24.04 51.47 GLM-4 (3-shot) GLM-4 92.57 67.03 59.08 41.53 66.28 No-CoT SFT LLaMA3.1-8B+LoRA 96.28 75.30 69.49 67.76 76.01 CoT-SFT LLaMA3.1-8B+LoRA 96.62 74.93 68.25 73.22 76.01 No-CoT SFT Qwen3-8B+LoRA 96.62 76.20 70.19 71.58 77.04 CoT-SFT Qwen3-8B+LoRA 94.95 80.32 81.09 79.25 82.24
+
+## 5 Empirical Case Study: CoT Supervision on Spider 
+
+The case study tightens the leaderboard with six configurations run under a single protocol on the Spider test set, providing the empirical anchor for the cross-method analysis in Section 6. We compare two 8B open-source backbones (Qwen3-8B, LLaMA3.1-8B) under two training regimes — chain-of-thought-trace SFT vs. answer-only SFT, both with LoRA — against two 3-shot prompt-ing baselines on strong proprietary backbones (DeepSeek V3 and GLM-4). All six are evaluated on the full 2,147-example Spider test split with database-disjoint train/test, using the official Spider EX scorer and stratified by the official Spider difficulty bands. Training pipelines, prompts, hyperparameters, and the reasoning-trace construction protocol are documented in the companion paper [20]. 
+
+5.1 Difficulty-Stratified Results 
+
+Table 5 reports per-difficulty execution accuracy for the six configurations. 8 C. Zhao et al. 
+
+5.2 Observations 
+
+Three findings emerge from the case study and feed back into the cross-method analysis of Section 6. 
+
+Fine-tuning beats few-shot prompting on harder queries. The 3-shot DeepSeek V3 and GLM-4 baselines reach 51.5 and 66.3 EX respectively, while every fine-tuned 8B configuration exceeds 76.0 EX. On the Hard and Extra-Hard buckets the gap is widest: DeepSeek V3 falls to 24.0 EX on Extra-Hard, whereas the weakest fine-tuned configuration, LLaMA3.1-8B without CoT supervision, still reaches 67.8 EX. This is consistent with Pattern 1 in Section 6: Spider rewards task-specific compositional fluency, and few-shot prompting on a strong general-purpose back-bone is no substitute for it on the harder buckets. 
+
+CoT supervision concentrates its gains on Hard and Extra-Hard. On Qwen3-8B, adding CoT-trace supervision moves Hard EX from 70.19 to 81.09 ( +10 .9)and Extra-Hard from 71.58 to 79.25 ( +7 .7), while Easy slightly drops (96.62 →
+
+94.95, −1.7) and Medium gains modestly ( +4 .1). On LLaMA3.1-8B the same comparison is essentially flat in aggregate (76.01 vs. 76.01) but reallocates ac-curacy: CoT loses 1.2 on Hard and gains 5.5 on Extra-Hard. The pattern across both backbones is that CoT supervision is not a uniform accuracy lever but a difficulty-redistributor that helps where decomposition matters most. 
+
+Backbone choice interacts with reasoning supervision. Qwen3-8B benefits sub-stantially more from CoT than LLaMA3.1-8B does. This is consistent with prior reports that the value of reasoning-trace supervision depends on whether the base model already has latent compositional capacity to use the trace; it sug-gests that CoT-SFT comparisons should be reported against multiple backbones rather than a single one. 
+
+5.3 Scope and Caveats 
+
+The case-study numbers are produced by us and are directly comparable across the six rows, but they should not be directly compared to literature numbers in Tables 3–4 on the same benchmark unless the source paper used the same test split, scorer, and decoding protocol. EM in particular varies across normaliza-tion conventions, and the case-study EM uses the strict alias-canonicalization scorer of [2]; the published RevDecomp-SFT EM of 75.4 is reported under the convention used in [19]. The case study does not include BIRD or Spider 2.0; an extended version with both benchmarks is planned for v2. 
+
+## 6 Cross-Method Analysis 
+
+The aggregated tables together with the case study make four patterns visible. Title Suppressed Due to Excessive Length 9
+
+Pattern 1: gains do not transfer uniformly across benchmarks. On Spider, PI-CARD (75.1 EX) trails DIN-SQL+GPT-4 (85.3 EX) by ten points, achieved at very different inference cost. On BIRD, the same DIN-SQL+GPT-4 lands at 55.9 EX, where reasoning-internalized SFT systems on much smaller backbones can match or exceed it. Spider rewards compositional fluency, which large back-bones supply easily; BIRD rewards grounding and value disambiguation, where a fine-tuned model’s internalized schema-linking discipline [21, 24] outperforms an externally orchestrated GPT-4 prompt. 
+
+Pattern 2: autonomy carries a cost that the leaderboard alone cannot show. L3 systems sometimes outperform L1 systems by a few points on BIRD, but at multiplicative cost in tokens, latency, and orchestration logic. EllieSQL [14] and BAP-SQL [28] make this trade-off the central design variable, treating the choice between L1, L2, and L3 as a per-query routing problem; meanwhile, the robust-ness of such self-improving agentic harnesses itself remains an open concern [31]. Our harness records token and wall-clock cost when a method is run through it; v1 of the leaderboard cannot fill those columns from reported numbers because few papers report them with sufficient precision. 
+
+Pattern 3: reasoning internalization sits between answer-only generation and externally orchestrated reasoning. The L1.5 systems in the catalog (STaR-SQL, RevDecomp-SFT, and the case-study CoT-SFT rows) report Spider EX in the same range as L2 GPT-4 pipelines while running a single forward pass on an open backbone. The supervised reasoning trace must still be constructed once during training, often with a stronger teacher, but a meaningful share of what L2 pipelines achieve through external orchestration can be relocated into the model’s own decoding trajectory. 
+
+Pattern 4: CoT supervision is a difficulty-redistributor, not a uniform accuracy lever. The case study shows that the headline aggregate EX of CoT vs. No-CoT can be near-identical (LLaMA3.1-8B: 76.0 vs. 76.0) while difficulty-stratified results differ markedly. On Qwen3-8B the aggregate gain of +5 .2 EX from adding CoT decomposes into a Medium gain of +4 .1, a Hard gain of +10 .9, and an Extra-Hard gain of +7 .7 — with Easy slightly negative. This argues against reporting CoT-supervision benefits as a single number: the right unit is difficulty-stratified accuracy, and future leaderboard submissions involving reasoning-trace supervision should report the breakdown. 
+
+## 7 Limitations and Open Problems 
+
+Provenance breadth. v1 populates only entries whose source papers report di-rectly comparable numbers under each dataset’s standard protocol. The blank rows in Tables 3 and 4 should not be read as evidence that those systems perform poorly. Spider 2.0 will take longer because its scoring protocol is still settling. 10 C. Zhao et al.                                     
+
+> Table 6. Qualitative comparison of autonomy levels. Cells are derived from the struc-tural definitions in Section 3.1, not from the numeric leaderboard; they are intended to be read alongside Tables 3 and 4, not in their place.
+> Dimension L0 L1 L1.5 L2 L3
+> Inference cost low low low–med medium high Error recovery none weak moderate moderate strong Diagnosability limited limited moderate moderate strong Schema-scale tolerance limited limited moderate moderate strong Deployment simplicity strong strong moderate weaker weakest Typical failure syntax grounding supervision repair quality control
+
+Cost and routing. Inference cost — token usage, latency, dollar cost — is the missing axis that papers report inconsistently. The harness has columns for it; the leaderboard does not yet. Relatedly, EllieSQL [14] suggests that the right object of comparison is a routing policy over systems, not a single system; v2 should add a routing track in which a submission is a per-query policy over catalog entries. 
+
+Beyond single-turn SQL. EHR-SeqSQL [16] and TAG [17] indicate that the next benchmark generation will care about multi-turn dialogue and the SQL-vs-retrieval boundary. Recent studies on RAG reliability — including diagnosing context compliance under knowledge conflict [29] and calibrating evidence force in cited RAG [30] — suggest that retrieval-augmented pipelines introduce fail-ure modes distinct from those of pure generation. Enterprise deployment further constrains evaluation through privacy and very large schemas [18, 17], and di-alect transfer [13] remains measured ad-hoc. The harness’s adapter interface accommodates these protocols; v1 of the leaderboard does not yet exercise them seriously. 
+
+Case-study scope. The case study covers Spider only and uses two open-source backbones plus two proprietary 3-shot baselines. Extending the same protocol to BIRD and Spider 2.0, and to additional backbones, is the most direct way to widen empirical coverage. 
+
+## 8 Conclusion 
+
+We replace the survey-style organization of LLM Text-to-SQL with a leaderboard-aggregation benchmark organized by inference autonomy, anchored by a focused case study of CoT supervision on Spider. The paper’s three artifacts — a method catalog, a provenance-tracked results table populated only from numbers the authors themselves reported (plus six rows from a uniformly-run case study), and an open-source harness whose adapter interface mirrors the autonomy axis — together make four patterns visible: uneven cross-benchmark transfer, an Title Suppressed Due to Excessive Length 11 
+
+autonomy–cost trade-off, a distinct reasoning-internalized regime, and CoT su-pervision as a difficulty-redistributor. Both the paper and the harness refuse to fill cells the source papers do not directly support, and we hope this design choice — citation-backed cells, blank where the literature is silent — becomes the default for benchmark aggregation in this fast-moving area. Bibliography 
+
+[1] Hwang, W., Yim, J., Park, S., Seo, M.: A comprehensive exploration on WikiSQL with table-aware word contextualization. arXiv preprint arXiv:1902.01069 (2019) [2] Yu, T., Zhang, R., Yang, K., Yasunaga, M., Wang, D., et al.: Spider: A large-scale human-labeled dataset for complex and cross-domain semantic parsing and text-to-SQL task. In: Proceedings of EMNLP, pp. 3911–3921 (2018) [3] Li, J., Hui, B., Qu, G., Yang, J., Li, B., et al.: Can LLM already serve as a database interface? A big benchmark for large-scale database grounded text-to-SQLs. In: NeurIPS (2023) [4] Lei, F., Chen, J., Ye, Y., Cao, R., Shin, D., et al.: Spider 2.0: Evaluat-ing language models on real-world enterprise text-to-SQL workflows. arXiv preprint arXiv:2411.07763 (2024) [5] Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., et al.: LoRA: Low-rank adaptation of large language models. In: ICLR (2022) [6] Scholak, T., Schucher, N., Bahdanau, D.: PICARD: Parsing incrementally for constrained auto-regressive decoding from language models. In: Proceed-ings of EMNLP, pp. 9895–9901 (2021) [7] Gao, D., Wang, H., Li, Y., Sun, X., Qian, Y., et al.: Text-to-SQL empow-ered by large language models: A benchmark evaluation. arXiv preprint arXiv:2308.15363 (2023) [8] Pourreza, M., Rafiei, D.: DIN-SQL: Decomposed in-context learning of text-to-SQL with self-correction. In: NeurIPS (2023) [9] Mao, W., Wang, R., Guo, J., Zeng, J., Gao, C., et al.: Enhancing text-to-SQL parsing through question rewriting and execution-guided refinement. In: Findings of ACL 2024, pp. 2009–2024 (2024) [10] Pourreza, M., Rafiei, D.: DTS-SQL: Decomposed text-to-SQL with small large language models. In: Findings of EMNLP 2024, pp. 8212–8220 (2024) [11] Xu, W., Zhu, H., Yan, L., Liu, C., Han, P., et al.: TS-SQL: Test-driven self-refinement for text-to-SQL. In: Findings of EMNLP 2025 (2025) [12] Wang, B., Ren, C., Yang, J., Liang, X., Bai, J., et al.: MAC-SQL: A multi-agent collaborative framework for text-to-SQL. arXiv preprint arXiv:2312.11242 (2023) [13] Zhang, J., Yang, H., Miao, K., Zhang, R., Pi, R., et al.: ExeSQL: Self-taught text-to-SQL models with execution-driven bootstrapping for SQL dialects. In: Findings of EMNLP 2025, pp. 24305–24326 (2025) [14] Zhu, Y., Jiang, R., Li, B., Tang, N., Luo, Y.: EllieSQL: Cost-efficient text-to-SQL with complexity-aware routing. OpenReview (2025) [15] He, M., Shen, Y., Zhang, W., Peng, Q., Wang, J., Lu, W.: STaR-SQL: Self-taught reasoner for text-to-SQL. In: Proc. of ACL (2025) Title Suppressed Due to Excessive Length 13 
+
+[16] Ryu, J., Cho, S., Lee, G., Choi, E.: EHR-SeqSQL: A sequential text-to-SQL dataset for interactively exploring electronic health records. In: Findings of ACL 2024, pp. 16388–16407 (2024) [17] Biswal, A., Patel, L., Jha, S., Kamsetty, A., Liu, S., et al.: Text2SQL is not enough: Unifying AI and databases with TAG. arXiv preprint arXiv:2408.14717 (2024) [18] Lewis, P., Perez, E., Piktus, A., Petroni, F., Karpukhin, V., et al.: Retrieval-augmented generation for knowledge-intensive NLP tasks. In: NeurIPS 33, pp. 9459–9474 (2020) [19] Guan, S., Hua, X., Lin, J., Zhang, L.: Internalizing decomposed reason-ing: reverse-distilled fine-tuning for interpretable and robust text-to-SQL. Manuscript (2026) [20] Anonymous: A benchmark study of chain-of-thought supervised fine-tuning for cross-domain text-to-SQL. Manuscript (2026) [21] Wang, B., Shin, R., Liu, X., Polozov, O., Richardson, M.: RAT-SQL: Relation-aware schema encoding and linking for text-to-SQL parsers. In: Proceedings of ACL, pp. 7567–7578 (2020) [22] Wei, J., Wang, X., Schuurmans, D., Bosma, M., Ichter, B., et al.: Chain-of-thought prompting elicits reasoning in large language models. In: NeurIPS (2022) [23] Wang, X., Wei, J., Schuurmans, D., Le, Q. V., Chi, E. H., et al.: Self-consistency improves chain of thought reasoning in language models. In: ICLR (2023) [24] Li, H., Zhang, J., Li, C., Chen, H.: RESDSQL: Decoupling schema linking and skeleton parsing for text-to-SQL. In: Proceedings of AAAI, pp. 13067– 13075 (2023) [25] Madaan, A., Tandon, N., Gupta, P., Hallinan, S., Gao, L., et al.: Self-Refine: Iterative refinement with self-feedback. In: NeurIPS (2023) [26] Talaei, S., Pourreza, M., Chang, Y.-C., Mirhoseini, A., Saberi, A.: CHESS: Contextual harnessing for efficient SQL synthesis. arXiv preprint arXiv:2405.16755 (2024) [27] Hong, Z., Yuan, Z., Zhang, Q., Chen, H., Dong, J., Huang, F., Huang, X.: Next-generation database interfaces: A survey of LLM-based text-to-SQL. arXiv preprint arXiv:2406.08426 (2024) [28] Peng, C., Qian, P., Wang, S., Chen, Y., Sah, V.: BAP-SQL: Budget-Aware Observation Planning for Agentic Text-to-SQL. arXiv preprint arXiv:2608.02876 (2026) [29] Chen, Y., Qian, P., Wang, S., Zhang, S., Xu, H., et al.: Does RAG Know When Retrieval Is Wrong? Diagnosing Context Compliance under Knowl-edge Conflict. arXiv preprint arXiv:2605.14473 (2026) [30] Qian, P., Wang, S., Wang, X., Chen, Y., Xu, W., et al.: Relevant Is Not Warranted: Evidence-Force Calibration for Cited RAG. arXiv preprint arXiv:2605.28044 (2026) [31] Wang, S., Qian, P., Lin, Y., Xu, J., Chen, Y., et al.: Phantom Guardrails: When Self-Improving Agent Harnesses Fix Failures That Never Happened. arXiv preprint arXiv:2607.13083 (2026)

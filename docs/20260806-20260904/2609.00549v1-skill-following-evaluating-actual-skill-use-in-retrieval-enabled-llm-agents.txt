@@ -1,0 +1,897 @@
+Title: Skill Following: Evaluating Actual Skill Use in Retrieval-Enabled LLM Agents
+
+URL Source: https://arxiv.org/pdf/2609.00549v1
+
+Published Time: Wed, 02 Sep 2026 00:31:34 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+# Skill Following: Evaluating Actual Skill Use in Retrieval-Enabled LLM Agents 
+
+Seonghyeon Cho, Chanjun Park †
+
+Soongsil University 
+
+chosh040@soongsil.ac.kr, chanjun.park@ssu.ac.kr 
+
+Abstract 
+
+Large Language Model (LLM) agents increas-ingly rely on external skills, yet standard eval-uations obscure whether retrieving these skills actually helps. Aggregate metrics often com-pare retrieved versus non-retrieved tasks, in-troducing severe selection bias and failing to isolate the true effect of skill use. To mea-sure this actual-use capability—which we for-malize as Skill Following (SF)—we introduce the Retrieval-Invoked Actual-Use Effect (RAE). RAE computes the same-task outcome differ-ence between matched skill-enabled and skill-disabled executions, conditioned exclusively on tasks where the agent actively retrieved a skill. Evaluating 17 LLMs across coding and mathematical domains, we uncover a stark eval-uation paradox: models frequently show posi-tive aggregate retrieval lift but negative RAE. On MBPP+, multiple models that appear to benefit system-wide actually harm their own performance on the exact tasks where retrieval occurred. These findings demonstrate that ag-gregate averages can create a misleading illu-sion of tool-use proficiency, whereas RAE di-rectly measures whether the retrieval-to-answer pipeline genuinely rescues more outcomes than it harms. 
+
+1 Introduction 
+
+Large language model (LLM) agents are increas-ingly deployed within external procedural envi-ronments, utilizing tools, memory, and skill li-braries to navigate and solve complex tasks (Schick et al., 2023; Wu et al., 2024; Shen et al., 2024; Shi et al., 2024). As these models transition from standalone text predictors to retrieval-enabled, in-teractive agents, the evaluation paradigms used to assess their efficacy must evolve correspondingly. However, measuring the true utility of external skills remains fundamentally challenging. Existing 
+
+> †Corresponding authors.
+
+Figure 1: Aggregate retrieval lift and RAE on MBPP+. The x-axis compares skill-enabled accuracy be-tween retrieval-returned and retrieval-skipped task sets, whereas the y-axis compares paired skill-enabled and skill-disabled outcomes on the same retrieval-returned tasks. Shaded off-diagonal quadrants indicate sign dis-agreement; labels (a)–(c) mark the cases discussed in the text. 
+
+evaluation protocols typically answer one of two broad, system-level questions: whether providing an agent with access to a skill environment im-proves average performance across an entire bench-mark, or whether tasks where skills were retrieved yield higher accuracy than tasks where they were skipped. While these aggregate metrics provide a high-level summary of system behavior, they leave a critical, narrower question systematically unan-swered: when an agent actually chooses to retrieve and inject a skill into its context, does that specific external knowledge genuinely improve the outcome of that precise task? 
+
+We argue that aggregate benchmark averages inherently obscure the true causal utility of skill retrieval, often creating a misleading illusion of arXiv:2609.00549v1 [cs.CL] 1 Sep 2026 capability. Whole-benchmark metrics dilute the im-pact of external tools by heavily weighting tasks where no skills were ever fetched. More prob-lematically, aggregate retrieved-vs-skipped com-parisons suffer from severe task-selection bias; they compare two self-selected subsets of tasks that may fundamentally differ in inherent difficulty, prompt complexity, or skill-library relevance. Be-cause autonomous retrieval is merely the preamble of tool use—requiring the LLM to subsequently receive, interpret, logically ground, and synthe-size the returned content into a valid final an-swer—evaluating this complete pipeline demands a more rigorous methodology. We formalize this multi-step, retrieval-to-answer cognitive process as Skill Following (SF). To accurately evaluate SF without the confounding variables of task self-selection, the measurement must be explicitly con-ditioned on the actual occurrence of retrieval, uti-lizing a strictly paired experimental design. To clearly illustrate the severity of this evalua-tion gap, Figure 1 contrasts the conventional aggre-gate retrieval lift against our proposed same-task metric on the MBPP+ benchmark. The x-axis repre-sents the aggregate lift—the standard approach that suggests many modern LLMs, such as Gemini-2.5-Flash-lite and DeepSeek-V3.2, achieve substantial performance gains when skills are retrieved. However, when we isolate the exact subset of tasks where these models successfully retrieved a skill and compare their outcomes strictly against their own skill-disabled baselines on those iden-tical tasks (the y-axis), a starkly different reality emerges. The shaded quadrants denote regions of critical sign disagreement : models positioned here exhibit a positive aggregate lift that statistically masks a negative actual-use effect. This paradox reveals that what appears to be a systemic im-provement is often just a byproduct of the model selectively retrieving skills on inherently easier tasks, while the actual integration of those skills fre-quently disrupts the model’s reasoning, ultimately rescuing fewer outcomes than it harms. To correct this methodological blind spot and isolate the actual-use capability of LLMs, we in-troduce the Retrieval-Invoked Actual-Use Effect 
+
+(RAE). RAE is a protocol-conditional, same-task outcome metric computed exclusively on the tasks where retrieval was actively invoked and a skill was successfully returned in the skill-enabled execution. By mandating a paired skill-enabled versus skill-disabled comparison, RAE strips away population-level confounding factors and directly measures whether the retrieval-invoked SF chain operates as a genuine cognitive aid or a distracting bottleneck. In summary, this paper makes the following pri-mary contributions: • Identifying the Actual-Use Gap in Agent Evaluation: We conceptualize skill integra-tion as the full Skill Following (SF) chain and mathematically demonstrate that standard ag-gregate metrics fail to isolate the true task-level impact of retrieved skills due to selection bias. • Introducing the RAE Metric: We pro-pose the Retrieval-Invoked Actual-Use Ef-fect (RAE), establishing a rigorous, paired-evaluation protocol that conditions outcome measurement specifically on active retrieval events. • Exposing Pervasive Metric Reversals across LLMs: Across an extensive evaluation of 17 diverse LLMs spanning coding and mathematical reasoning domains, we reveal that aggregate conclusions frequently reverse under RAE. Crucially, our comprehensive diagnostic analyses prove that mere con-text exposure to retrieved skills is vastly insufficient for successful Skill Following, challenging current assumptions about LLM tool-use capabilities. 
+
+2 Related Work 
+
+LLM agents are increasingly evaluated not merely as standalone text predictors, but as complex sys-tems integrating external tools, memory, and re-trieval mechanisms. Benchmarks such as Agent-Bench (Liu et al., 2024), AgentBoard (Ma et al., 2024), WebArena (Zhou et al., 2024), OS-World (Xie et al., 2024), TheAgentCompany (Xu et al., 2026), and τ -bench (Yao et al., 2024) mea-sure end-to-end agent behavior in interactive or environment-grounded settings. While these bench-marks provide crucial system-level evaluations, their primary metrics focus on overall task success or step-wise process diagnostics. Consequently, they do not isolate whether the injection of re-trieved external content directly changed the final outcome of that exact task via paired comparisons. Benchmarks specifically targeting external skill access provide a closer point of comparison. Datasets such as SkillsBench (Li et al., 2026), SWE-Skills-Bench (Han et al., 2026), and Skill-LearnBench (Zhong et al., 2026) employ paired designs to contrast skill-enabled conditions against no-skill or human-skill baselines. Although this paired approach effectively controls for task iden-tity, their reported effects are still predominantly aggregated over the entire evaluation set. In con-trast, RAE precisely isolates the actual-use compo-nent of the Skill Following chain by conditioning the paired comparison strictly on the subset of tasks where retrieval was actively invoked and content was returned. A complementary line of research investi-gates autonomous retrieval, memory, and skill reuse within agents, including systems like Voy-ager (Wang et al., 2023), Agent KB (Tang et al., 2025), ExpeL (Zhao et al., 2024), Reflexion (Shinn et al., 2023), and CRITIC (Gou et al., 2024). While these frameworks preserve and demonstrate agent-initiated use of external artifacts, they typically do not systematically pair each retrieval-invoked exe-cution with a corresponding skill-disabled baseline to measure the net performance shift. Furthermore, process-level benchmarks such as BFCL (Patil et al., 2025), RAGAS (Es et al., 2024), and IFE-val (Zhou et al., 2023) diagnose specific sub-stages like tool calling, retrieval quality, or grounding. RAE is fully complementary to these diagnostics: rather than replacing stage-level metrics, it evalu-ates the end-to-end impact of the retrieval-invoked chain, strictly asking whether the complete process ultimately rescued more same-task outcomes than it harmed. 
+
+3 Skill Following 
+
+In this section, we establish the formal framework of paired outcome metrics required to rigorously evaluate the task-level efficacy of Skill Following (SF). Conceptualizing SF as the complete retrieval-to-answer cognitive chain introduced in Section 1, we define these metrics through strictly paired com-parisons between skill-enabled and skill-disabled executions on identical tasks. 
+
+3.1 Paired Execution Design 
+
+To construct a controlled comparison, each task t
+
+within the evaluation corpus undergoes two distinct execution paths. The skill-enabled (SE) execution grants the agent full access to the skill library and retrieval interface, whereas the skill-disabled (SD) baseline restricts this access. Let y+ 
+
+> t
+
+, y − 
+
+> t
+
+∈ { 0, 1}
+
+denote the binary correctness outcomes of the SE and SD executions, respectively. The paired out-comes (y+ 
+
+> t
+
+, y − 
+
+> t
+
+) ∈ {0, 1}2 map each task into one of four distinct transition categories (Table 2). This strictly paired design anchors the evaluation to fixed task identities, inherently neutralizing the confounding effects of cross-population task diffi-culty.            
+
+> SE correct SE wrong SD correct concordant pass harmful flip (c)
+> SD wrong helpful flip (b)concordant fail
+> Table 2: Outcome matrix for paired skill-enabled (SE) and skill-disabled (SD) executions. bdenotes the num-ber of tasks that failed in SD but succeeded in SE, whereas cdenotes the converse.
+
+3.2 Overall and Retrieval-Invoked Effects 
+
+Because autonomous retrieval is a selective pro-cess, the SE execution will successfully fetch skills for certain tasks but not others. Consequently, we delineate two distinct paired metrics: the Overall Skill-Access Effect (OAE), computed over the en-tire evaluation corpus, and the Retrieval-Invoked Actual-Use Effect (RAE), strictly conditioned on tasks where retrieval was actively invoked and a skill was returned. 
+
+Overall skill-access effect. Let Sall denote the full evaluated task set. Equation 1 defines OAE as the macroscopic, paired outcome difference across the entire benchmark: 
+
+OAE = ∆ all = 1
+
+|Sall |
+
+X
+
+> t∈Sall
+
+(y+ 
+
+> t
+
+− y− 
+
+> t
+
+)= all b − all c
+
+npairs 
+
+,
+
+(1) where npairs = |Sall |, and all b and all c represent the total helpful and harmful flips over the full dataset. OAE quantifies the systemic impact of exposing the agent to a skill environment. It computes the average outcome shift across all paired executions, deliberately encompassing tasks where the SE exe-cution bypassed retrieval entirely. While OAE ac-curately captures the global utility of skill access, it fundamentally dilutes the signal of actual skill usage. 
+
+Retrieval-invoked actual-use effect To distill the genuine impact of active skill utilization, we Metric Conditioning set Paired? Comparison             
+
+> Aggregate retrieval lift SE retrieved vs. SE non-retrieved No Mean accuracy difference between two task subsets within the skill-enabled execution OAE Sall Yes SE–SD outcome difference over all evalu-ated tasks RAE (ours) Scall Yes SE–SD outcome difference over retrieval-invoked tasks
+
+Table 1: Structural taxonomy of aggregate retrieval lift, OAE, and RAE. OAE and RAE are paired, same-task quantities, whereas aggregate retrieval lift compares self-selected task subsets within the skill-enabled execution. 
+
+strictly condition our measurement on the subset of tasks where the SE execution invoked retrieval and successfully acquired at least one skill. Let 
+
+Scall be this retrieval-invoked subset, with size 
+
+ncond = |Scall |. Equation 2 defines RAE as the paired outcome difference isolated to this critical subset: 
+
+RAE = ∆ cond = 1
+
+|Scall |
+
+X
+
+> t∈Scall
+
+(y+ 
+
+> t
+
+− y− 
+
+> t
+
+)= cond b − cond c
+
+ncond 
+
+.
+
+(2) Crucially, unlike aggregate retrieval lift—which merely contrasts self-selected retrieved and non-retrieved populations within the SE condition— RAE is an unconfounded, same-task metric. It di-rectly addresses whether the retrieval-invoked seg-ment of the SF chain successfully improved out-comes relative to the mathematically matched SD baselines. Table 1 delineates the structural distinc-tions between aggregate retrieval lift, OAE, and RAE. 
+
+Relationship between OAE and RAE RAE operates as a conditional sub-component of the broader skill-access effect. Let Sskip = Sall \ Scall 
+
+denote the subset of tasks where retrieval was cir-cumvented, with size nskip = |Sskip |. We define the paired effect over this uninvoked complement as: 
+
+∆skip = skip b − skip c
+
+nskip 
+
+, (3) where skip b = all b − cond b and skip c =all c − cond c. Combining the retrieval-invoked and skipped components yields a full decomposition of the benchmark effect: 
+
+OAE = ncond 
+
+npairs 
+
+RAE + nskip 
+
+npairs 
+
+∆skip . (4) Equation 4 demonstrates that RAE does not su-persede OAE; rather, it isolates the critical mecha-nism of actual usage. OAE answers the overarch-ing system-design question, whereas RAE targets the precise actual-use inquiry. RAE is reported for each evaluated model–skill-pool–retrieval-policy configuration, whose retrieval-returned subset is system-specific. We therefore report RAE along-side its granular helpful and harmful transition counts; comprehensive details regarding statistical tests, confidence intervals, and edge-case handling are provided in Appendix A. 
+
+4 Experiment Setup 
+
+Our experimental design is structured to address four primary objectives. First, we investigate whether aggregate retrieval lift and RAE yield con-flicting conclusions under an identical skill-enabled protocol. Second, we analyze whether aggregate re-trieval lift is confounded by retrieval-induced task selection. Third, we validate the consistency of our findings across multiple task partitions, a sec-ondary coding benchmark, and an entirely different domain (mathematical reasoning). Finally, we con-duct transition-level diagnostics and skill-content controls to rigorously bound the interpretation of negative RAE outcomes. 
+
+4.1 Models and Datasets 
+
+We evaluate our proposed measurement framework across a comprehensive panel of 17 diverse LLMs. This panel spans various parameter scales and in-cludes both closed-source APIs and open-weight models to ensure broad generalizability (see Ap-pendix K for complete model details). For our primary analysis, we sample 80 tasks from the MBPP+ benchmark (Liu et al., 2023) us-ing seed 42. To verify cross-benchmark consistency, we evaluate the models on HumanEval+ (Chen et al., 2021). Furthermore, to confirm that the observed phenomena are not strictly domain-dependent, we perform a cross-domain replication using 80-task partitions of Math500 (Hendrycks et al., 2021; Lightman et al., 2024). 
+
+4.2 Skill Environment and Retrieval Mechanism 
+
+All analyses operate on fixed, procedural skill li-braries tailored to the respective domains. The Cod-ing skill pool comprises 9 procedural coding skills used for both MBPP+ and HumanEval+. The Math skill pool comprises 8 procedural skills used for the Math500 evaluation. Appendix J summarizes both skill pools, and Appendix L reports the prompts and tool schema. Each skill is formatted as a structured Mark-down file ( SKILL.md ), containing lightweight front-matter (name, description, signature) and a de-tailed body (application conditions, code snip-pets, invariants, and self-tests). The retrieval sys-tem indexes the skill descriptions and Markdown bodies using BM25 (Robertson and Zaragoza, 2009). When an agent autonomously invokes the 
+
+search_skills(query) function, the full texts of the top-3 retrieved skills are systematically ap-pended to its working context. Agents are permitted up to three search invocations per task. 
+
+4.3 Paired Execution Protocol 
+
+To compute the same-task metrics detailed in §3, each task t undergoes two strictly controlled, par-allel executions. In the SE condition, the LLM re-ceives a system prompt that explicitly defines and grants access to the search_skills(query) tool. In the SD baseline condition, the model receives an identical prompt, but with the tool definition entirely removed. Both execution paths share the exact same task prompt, generation seed, and de-coding configuration, ensuring that any outcome variance is strictly attributable to the skill access and subsequent retrieval chain. 
+
+4.4 Diagnostic Controls and Annotation 
+
+To interpret the mechanistic drivers of negative RAE, we design two supplementary diagnostic setups for the strongest coding reversal models (DeepSeek-V3.2 and Gemini-2.5-Flash-lite). 
+
+Skill-Content Controls. We run identical eval-uations on MBPP+ under five perturbed environ-ments: Normal (the standard skill library), Schema-Empty (tool is available but returns no usable skills), Filler-Dummy (matched non-informative text), Random-skills (retrieval returns structurally valid but completely irrelevant skills), and Cor-rupted (retrieved content is intentionally mislead-ing or mathematically inconsistent). 
+
+Adherence Annotation For transition-level diag-nosis, a GPT-5.5 annotator annotates the retrieval-invoked executions. The annotator evaluates the task prompt, retrieval query, retrieved skill excerpts, and the final SE answer to assign a primary behav-ioral label: appropriate adherence, ignored/inde-pendent, misapplied/overapplied, format/interface failure, or unclear . The annotator is blinded to both the SD answers and the underlying correctness la-bels; the resulting post-hoc labels provide descrip-tive diagnostics of the observed SE traces, remain separate from the RAE computation, and are eval-uated through a stratified human audit reported in Appendix G.1. 
+
+5 Results 
+
+In this section, we investigate whether aggregate retrieval lift and our proposed RAE yield consistent evaluations of LLM tool-use capabilities. Through a comprehensive analysis across coding and mathe-matical benchmarks, we demonstrate that standard aggregate metrics frequently present a misleading illusion of performance. We structurally unpack this discrepancy by diagnosing task-selection bias, cross-domain consistency, and the precise mech-anistic failures that occur once external content enters the model’s context. 
+
+5.1 Do Aggregate Metrics and RAE Agree? 
+
+We first establish the prevalence of metric disagree-ment. Table 3 reports the coding-domain results, contrasting aggregate retrieval lift with RAE. 
+
+Sign Disagreements Across Model and Bench-mark Sign reversals—where models exhibit a positive aggregate lift but a negative actual-use effect (RAE)—are alarmingly common. Across MBPP+, Table 3 shows repeated sign disagree-ments among reportable model configurations. On HumanEval+, 3 out of 13 models exhibit the same paradox. For instance, Gemini-2.5-Flash-lite consistently shows positive aggregate lift across all three MBPP+ partitions, yet its RAE remains strictly negative. These findings highlight a critical vulnerability in current evaluation standards: seem-ingly beneficial skill access at the benchmark level frequently masks actual performance degradation on the specific tasks where skills are deployed. Model MBPP+ s42 MBPP+ s43 MBPP+ s44 HumanEval+ s42                                                                                                                                                             
+
+> Qwen3-8B −26 .4/−1.5−0.5/−9.2−26 .6/−1.6−10 .5/+5 .7
+> Qwen3.5-9B −11 .8/+0 .0+26 .1/−3.2−36 .4/−4.1−5.4/+7 .2
+> Gemini-2.5-Flash-lite +6 .2/−15 .6+16 .2/−15 .9+4 .4/−22 .2−0.1/−21 .1
+> Mistral-S-24B −27 .2/−22 .5+10 .8/−9.0−37 .9/−45 .5−13 .9/−38 .1
+> GPT-4o-mini −24 .0/−5.5+11 .4/−3.4−23 .2/−8.2−2.5/−1.4
+> Claude-3.5-H −5.0/+2 .5−1.0/−2.1−6.6/−3.8−2.7/−7.7
+> Claude-4.5-H +1 .4/+1 .4+21 .5/+0 .0+48 .0/+2 .7+4 .5/+0 .0
+> Qwen3-32B −16 .9/+1 .8−27 .9/−6.0−12 .4/−8.5−11 .2/−30 .1
+> GLM4-32B −25 .1/+0 .0+1 .8/−1.4−13 .9/−6.8−2.8/−5.6
+> Command-R −6.2/−14 .5−36 .1/−24 .1−33 .3/−26 .7−5.8/+0 .0
+> Llama-3.3-70B +69 .8/+4 .2+44 .2/−2.0+60 .0/+7 .5+61 .5/+7 .1
+> Qwen3-235B −0.1/+7 .0−21 .1/+0 .0−27 .1/+3 .7−7.0/+15 .5
+> DeepSeek-V3.2 +31 .6/−9.1−11 .5/−15 .4+46 .2/−23 .1−17 .1/−23 .0
+
+Table 3: Main coding-domain aggregate-vs-RAE comparison. Each cell reports aggregate retrieval lift / RAE in percentage points. Bold entries indicate opposite signs between the unpaired retrieved-vs-skipped aggregate and the retrieval-invoked same-task metric. The table includes cells satisfying the reporting filter; the full 17-model panel, including non-reportable cells, is provided in Appendix B. 
+
+Figure 2: Autonomous retrieval induces severe task-selection bias. The x-axis reports the skill-disabled se-lection gap ( ∆select ) between tasks that did and did not return a skill. The y-axis reports aggregate retrieval lift within the skill-enabled execution. Each point represents a reportable model cell, colored by the sign of its RAE. The prevalent nonzero selection gaps mathematically demonstrate that aggregate retrieval lift compares inher-ently mismatched task populations, failing to isolate the true causal effect of skill usage. 
+
+5.2 What Drives the Divergence Between Aggregate Lift and Actual Use? 
+
+To understand why aggregate retrieval lift diverges so sharply from RAE, we must analyze the task populations being compared. Aggregate lift eval-uates retrieved versus non-retrieved tasks within the skill-enabled execution. However, these subsets are not randomized; they are self-selected by the LLM’s own retrieval policy. To quantify this underlying discrepancy, we in-troduce the skill-disabled selection gap ( ∆select ). Let Sret and Snoret denote the subsets of tasks that did and did not return a skill, respectively. We mea-sure their inherent difficulty using the paired SD baseline: 
+
+∆select = Acc −(Sret ) − Acc −(Snoret ) (5) 
+
+Selection Bias Confounds Aggregate Lift As il-lustrated in Figure 2, autonomous retrieval induces substantial task-selection differences ( ∆select ̸ = 0 ). This provides the mechanistic explanation for the metric disagreement: aggregate retrieval lift effec-tively compares two distinct, self-selected task pop-ulations that already differ in baseline difficulty or prompt complexity. RAE, by contrast, neutralizes this bias by strictly comparing the same retrieval-invoked tasks against their paired SD executions. 
+
+5.3 Does the Evaluation Discrepancy Persist Beyond Benchmarks? 
+
+To confirm that this paradox is not an artifact of a single benchmark, we extend our analysis to alter-native datasets and domains. 
+
+Cross-Benchmark Consistency The aggregate-vs-RAE disagreement is not confined to MBPP+. On HumanEval+, 3 out of 13 reportable mod-els show sign disagreement between aggregate re-trieval lift and RAE. Unlike the dominant MBPP+ reversal emphasized in the introduction, these HumanEval+ disagreements occur in the oppo-site direction: aggregate retrieval lift is negative Figure 3: Math500 cross-domain results. Comparing aggregate retrieval lift, OAE, and RAE reveals that the metric disagreement generalizes beyond coding. Models with highly positive aggregate lift collapse into severely negative actual-use effects (RAE). 
+
+while RAE is positive for Qwen3-8B, Qwen3.5-9B, and Qwen3-235B. This indicates that aggregate retrieved-vs-skipped comparisons can misestimate retrieval-invoked actual use in either direction, ei-ther overstating or understating the effect of SF. Ap-pendix D reports descriptive MBPP+–HumanEval+ correlation analyses, which we use only as diag-nostic context rather than as benchmark-invariant model rankings. 
+
+Cross-Domain Results on Math500 Figure 3 shows that the disagreement between aggregate re-trieval lift and RAE also appears in the mathemat-ical reasoning domain. On Math500, Llama-3.3-70B obtains a +14 .2 pp aggregate lift but a −39 .4
+
+pp RAE under the paired retrieval-invoked com-parison. Gemini-2.5-Flash-lite shows a similar pat-tern ( +13 .2 pp aggregate lift vs. −11 .0 pp RAE). These results indicate that the aggregate-vs-RAE disagreement is not limited to coding benchmarks. Full Math500 results are reported in Appendix C. 
+
+5.4 Does Higher Retrieval Coverage Translate to Better Downstream Integration? 
+
+A prevailing assumption in tool-use evaluation is that higher retrieval coverage naturally translates to improved downstream performance. We exam-ine this assumption by mapping retrieval coverage against RAE (Figure 4). The results indicate that 
+
+> Figure 4: Retrieval coverage versus RAE on MBPP+ seed 42. The horizontal line marks zero RAE. Multiple high-retrieval models exhibit negative RAE, proving that successful retrieval invocation (exposure) does not reliably translate to successful SF (utilization).
+
+several models with high retrieval rates neverthe-less yield negative actual-use effects. To unpack this discrepancy, the corresponding stage-level di-agnostic definitions and values are detailed in Ap-pendix E. 
+
+Retrieval is not Following If mere exposure to external skills were sufficient, models with higher retrieval coverage would consistently show posi-tive RAE. Instead, Figure 4 indicates that several high-coverage models still exhibit negative RAE. As detailed in the stage-diagnostic analysis (Ap-pendix E), there is a notable gap between fetch-ing a skill and successfully applying it: even when models retrieve skills at a high rate, their structural adherence to the provided content and effective suc-cess rates remain substantially lower. This discon-nect highlights the distinction between exposure 
+
+and actual use . Invoking a search function and re-ceiving returned text does not guarantee that the LLM will correctly interpret, align, and incorporate that content into a valid final answer. 
+
+5.5 Mechanistic Failures: How and Where Does the SF Chain Break Down? 
+
+To diagnose how SF breaks down, we analyze 
+
+harmful transitions —cases where the SD execu-tion succeeds, but the SE execution retrieves a skill and subsequently fails. Using a GPT-5.5 annotator, we annotated 45 harmful transitions for DeepSeek-V3.2 and 40 for Gemini-2.5-Flash-lite across three Control condition DeepSeek-V3.2 Gemini-2.5-Flash-lite              
+
+> Normal −15 .9−17 .9
+> Schema-Empty ––Filler-Dummy −10 .2−5.0
+> Random-skills −15 .1−15 .4
+> Corrupted −9.1−17 .2
+> Table 4: Skill-content controls reporting pooled RAE in percentage points. Schema-Empty returns no usable skill, rendering RAE mathematically undefined ( ncond = 0 ). Crucially, RAE remains strictly negative across all conditions where any content is returned.
+
+MBPP+ seeds. 
+
+Ignored or Independent Use of Retrieved Skills 
+
+The most frequent failure mode is ignored/indepen-dent . In these cases, the SE execution retrieves a skill, but the final answer shows no clear evidence that the returned content was incorporated into the solution. DeepSeek-V3.2 also shows format/inter-face failures , where tool traces or interface artifacts appear in the final output. These diagnostics indi-cate that retrieval invocation alone is not a sufficient measure of SF: after retrieval, the model must still determine whether the returned content is relevant, integrate it into the task solution, and preserve the required output format. Appendix F provides the full harmful-transition taxonomy, and Appendix G reports the adherence-label distributions and label-conditioned RAE analysis. 
+
+5.6 Is Negative RAE Solely an Artifact of Defective Retrieved Content? 
+
+Finally, we test whether negative RAE can be at-tributed solely to the quality of the retrieved skill text. We run skill-content controls for the two strongest coding reversal models, DeepSeek-V3.2 and Gemini-2.5-Flash-lite, replacing the normal skill returns with empty, filler, random, or corrupted returned-content conditions. Table 4 summarizes the pooled RAE values, while Appendix H reports the corresponding raw transition counts, retrieval coverage, OAE, and aggregate retrieval lift for each control condition. 
+
+Returned Content Alone Does Not Determine RAE The content-control results indicate that negative RAE is not solely an artifact of poorly written skill content. For both DeepSeek-V3.2 and Gemini-2.5-Flash-lite, RAE remains negative across all non-empty returned-content conditions, including Normal skills, Random-skills returns, Corrupted content, and Filler-Dummy text. Thus, a structured skill artifact does not by itself guar-antee a positive actual-use effect. RAE instead re-flects the full retrieval-conditioned execution chain, including retrieval invocation, content injection, relevance assessment, skill integration, and final-answer formatting. These controls therefore bound, rather than fully identify, the source of negative RAE. 
+
+6 Conclusion 
+
+As LLMs increasingly operate within external skill environments, standard evaluation metrics—which rely on whole-benchmark averages or self-selected task subsets—create a misleading illusion of tool-use proficiency. To isolate the true causal im-pact of retrieved knowledge, we introduced the RAE. By strictly pairing skill-enabled and skill-disabled executions on the exact tasks where re-trieval occurs, RAE neutralizes task-selection bias and directly measures the efficacy of the entire SF chain. Our evaluations across coding and mathe-matical domains reveal a pervasive paradox: mod-els frequently exhibit positive aggregate retrieval lift while suffering a negative RAE. Apparent benchmark-level gains often mask actual perfor-mance degradation on the specific tasks where skills were actively deployed. By decoupling mere context exposure from actual cognitive integration, RAE provides a necessary methodological lens. It ensures that as agents become more autonomous, their tool-use mechanisms are rigorously evaluated as genuine cognitive aids rather than deceptive lia-bilities. 
+
+Limitations 
+
+Our experiments cover a focused evaluation regime: single-pass coding and mathematical tasks under a fixed retrieval interface and fixed procedural skill libraries. The results should therefore not be read as establishing the same prevalence or magnitude for long-horizon agents, executable code libraries, language-centric skill settings, natural-language annotator-based tasks, or systems with iterative memory and planning. RAE is also bounded in its statistical and causal interpretation. Because Scall 
+
+is selected by the skill-enabled execution itself, RAE is not an unbiased causal effect over a pre-treatment task population, nor a model-level skill-use ability score. It is a protocol-conditional paired outcome signal: under a fixed deployment proto-col, when the agent entered the retrieval-returned portion of the SF chain, did the chain help or harm the same tasks? Finer causal decomposition would require additional ablations such as oracle retrieval, metadata-only retrieval, explicit full-skill fetch, multiple skill-pool constructions, and manu-ally adjudicated causal labels. 
+
+Ethical Considerations 
+
+This work does not involve human subjects, pri-vate user data, or demographic profiling; all ex-periments are conducted on coding and mathemat-ical benchmarks. The main ethical relevance of the study is evaluation reliability. Skill- or tool-augmented agents may be presented as improved systems when aggregate metrics hide cases where retrieval-invoked skill use harms the same tasks it was meant to help. Such overstatement can lead to misleading deployment claims and weaker au-ditability of agent systems. RAE is intended to make this failure mode more visible, but it should not be interpreted as a safety guarantee or as a complete causal explanation of failures. Positive or negative RAE values remain specific to the evalu-ated protocol, model, retrieval policy, skill library, and benchmark, and should be reported alongside complementary diagnostics and reproducibility ar-tifacts. AI assistant tools were used to assist with coding, script debugging, result organization, and language polishing; all experimental design deci-sions, analyses, and final manuscript content were reviewed and controlled by the authors. 
+
+Acknowledgments 
+
+This work was supported by the Korea Internet & Security Agency (KISA) grant funded by the Ko-rea government (PIPC) (No. RS-2026-25526342, Development of Technologies for Preventing Sensi-tive Information Inference and Risk Assessment in Foundation Model Operations). This work was also supported by the National Research Foundation of Korea (NRF) grant funded by the Korea govern-ment (MSIT) (RS-2026-25483747). This research was further supported by the Culture, Sports and Tourism R&D Program through the Korea Creative Content Agency, funded by the Ministry of Culture, Sports and Tourism in 2026 (Project Name: De-velop AI Agent Technology to Connect Knowledge through Public Cultural Facility-Based Discussion and Communication, Project Number: RS-2026-25520645). 
+
+References                  
+
+> Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde De Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, and 1 others. 2021. Evaluating large language models trained on code. arXiv preprint arXiv:2107.03374 .Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, Inderjit Dhillon, Mar-cel Blistein, Ori Ram, Dan Zhang, Evan Rosen, and 1 others. 2025. Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 .Shahul Es, Jithin James, Luis Espinosa Anke, and Steven Schockaert. 2024. Ragas: Automated evalua-tion of retrieval augmented generation. In Proceed-ings of the 18th conference of the european chapter of the association for computational linguistics: system demonstrations , pages 150–158. Zhibin Gou, Zhihong Shao, Yeyun Gong, Yujiu Yang, Nan Duan, Weizhu Chen, and 1 others. 2024. Critic: Large language models can self-correct with tool-interactive critiquing. In International Conference on Learning Representations , volume 2024, pages 57734–57811. Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Alex Vaughan, and 1 others. 2024. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 .Tingxu Han, Yi Zhang, Wei Song, Chunrong Fang, Zhenyu Chen, Youcheng Sun, and Lijie Hu. 2026. Swe-skills-bench: Do agent skills actually help in real-world software engineering? arXiv preprint arXiv:2603.15401 .Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. 2021. Measuring mathematical problem solving with the math dataset. NeurIPS .Xiangyi Li, Wenbo Chen, Yimin Liu, Shenghan Zheng, Xiaokun Chen, Yifeng He, Yubo Li, Bin-gran You, Haotian Shen, Jiankai Sun, and 1 oth-ers. 2026. Skillsbench: Benchmarking how well agent skills work across diverse tasks. arXiv preprint arXiv:2602.12670 .
+
+Hunter Lightman, Vineet Kosaraju, Yuri Burda, Harri-son Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. 2024. Let’s verify step by step. In International Con-ference on Learning Representations , volume 2024, pages 39578–39601. Aixin Liu, Aoxue Mei, Bangcai Lin, Bing Xue, Bingx-uan Wang, Bingzheng Xu, Bochao Wu, Bowei Zhang, Chaofan Lin, Chen Dong, and 1 others. 2025. Deepseek-v3. 2: Pushing the frontier of open large language models. arXiv preprint arXiv:2512.02556 .Jiawei Liu, Chunqiu Steven Xia, Yuyao Wang, and Ling-ming Zhang. 2023. Is your code generated by chat-GPT really correct? rigorous evaluation of large lan-guage models for code generation. In Thirty-seventh Conference on Neural Information Processing Sys-tems .Xiao Liu, Hao Yu, Hanchen Zhang, Yifan Xu, Xuanyu Lei, Hanyu Lai, Yu Gu, Hangliang Ding, Kaiwen Men, Kejuan Yang, and 1 others. 2024. Agentbench: Evaluating llms as agents. In International Con-ference on Learning Representations , volume 2024, pages 52989–53046. Chang Ma, Junlei Zhang, Zhihao Zhu, Cheng Yang, Yujiu Yang, Yaohui Jin, Zhenzhong Lan, Lingpeng Kong, and Junxian He. 2024. Agentboard: An an-alytical evaluation board of multi-turn llm agents. 
+
+Advances in neural information processing systems ,37:74325–74362. Shishir G Patil, Huanzhi Mao, Fanjia Yan, Charlie Cheng-Jie Ji, Vishnu Suresh, Ion Stoica, and Joseph E Gonzalez. 2025. The berkeley function calling leader-board (bfcl): From tool use to agentic evaluation of large language models. In Forty-second International Conference on Machine Learning .Qwen Team. 2026. Qwen3.5: Towards native multi-modal agents. Stephen Robertson and Hugo Zaragoza. 2009. The prob-abilistic relevance framework: BM25 and beyond ,volume 4. Now Publishers Inc. Timo Schick, Jane Dwivedi-Yu, Roberto Dessì, Roberta Raileanu, Maria Lomeli, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. 2023. Toolformer: Language models can teach themselves to use tools. 
+
+Preprint , arXiv:2302.04761. Weizhou Shen, Chenliang Li, Hongzhan Chen, Ming Yan, Xiaojun Quan, Hehong Chen, Ji Zhang, and Fei Huang. 2024. Small llms are weak tool learners: A multi-llm agent. Preprint , arXiv:2401.07324. Zhengliang Shi, Shen Gao, Xiuyi Chen, Yue Feng, Lingyong Yan, Haibo Shi, Dawei Yin, Pengjie Ren, Suzan Verberne, and Zhaochun Ren. 2024. Learning to use tools via cooperative and interactive agents. In Findings of the Association for Computational Linguistics: EMNLP 2024 , pages 10642–10657. Noah Shinn, Federico Cassano, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. 2023. Re-flexion: Language agents with verbal reinforcement learning. Advances in neural information processing systems , 36:8634–8652. Xiangru Tang, Tianrui Qin, Tianhao Peng, Ziyang Zhou, Daniel Shao, Tingting Du, Xinming Wei, Peng Xia, Fang Wu, He Zhu, and 1 others. 2025. Agent kb: Leveraging cross-domain experience for agentic prob-lem solving. arXiv preprint arXiv:2507.06229 .Qwen Team. 2024. Qwen2.5: A party of foundation models. Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Man-dlekar, Chaowei Xiao, Yuke Zhu, Linxi Fan, and Anima Anandkumar. 2023. Voyager: An open-ended embodied agent with large language models. arXiv preprint arXiv:2305.16291 .Shirley Wu, Shiyu Zhao, Qian Huang, Kexin Huang, Michihiro Yasunaga, Kaidi Cao, Vassilis N. Ioan-nidis, Karthik Subbian, Jure Leskovec, and James Zou. 2024. Avatar: Optimizing llm agents for tool usage via contrastive reasoning. Preprint ,arXiv:2406.11200. Tianbao Xie, Danyang Zhang, Jixuan Chen, Xiaochuan Li, Siheng Zhao, Ruisheng Cao, Toh J Hua, Zhoujun Cheng, Dongchan Shin, Fangyu Lei, and 1 others. 2024. Osworld: Benchmarking multimodal agents for open-ended tasks in real computer environments. 
+
+Advances in Neural Information Processing Systems ,37:52040–52094. Frank Fangzheng Xu, Yufan Song, Boxuan Li, Yux-uan Tang, Kritanjali Jain, Mengxue Bao, Zora Wang, Xuhui Zhou, Zhitong Guo, Murong Cao, and 1 others. 2026. Theagentcompany: benchmarking llm agents on consequential real world tasks. Advances in Neu-ral Information Processing Systems , 38. An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, and 1 others. 2025. Qwen3 technical report. arXiv preprint arXiv:2505.09388 .Shunyu Yao, Noah Shinn, Pedram Razavi, and Karthik Narasimhan. 2024. τ -bench: A benchmark for tool-agent-user interaction in real-world domains. arXiv preprint arXiv:2406.12045 .Andrew Zhao, Daniel Huang, Quentin Xu, Matthieu Lin, Yong-Jin Liu, and Gao Huang. 2024. Expel: Llm agents are experiential learners. In Proceedings of the AAAI Conference on Artificial Intelligence ,volume 38, pages 19632–19642. Shanshan Zhong, Yi Lu, Jingjie Ning, Yibing Wan, Li-han Feng, Yuyi Ao, Leonardo FR Ribeiro, Markus Dreyer, Sean Ammirati, and Chenyan Xiong. 2026. Skilllearnbench: Benchmarking continual learning methods for agent skill generation on real-world tasks. arXiv preprint arXiv:2604.20087 .Jeffrey Zhou, Tianjian Lu, Swaroop Mishra, Sid-dhartha Brahma, Sujoy Basu, Yi Luan, Denny Zhou, and Le Hou. 2023. Instruction-following evalu-ation for large language models. arXiv preprint arXiv:2311.07911 .Shuyan Zhou, Frank F Xu, Hao Zhu, Xuhui Zhou, Robert Lo, Abishek Sridhar, Xianyi Cheng, Tianyue Ou, Yonatan Bisk, Daniel Fried, and 1 others. 2024. Webarena: A realistic web environment for build-ing autonomous agents. In International Conference on Learning Representations , volume 2024, pages 15585–15606. A Metric Computation and Reporting Filters 
+
+All cell-level metrics are computed from pooled raw counts rather than from means of per-run rates. A cell is defined by a fixed model, benchmark, partition seed, skill pool or control condition, and evaluation protocol. When config-identical reruns exist for the same cell, we first sum the underlying counts and then compute the reported rate. For RAE, we aggregate raw counts across config-identical runs: 
+
+Bcond = X
+
+> i
+
+cond b,i , Ccond = X
+
+> i
+
+cond c,i ,Ncond = X
+
+> i
+
+ncond ,i .
+
+(6) We report 
+
+RAE = ∆ cond = 100 × Bcond − Ccond 
+
+Ncond 
+
+. (7) Here Bcond counts helpful transitions, where the skill-disabled execution fails and the skill-enabled execution succeeds, and Ccond counts harmful tran-sitions, where the skill-disabled execution succeeds and the skill-enabled execution fails, restricted to tasks where retrieval was invoked and at least one skill was returned in the skill-enabled execution. For any task subset S, the paired binary out-comes are (y+ 
+
+> t
+
+, y − 
+
+> t
+
+) ∈ { 0, 1}2, where 1 denotes a correct final answer and 0 denotes an incorrect final answer. The four paired-outcome cells can be written as 
+
+y+ 
+
+> t
+
+= 1 y+ 
+
+> t
+
+= 0 
+
+y− 
+
+> t
+
+= 1 a cy− 
+
+> t
+
+= 0 b d
+
+where a, b, c, d are task counts. The discordant cells are b and c: b counts helpful transitions, (y+ 
+
+> t
+
+, y − 
+
+> t
+
+) = (1 , 0) , and c counts harmful transitions, (y+ 
+
+> t
+
+, y − 
+
+> t
+
+) = (0 , 1) .The paired outcome difference over S is 
+
+1
+
+|S|
+
+X
+
+> t∈S
+
+(y+ 
+
+> t
+
+− y− 
+
+> t
+
+). (8) Concordant pairs contribute zero, while helpful and harmful transitions contribute +1 and −1, respec-tively. Therefore, 
+
+X
+
+> t∈S
+
+(y+ 
+
+> t
+
+− y− 
+
+> t
+
+) = b − c. (9) Thus, the paired same-task difference over any subset S is (b − c)/|S|.For OAE, we aggregate 
+
+Ball = X
+
+> i
+
+all b,i , Call = X
+
+> i
+
+all c,i ,Nall = X
+
+> i
+
+npairs ,i . (10) We report 
+
+OAE = ∆ all = 100 × Ball − Call 
+
+Nall 
+
+. (11) The decomposition into retrieval-invoked and skipped subsets follows from Sall = Scall ∪ Sskip :
+
+OAE = Ncond 
+
+Nall 
+
+RAE + Nskip 
+
+Nall 
+
+∆skip , (12) where 
+
+∆skip = 100 × Bskip − Cskip 
+
+Nskip 
+
+,Bskip = Ball − Bcond ,Cskip = Call − Ccond .
+
+(13) When Nskip = 0 , the skipped-subset term is omitted. Unlike RAE, this quantity averages the paired skill-enabled/skill-disabled difference over the en-tire evaluated task set, including tasks where the agent never retrieved a skill. For aggregate retrieval lift, let Ri and ¯Ri denote the retrieved and non-retrieved task subsets in run 
+
+i. We aggregate 
+
+Rcorr = X
+
+> i
+
+correct +(Ri), RN = X
+
+> i
+
+|Ri|,Scorr = X
+
+> i
+
+correct +( ¯Ri), SN = X
+
+> i
+
+| ¯Ri|.
+
+(14) When both denominators are nonzero, we report 
+
+∆agg = 100 ×
+
+ Rcorr 
+
+RN
+
+− Scorr 
+
+SN
+
+
+
+. (15) If either RN = 0 or SN = 0 , aggregate re-trieval lift is undefined because one of the two skill-enabled task populations is empty. This occurs, for example, when the agent invokes retrieval on every task. For main sign-disagreement counts, a cell is included only when Ncond ≥ 10 and both RAE and aggregate retrieval lift are defined. Cells below Threshold MBPP+ s42 MBPP+ s43 MBPP+ s44 HumanEval+ s42                         
+
+> ncond ≥55/13 6/13 3/13 3/13
+> ncond ≥10 5/13 6/13 3/13 3/13
+> ncond ≥15 5/13 6/13 3/13 3/12
+> ncond ≥20 5/13 6/13 3/13 3/11
+
+Table 5: Sensitivity of aggregate-vs-RAE sign-disagreement counts to the retrieval-invoked reporting threshold. Each cell reports sign-disagreement cells divided by reportable cells. The main text uses ncond ≥ 10 .                                                                                                                                                                                                          
+
+> Model MBPP+ s42 MBPP+ s43 MBPP+ s44 HumanEval+ s42 Sign disagree / cells
+> Qwen2.5-7B –––––Qwen3-8B −26 .4/−1.5−0.5/−9.2−26 .6/−1.6−10 .5/+5 .71/4
+> Qwen3.5-9B −11 .8/+0 .0+26 .1/−3.2−36 .4/−4.1−5.4/+7 .22/4
+> Llama-3.1-8B –––––Mistral-Nemo –––––Gemini-2.5-Flash-lite +6 .2/−15 .6+16 .2/−15 .9+4 .4/−22 .2−0.1/−21 .13/4
+> Gemini-2.0-Flash –––––Mistral-S-24B −27 .2/−22 .5+10 .8/−9.0−37 .9/−45 .5−13 .9/−38 .11/4
+> GPT-4o-mini −24 .0/−5.5+11 .4/−3.4−23 .2/−8.2−2.5/−1.41/4
+> Claude-3.5-H −5.0/+2 .5−1.0/−2.1−6.6/−3.8−2.7/−7.71/4
+> Claude-4.5-H +1 .4/+1 .4+21 .5/+0 .0+48 .0/+2 .7+4 .5/+0 .00/4
+> Qwen3-32B −16 .9/+1 .8−27 .9/−6.0−12 .4/−8.5−11 .2/−30 .11/4
+> GLM4-32B −25 .1/+0 .0+1 .8/−1.4−13 .9/−6.8−2.8/−5.61/4
+> Command-R −6.2/−14 .5−36 .1/−24 .1−33 .3/−26 .7−5.8/+0 .00/4
+> Llama-3.3-70B +69 .8/+4 .2+44 .2/−2.0+60 .0/+7 .5+61 .5/+7 .11/4
+> Qwen3-235B −0.1/+7 .0−21 .1/+0 .0−27 .1/+3 .7−7.0/+15 .53/4
+> DeepSeek-V3.2 +31 .6/−9.1−11 .5/−15 .4+46 .2/−23 .1−17 .1/−23 .02/4
+> Sign disagree / both defined 5/13 6/13 3/13 3/13
+> Reporting cells 13 13 13 13
+
+Table 6: Full 17-model coding-domain sign-disagreement panel. Each cell reports aggregate retrieval lift / RAE in percentage points. Bold entries indicate opposite signs between the two metrics. Dashes indicate non-reportable cells, typically because the retrieval-invoked subset is empty, below the reporting threshold, or aggregate retrieval lift is undefined. Non-reportable cells are retained for transparency but excluded from sign-disagreement denominators. 
+
+this retrieval-invocation threshold are omitted from prevalence counts because the conditional same-task estimate is too sparse. Cells with Ncond ≥ 10 
+
+but undefined aggregate retrieval lift retain their RAE value, but they are not counted in aggregate-vs-RAE sign-disagreement denominators. A sign disagreement is counted when the aggre-gate retrieval lift and RAE have opposite signs: 
+
+∆agg · ∆cond < 0 (16) This criterion is metric-level. It should not be confused with task-level helpful and harmful tran-sitions, which are the paired skill-enabled/skill-disabled outcome events aggregated by RAE. We use ncond ≥ 10 as the main reporting cut-off. Table 5 shows that the aggregate-vs-RAE sign-disagreement counts remain stable under alterna-tive cutoffs of 5, 15, and 20. 
+
+A.1 Representative Reversal Statistics 
+
+Table 8 reports paired transition counts and uncer-tainty for representative coding-domain reversal cells. Confidence intervals use 20,000 task-level paired multinomial bootstrap resamples, and p-values are from exact McNemar tests over the dis-cordant counts. 
+
+B Full Coding-Domain Results 
+
+Table 6 reports the full 17-model coding-domain panel underlying Table 3. The main table includes reportable cells only, whereas this appendix ta-ble retains all evaluated models for transparency. Dashes indicate non-reportable cells, typically be-cause the retrieval-invoked subset is empty, below the reporting threshold, or one of the aggregate re-trieval lift denominators is undefined. These cells are retained in the full panel but excluded from sign-disagreement denominators. Model Agg. lift OAE RAE b c ncond                                                                                                
+
+> Qwen2.5-7B –−65 .8–000Qwen3-8B +0 .0−10 .0−20 .01415 Qwen3.5-9B +0 .7−4.2−7.10114 Llama-3.1-8B +5 .8−10 .4−9.316 31 162 Mistral-Nemo −25 .6−5.0+0 .0002Gemini-2.5-Flash-lite +13 .2−18 .3−11 .04 16 109 Gemini-2.0-Flash −7.3−1.7+0 .0118Mistral-S-24B −64 .7−1.7−20 .0015GPT-4o-mini +31 .4+1 .7+0 .0001Claude-3.5-H −24 .7−6.2−6.50231 Claude-4.5-H −4.8−1.7−1.14588 Qwen3-32B −7.5−9.6−9.77 19 124 GLM4-32B +16 .6−18 .3−14 .49 36 187 Command-R +0 .8−10 .4−5.511 19 145 Llama-3.3-70B +14 .2−42 .1−39 .43 42 99 Qwen3-235B −3.2+2 .1+0 .00024 DeepSeek-V3.2 −8.7−8.3−11 .05 22 154
+
+Table 7: Full Math500 cross-domain results. Values are in percentage points except for b, c, and ncond . Aggre-gate retrieval lift is undefined when there are no re-trieved tasks or no non-retrieved tasks for comparison. Rows with very small ncond are reported for complete-ness but are interpreted as sparse conditional estimates. 
+
+C Math500 Cross-Domain Results 
+
+Table 7 reports the full Math500 cross-domain repli-cation. The table includes aggregate retrieval lift, OAE, and RAE, together with the retrieval-invoked transition counts used to compute RAE. 
+
+D Cross-Benchmark Correlation Details 
+
+Table 9 reports a descriptive cross-benchmark correlation analysis comparing MBPP+ seed 42 against HumanEval+ seed 42 under the same cod-ing skill pool. We include models with sufficient retrieval-invocation coverage on both benchmarks, requiring 
+
+ncond ≥ 10 for both MBPP+ and HumanEval+. This yields 13 models. Gemini-2.0-Flash, Llama-3.1-8B, Mistral-Nemo, and Qwen2.5-7B are ex-cluded from this filtered correlation because at least one benchmark has fewer than 10 retrieval-invoked tasks. Table 10 lists these exclusions and the corre-sponding retrieval-invoked subset sizes. Skill-disabled accuracy is used as the baseline ability control. For each benchmark cell, skill-disabled accuracy is reconstructed from the paired identity 
+
+Acc − = Acc + − OAE /100 . (17) Partial correlations are computed by residualizing the MBPP+ and HumanEval+ metric values against the specified skill-disabled accuracy controls and then correlating the residuals. In this rerun, aggregate retrieval lift has the high-est raw cross-benchmark correlation, and OAE has the highest skill-disabled-accuracy-controlled partial correlation. We therefore use these cor-relations only to bound interpretation: RAE is a protocol-conditional actual-use signal over the agent’s retrieval-invoked subset, not a benchmark-invariant ranking of model skill-use ability. 
+
+E Stage-Diagnostic Definitions and Values 
+
+The stage diagnostics in this appendix are descrip-tive proxies computed from the skill-enabled exe-cution logs and paired outcome counts. They are not used to define RAE. Their purpose is to support the main-text observation that high invocation or retrieval coverage does not imply a positive same-task actual-use outcome. We use the following stage proxies. Invocation 
+
+is the percentage of tasks where the agent called the skill-search interface at least once. Retrieval is the percentage of tasks where at least one skill was returned. Adherence is a lexical/structural proxy indicating whether at least one retrieved-skill iden-tifier or code-relevant pattern appears in the submit-ted answer. Effective is the percentage of retrieval-invoked tasks where this adherence proxy is present and the final answer is correct. Table 11 reports the resulting stage-diagnostic values for the two anchor reversal models across MBPP+ seeds. The final col-umn reports RAE, the paired same-task outcome metric over the retrieval-invoked subset. 
+
+F Transition-Level Annotation Details 
+
+Table 12 reports the full harmful-transition tax-onomy computed over skill-disabled-correct/skill-enabled-wrong retrieval-invoked executions from the DeepSeek-V3.2 and Gemini-2.5-Flash-lite coding-skill runs. The unit is a log-level paired execution, not a unique task. The anchor set in-cludes MBPP+ partition seeds 42, 43, and 44 for each model, so the counts are used as qualitative diagnostic evidence rather than as an independent estimate of task-frequency prevalence. Each harmful transition receives one primary failure-mode label. When multiple symptoms are present, the primary label is assigned to the most proximate visible cause of the submitted answer failure. Table 13 defines the labels. Table 12 re-ports the full label distribution before the category Model Benchmark b c ncond RAE 95% CI Exact McNemar p
+
+Mistral-S-24B MBPP+ (partition 3) 1 31 66 −45 .5 [−57 .6, −33 .3] 1.54 ×10 −8
+
+DeepSeek-V3.2 MBPP+ (partition 3) 1 19 78 −23 .1 [−33 .3, −12 .8] 4.01 ×10 −5
+
+Gemini-2.5-Flash-lite HumanEval+ 1 9 38 −21 .1 [−36 .8, −7.9] 0.0215 
+
+Qwen3-235B HumanEval+ 13 2 71 +15 .5 [+5 .6, +25 .4] 0.00739 
+
+Table 8: Representative coding-domain reversal cells. RAE and confidence intervals are in percentage points. b
+
+counts SD-wrong →SE-correct transitions, c counts SD-correct →SE-wrong transitions, and ncond is the retrieval-returned paired subset size. 
+
+Metric n Raw Pearson r Partial r Single-control range 
+
+Aggregate retrieval lift 13 +0 .746 +0 .763 +0 .745 –+0 .755 
+
+OAE 13 +0 .700 +0 .830 +0 .732 –+0 .825 
+
+RAE 13 +0 .634 +0 .776 +0 .633 –+0 .747 
+
+Table 9: Descriptive cross-benchmark correlations between MBPP+ and HumanEval+. The partial r column controls for both MBPP+ and HumanEval+ skill-disabled accuracies. The single-control range reports the minimum and maximum partial correlations obtained when controlling for only one benchmark’s skill-disabled accuracy. These values are reported as diagnostic context, not as evidence that RAE is the most cross-benchmark-stable metric. 
+
+compression used in the main-text taxonomy. 
+
+G Adherence Annotation Details 
+
+We annotate the pooled DeepSeek-V3.2 and Gemini-2.5-Flash-lite retrieval-invoked representa-tive results with a GPT-5.5 annotator. The annotator receives the task prompt, retrieval query, retrieved skill names and excerpts, and the skill-enabled an-swer. It does not receive the skill-disabled answer or the paired correctness labels. The annotation is therefore used as diagnostic evidence about skill uptake behavior, not as part of the definition of RAE. Each skill-enabled answer receives one primary behavioral label: appropriate adherence, ignored/in-dependent, misapplied/overapplied, format/inter-face failure, or unclear. For Figure 5, we also col-lapse these into three groups: appropriate adher-ence, no clear adherence, and problematic adher-ence. The collapsed labels are used only for visu-alization. Table 14 reconciles the annotated logs with the transition counts used in RAE. Table 15 reports the GPT-5.5 label distribution over discor-dant transitions, and Table 16 reports RAE after grouping retrieval-invoked executions by collapsed adherence labels. 
+
+G.1 Human Audit of Annotation Reliability 
+
+We evaluate annotation reliability on a stratified sample of 50 of the 85 harmful transitions. Nine non-author annotators provide 150 labels while blinded to the GPT-5.5 label, the SD answer, the paired correctness labels, and one another’s anno-tations. Table 18 summarizes the main agreement results. The following is an English translation of the full Korean instructions provided to the human an-notators. 
+
+Human Annotator Instructions 
+
+> Human audit labeling guide (16--17 cases per person; 20--35 minutes) Purpose. This audit tests whether the behavioral labels assigned by an LLM (GPT-5.5) are reliable. Relabel your cases independently; we will later compute agreement with the LLM labels. The LLM labels are hidden. Do not consult other annotators. Each row contains one coding-task record: - task_prompt: the problem given to the model - retrieval_queries: the model's skill-search queries - skills_retrieved / skill_text_excerpt: the skill documents actually returned to the model - on_answer: the model's final answer Read the problem, retrieved skills, and final answer, in that order. Ask: "How did this answer handle the retrieved skills?" Enter exactly one label in human_primary_label: - adhered_appropriate: visibly and appropriately uses retrieved-skill content for the task - misapplied_or_overapplied: uses a retrieved skill incorrectly or unnecessarily - ignored_or_independent: shows no trace of using the retrieved skill and solves independently - format_or_interface_failure: fails in output or interface format, such as omitting the required function or returning prose instead of code - unclear: cannot be assigned to the four labels above from the available evidence Rules. 1. Do not judge task correctness. All cases are skill-enabled executions that failed; label only how the answer handled the retrieved skill. 2. If uncertain, choose unclear rather than forcing a narrower label. 3. Work alone and only on your assigned sheet. Notes in human_notes are optional. Enter confidence in human_confidence_1_to_5, from 1 (guess) to 5 (certain). Low confidence is natural
+
+Excluded model MBPP+ ncond HE+ ncond Reason 
+
+Gemini-2.0-Flash 0 0 no retrieval-invoked conditional subset Llama-3.1-8B 0 0 no retrieval-invoked conditional subset Mistral-Nemo 0 0 no retrieval-invoked conditional subset Qwen2.5-7B 0 0 no retrieval-invoked conditional subset 
+
+Table 10: Models excluded from the filtered cross-benchmark correlation analysis. The reporting filter requires 
+
+ncond ≥ 10 on both MBPP+ and HumanEval+. 
+
+Model Seed Invocation Retrieval Adherence Effective RAE 
+
+DeepSeek-V3.2 42 100 .0 100 .0 18 .8 11 .2 −9.1
+
+Gemini-2.5-Flash-lite 42 82 .5 82 .5 13 .6 10 .6 −15 .6
+
+DeepSeek-V3.2 43 100 .0 100 .0 15 .0 11 .2 −15 .4
+
+Gemini-2.5-Flash-lite 43 82 .5 82 .5 16 .7 10 .6 −15 .9
+
+DeepSeek-V3.2 44 97 .5 97 .5 19 .2 12 .8 −23 .1
+
+Gemini-2.5-Flash-lite 44 78 .8 78 .8 17 .5 12 .7 −22 .2
+
+Table 11: Stage-diagnostic values for the two anchor reversal models across MBPP+ seeds. Stage values are percentages. RAE is reported in percentage points. The adherence and effective columns are diagnostic proxies from the skill-enabled logs, whereas RAE is computed from paired skill-enabled/skill-disabled outcomes. 
+
+Model Primary label n Share 
+
+DeepSeek-V3.2 appropriate adherence 6 13.3% DeepSeek-V3.2 format/interface failure 7 15.6% DeepSeek-V3.2 ignored/independent 29 64.4% DeepSeek-V3.2 misapplied/overapplied 3 6.7% Gemini-2.5-Flash-lite appropriate adherence 4 10.0% Gemini-2.5-Flash-lite format/interface failure 1 2.5% Gemini-2.5-Flash-lite ignored/independent 29 72.5% Gemini-2.5-Flash-lite misapplied/overapplied 5 12.5% Gemini-2.5-Flash-lite unclear 1 2.5% 
+
+Table 12: Full harmful-transition primary-label sum-mary before the category compression used in the main text. The unit is a skill-disabled-correct/ skill-enabled-wrong retrieval-invoked execution. 
+
+> for unclear cases. Submission. Fill human_primary_label and human_confidence_1_to_5 in your assigned audit_annotator_A#.csv file, save it, and return it.
+
+Agreement is modest under the original five-way taxonomy, indicating that the fine-grained category boundaries are interpretive. The binary 
+
+engaged /not engaged distinction is more stable, with 84% human–human and human-majority– GPT agreement. We therefore use the labels as descriptive post-hoc diagnostics and limit our con-clusion to the low prevalence of appropriate adher-ence among the audited harmful transitions. 
+
+H Skill-Content Control Details 
+
+Table 17 reports the pooled raw counts underly-ing Table 4. The three Normal cells use distinct 80-task partitions, whereas the control replicates 
+
+Failure mode Definition 
+
+Appropriate adherence The skill-enabled answer visibly uses relevant retrieved-skill con-tent or patterns in a plausible way. Ignored/independent The skill-enabled answer re-trieves a skill but shows no clear uptake of the returned content. Misapplied/overapplied The skill-enabled answer uses retrieved-skill content but applies it in a way that changes or over-constrains the task solution. Format/interface failure The skill-enabled answer fails at the output or benchmark-interface level, such as leaking tool traces, omitting the required function, or returning malformed code. Unclear The annotator cannot assign a stable narrower behavioral label from the available evidence. 
+
+Table 13: Primary failure-mode definitions used for harmful-transition taxonomy. 
+
+reuse the same 80-task partition; pooled arm val-ues are therefore descriptive. On shared tasks, the Gemini Normal–Filler RAE differences are 
+
+−7.7, −14 .0, and −3.8 pp across the three con-trol replicates, with only the second interval ex-cluding zero. DeepSeek Normal–Filler differences are +4 .1, +4 .1, and 0.0 pp. These heterogeneous comparisons do not identify a single content mech-anism. Schema-Empty has ncond = 0 because the interface returns no usable skill, so RAE is unde-fined while OAE remains defined over the whole benchmark. Model b c ncond    
+
+> DeepSeek-V3.2 8 45 233 Gemini-2.5-Flash-lite 5 40 196
+
+Table 14: Annotation-count reconciliation. b and c are helpful and harmful retrieval-invoked transitions; counts match the RAE computation. 
+
+I Retrieval-Configuration Sensitivity 
+
+We rerun three representative models on the same 80 MBPP+ tasks with retrieval depths k ∈ { 1, 3, 5}
+
+and with a mechanically merged single-skill library. All runs use one generic agent role, temperature 0.7,maximum output length 8,192, reasoning disabled, and at most three agent turns. Confidence intervals use 20,000 paired multinomial bootstrap resamples; 
+
+p-values are within-configuration exact McNemar tests. Across k = 1, 3, 5, Gemini remains nega-tive with significant within-configuration tests, DeepSeek remains negative with significance only at k = 1 , and Claude remains near zero. The re-peated direction for Gemini and DeepSeek rules out the default k = 3 choice as the sole explanation, while the merged-1 results remain jointly affected by lower coverage. 
+
+J Skill Pool Details 
+
+Tables 20 and 21 summarize the fixed procedural skill pools used in the coding and mathematical evaluations. Skills are stored as Markdown files following the AgentSkill-style structure described in §4.2. The retrieval index uses the skill descrip-tions and Markdown bodies, and the top retrieved skill texts are appended to the agent context when retrieval is invoked. The Math skill pool is summarized in Table 21. 
+
+K Model Panel 
+
+Table 22 lists the model panel used in our experi-ments. The coding panel consists of the 17 mod-els (Claude 3.5 Haiku 1, Claude Haiku 4.5 2, Com-mand R 3, DeepSeek V3.2, Gemini 2.0 Flash 4, Gem-ini 2.5 Flash-Lite, Llama 3.1 8B Instruct, Llama 
+
+> 1https://www-cdn.anthropic.com/ c7822cdc35ad788ec87e14b3a9d45010f1f86c38.pdf
+> 2https://www.anthropic.com/news/ claude-haiku-4-5
+> 3https://huggingface.co/CohereLabs/ c4ai-command-r-v01
+> 4https://ai.google.dev/gemini-api/docs/models/ gemini-2.0-flash
+> (a) GPT-5.5 adherence labels over helpful and harmful transi-tions.
+> (b) Label-conditioned RAE over retrieval-invoked executions.
+
+Figure 5: Adherence-conditioned diagnosis of retrieval-invoked outcome changes in the pooled DeepSeek-V3.2 and Gemini-2.5-Flash-lite runs. Panel (a) shows how helpful and harmful transitions are distributed across GPT-5.5 behavioral labels. Panel (b) reports RAE after grouping executions by collapsed adherence labels. 
+
+3.3 70B Instruct, Mistral NeMo 5, Mistral Small 3.2 24B Instruct 6, GPT-4o mini 7, Qwen2.5 7B Instruct, Qwen3 235B A22B 2507, Qwen3 32B, Qwen3 8B, Qwen3.5 9B, GLM4-32B 8) (Liu et al., 2025; Comanici et al., 2025; Grattafiori et al., 2024; Yang et al., 2025; Qwen Team, 2026; Team, 2024) evaluated on MBPP+ and HumanEval+. The Math500 cross-domain replication uses the same 17-model panel, with reportability varying accord-ing to retrieval-invoked coverage. Model identifiers correspond to the API-facing model names used in the experiment logs.                                        
+
+> 5https://huggingface.co/mistralai/ Mistral-Nemo-Instruct-2407
+> 6https://huggingface.co/mistralai/ Mistral-Small-3.1-24B-Instruct-2503
+> 7https://openai.com/ko-KR/index/ gpt-4o-mini-advancing-cost-efficient-intelligence
+> 8https://huggingface.co/zai-org/ GLM-4-32B-0414 Model Transition Primary label Share
+> DeepSeek-V3.2 Helpful appropriate adherence 50.0% DeepSeek-V3.2 Helpful ignored/independent 50.0% DeepSeek-V3.2 Harmful appropriate adherence 13.3% DeepSeek-V3.2 Harmful format/interface failure 15.6% DeepSeek-V3.2 Harmful ignored/independent 64.4% DeepSeek-V3.2 Harmful misapplied/overapplied 6.7% Gemini-2.5-Flash-lite Helpful ignored/independent 100.0% Gemini-2.5-Flash-lite Harmful appropriate adherence 10.0% Gemini-2.5-Flash-lite Harmful format/interface failure 2.5% Gemini-2.5-Flash-lite Harmful ignored/independent 72.5% Gemini-2.5-Flash-lite Harmful misapplied/overapplied 12.5% Gemini-2.5-Flash-lite Harmful unclear 2.5%
+
+Table 15: GPT-5.5 adherence annotation distribution over discordant retrieval-invoked transitions. The annotator is blinded to the skill-disabled answer and correctness labels.                                    
+
+> Model Collapsed label bcnRAE
+> DeepSeek-V3.2 appropriate 4689 −2.2
+> DeepSeek-V3.2 no clear 431 129 −20 .9
+> DeepSeek-V3.2 problematic 0815 −53 .3
+> Gemini-2.5-Flash-lite appropriate 0426 −15 .4
+> Gemini-2.5-Flash-lite no clear 531 152 −17 .1
+> Gemini-2.5-Flash-lite problematic 0518 −27 .8
+
+Table 16: Label-conditioned RAE values using collapsed GPT-5.5 adherence labels. Values are in percentage points. These diagnostic subsets do not redefine RAE; they describe which behavioral labels account for helpful and harmful transitions in the retrieval- invoked representative results. 
+
+L Agent Prompts and Tool Schema 
+
+This appendix reports the prompts and tool schema used in the paired SE and SD executions and in the adherence annotation. The SE and SD prompts are kept identical except for the availability of the 
+
+search_skills interface. The annotator prompt is used only for post hoc diagnostic labeling and is not used in the computation of RAE. 
+
+Execution settings. Generation uses temperature 
+
+0.7, a maximum output length of 8,192 tokens, provider-side reasoning disabled, and at most three sequential search_skills calls. Each valid call re-turns the top-3 BM25 matches with their full skill text. Invalid arguments return no skill and genera-tion continues; when several calls are emitted to-gether, only the first is executed. No manual context truncation is applied. Transient requests are retried up to three times, and unrecoverable provider or context-length failures produce an empty predic-tion scored as incorrect. 
+
+Answer extraction and correctness. For coding tasks, the evaluator extracts the first Python-fenced block, falls back to the first generic fenced block, and otherwise evaluates the raw response. The ex-tracted program is executed against the EvalPlus extended test suite and is correct only when ev-ery test passes. Math answers are evaluated with 
+
+math-verify , followed by boxed-answer parsing and normalized exact matching. Model Condition b/c ncond RAE OAE Coverage Agg. lift 
+
+DeepSeek-V3.2 Normal 8/45 233 −15 .9 −15 .8 97 .1 +21 .2
+
+DeepSeek-V3.2 Schema-Empty 0/0 0 – −10 .0 0.0 –DeepSeek-V3.2 Filler-Dummy 7/30 226 −10 .2 −10 .8 94 .2 +28 .0
+
+DeepSeek-V3.2 Random-skills 5/41 238 −15 .1 −15 .4 99 .2 +7 .1
+
+DeepSeek-V3.2 Corrupted 8/29 230 −9.1 −9.6 95 .8 +43 .5
+
+Gemini-2.5-Flash-lite Normal 5/40 196 −17 .9 −17 .9 81 .7 +7 .8
+
+Gemini-2.5-Flash-lite Schema-Empty 0/0 0 – −15 .4 0.0 –Gemini-2.5-Flash-lite Filler-Dummy 5/14 181 −5.0 −7.1 75 .4 +8 .1
+
+Gemini-2.5-Flash-lite Random-skills 2/32 195 −15 .4 −17 .9 81 .2 +14 .0
+
+Gemini-2.5-Flash-lite Corrupted 5/36 180 −17 .2 −17 .5 75 .0 +1 .1
+
+Table 17: Detailed skill-content control results pooled over MBPP+ seeds 42–44. Values for RAE, OAE, coverage, and aggregate retrieval lift are in percentage points. Coverage is the percentage of tasks where retrieval returned at least one skill. Aggregate retrieval lift is undefined when retrieved or non-retrieved task populations are empty. 
+
+Audit statistic Result 
+
+Five-way Krippendorff’s α 0.377 
+
+Five-way human-majority–GPT agreement 52 .4% (22 /42 )Cases without a strict five-way majority 8/50 
+
+Binary engaged /not engaged human–human agreement 84% 
+
+Binary engaged /not engaged human-majority–GPT agreement 84% (41 /49 )Binary Krippendorff’s α 0.401 
+
+Human / GPT appropriate adherence rate 9.3% / 10 .0% 
+
+Table 18: Human-audit agreement for the GPT-5.5 annotations. The five labels are appropriate adherence , ignored/in-dependent , misapplied/overapplied , format/interface failure , and unclear . For the binary analysis, appropriate adherence and misapplied/overapplied are grouped as engaged , while ignored/independent , format/interface failure ,and unclear are grouped as not engaged .
+
+Model Configuration b c ncond Coverage RAE 95% CI Exact p
+
+Gemini-2.5-FL k = 1 0 9 65 81 .2 −13 .8 [−23 .1, −6.2] 0.00391 
+
+k = 3 (paper) 2 12 64 80 .0 −15 .6 [−26 .6, −4.7] 0.0129 
+
+k = 5 1 9 70 87 .5 −11 .4 [−20 .0, −2.9] 0.0215 
+
+merged-1 0 2 23 28 .7 −8.7 [−21 .7, +0 .0] 0.500 
+
+DeepSeek-V3.2 k = 1 0 19 77 96 .2 −24 .7 [−35 .1, −15 .6] 3.81 ×10 −6
+
+k = 3 (paper) 3 10 77 96 .2 −9.1 [−18 .2, +0 .0] 0.0923 
+
+k = 5 4 11 77 96 .2 −9.1 [−19 .5, +0 .0] 0.118 
+
+merged-1 4 6 71 88 .8 −2.8 [−11 .3, +5 .6] 0.754 
+
+Claude-4.5-H k = 1 1 2 72 90 .0 −1.4 [−6.9, +2 .8] 1.000 
+
+k = 3 (paper) 3 2 70 87 .5 +1 .4 [−4.3, +7 .1] 1.000 
+
+k = 5 4 4 70 87 .5 +0 .0 [−8.6, +7 .1] 1.000 
+
+merged-1 0 3 19 23 .8 −15 .8 [−31 .6, +0 .0] 0.250 
+
+Table 19: Retrieval-depth and merged-library sensitivity. Coverage is the percentage of tasks for which at least one skill was returned; RAE and confidence intervals are in percentage points. The merged-1 intervention changes both skill granularity and retrieval coverage, so it is not interpreted as a pure granularity effect. Coding skill Summary 
+
+binary-search-boundary Find a threshold in a sorted or monotonic search space. counting-hash Count occurrences with a hash map for frequency, duplicate, or anagram-style tasks. dfs-iterative Traverse graphs iteratively for reachability, connected compo-nents, or cycle-safe search. edge-case-guard Add defensive checks for empty, 
+
+None , singleton, and boundary in-puts. knapsack-01-dp Use one-dimensional bottom-up dynamic programming for 0/1 knapsack-style constraints. prefix-sum Build prefix sums for constant-time contiguous range queries. rotate-left Rotate a sequence left by a speci-fied offset with wrap-around be-havior. sliding-window-longest Find the longest contiguous win-dow satisfying a monotonic pred-icate. two-pointer-pair-sum Find pair or closest-sum patterns in sorted or sortable sequences. 
+
+Table 20: Coding skill pool used for MBPP+ and HumanEval+. The pool contains 9 procedural skills. 
+
+Math skill Summary 
+
+algebraic-substitution Substitute known values into an expression and simplify. case-analysis Split a problem into mutually exclusive cases such as sign, parity, range, or absolute-value branches. check-by-substitution Verify a derived answer by sub-stituting it back into the original equations or constraints. coordinate-distance Compute distance, midpoint, slope, or angle from coordinate representations. factor-then-solve Factor polynomial equations and solve by setting factors to zero. modular-arithmetic Work with remainders, divisibil-ity, cyclic patterns, and large-power computations. sequence-formulae Apply standard closed forms for arithmetic, geometric, and tele-scoping sequences. systematic-enumeration Count or list candidates by traversing a bounded finite search space. 
+
+Table 21: Math skill pool used for the Math500 cross-domain replication. The pool contains 8 procedural skills. Paper alias Model identifier Provider / family Access type 
+
+Claude-3.5-H anthropic/claude-3.5-haiku Anthropic Claude Closed/API Claude-4.5-H anthropic/claude-haiku-4.5 Anthropic Claude Closed/API Command-R cohere/command-r-08-2024 Cohere Command-R Closed/API DeepSeek-V3.2 deepseek/deepseek-v3.2 DeepSeek Open-weight family Gemini-2.0-Flash google/gemini-2.0-flash-001 Google Gemini Closed/API Gemini-2.5-Flash-lite google/Gemini-2.5-Flash-lite Google Gemini Closed/API Llama-3.1-8B meta-llama/llama-3.1-8b-instruct Meta Llama Open-weight family Llama-3.3-70B meta-llama/llama-3.3-70b-instruct Meta Llama Open-weight family Mistral-Nemo mistralai/mistral-nemo Mistral AI Open-weight family Mistral-S-24B mistralai/mistral-small-3.2-24b-instruct Mistral AI Open-weight family GPT-4o-mini openai/gpt-4o-mini OpenAI GPT Closed/API Qwen2.5-7B qwen/qwen-2.5-7b-instruct Qwen Open-weight family Qwen3-235B qwen/qwen3-235b-a22b-2507 Qwen Open-weight family Qwen3-32B qwen/qwen3-32b Qwen Open-weight family Qwen3-8B qwen/qwen3-8b Qwen Open-weight family Qwen3.5-9B qwen/qwen3.5-9b Qwen Open-weight family GLM4-32B z-ai/glm-4-32b Z-AI GLM Open-weight family 
+
+Table 22: Model panel used in the experiments. Access type is used only to describe the diversity of the evaluated panel; all models were accessed through the same OpenAI-compatible experiment interface. SE Agent Prompt 
+
+You are a helpful assistant. You have a `search_skills ` tool that searches a skill library. Use it if you think it could help solve the task. Implement the requested function with the exact signature. Reply inside a 
+
+``` python block — only the function, no test code. 
+
+SD Agent Prompt 
+
+You are a helpful assistant. Implement the requested function with the exact signature. Reply inside a ``` python block — only the function, no test code. 
+
+GPT-5.5 Annotator Prompt 
+
+You annotate whether an LLM answer substantively follows retrieved skill content. Do not infer from task correctness; no correctness labels are provided. Return one compact JSON object only.  
+
+> 1
+
+SEARCH_SKILLS_TOOL = { 
+
+> 2
+
+" type ": " function " ,  
+
+> 3
+
+" function ": { 
+
+> 4
+
+" name ": " search_skills " ,  
+
+> 5
+
+" description ": ( 
+
+> 6
+
+" Search the skill library for reusable problem - solving artifacts . " 
+
+> 7
+
+" Returns utility functions (callable helpers you can use directly ) , " 
+
+> 8
+
+" procedure templates (algorithm skeletons you can specialize ) , and " 
+
+> 9
+
+" guard checklists ( defensive checks to add at function entry )."  
+
+> 10
+
+) ,  
+
+> 11
+
+" parameters ": { 
+
+> 12
+
+" type ": " object " ,  
+
+> 13
+
+" properties ": { 
+
+> 14
+
+" query ": { 
+
+> 15
+
+" type ": " string " ,  
+
+> 16
+
+" description ": "Natural - language query describing the subproblem or pattern you need ." , 
+
+> 17
+
+},  
+
+> 18
+
+" types ": { 
+
+> 19
+
+" type ": " array " ,  
+
+> 20
+
+" items ": {" type ": "string " , " enum ": [" utility " , "procedure " , " guard " ]} ,  
+
+> 21
+
+" description ": ( 
+
+> 22
+
+" Optional filter . Omit for all types . Use " 
+
+> 23
+
+"[’ utility ’, ’procedure ’] to skip defensive - only skills ."  
+
+> 24
+
+) ,  
+
+> 25
+
+},  
+
+> 26
+
+},  
+
+> 27
+
+" required ": [" query "],  
+
+> 28
+
+},  
+
+> 29
+
+},  
+
+> 30
+
+}
+
+Listing 1: Search skill tool schema

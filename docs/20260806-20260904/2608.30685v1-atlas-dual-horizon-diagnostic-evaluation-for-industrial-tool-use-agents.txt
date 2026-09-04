@@ -1,0 +1,662 @@
+Title: ATLAS: Dual-Horizon Diagnostic Evaluation for Industrial Tool-Use Agents
+
+URL Source: https://arxiv.org/pdf/2608.30685v1
+
+Published Time: Tue, 01 Sep 2026 03:10:04 GMT
+
+Number of Pages: 25
+
+Markdown Content:
+# ATLAS: Dual-Horizon Diagnostic Evaluation for Industrial Tool-Use Agents 
+
+## University of Science and Technology of China , Meituan 
+
+See Contributions section for the full author list. 
+
+## Abstract 
+
+Large language model (LLM) agents are increasingly deployed in user-facing services that require iterative tool use under dynamic business conditions. Reliable evaluation is essential to their sustained improvement: it must expose capability deficiencies, inform iteration priorities, and assess the effects of interventions. However, industrial agent service unfolds both through the iterative trajectory of a current request and through continued interaction with a user. Reducing these connected behaviors to a final outcome obscures where deficiencies emerge during execution and whether subsequent service remains aligned with the context established by earlier exchanges. To address this limitation, we propose ATLAS , a dual-horizon diagnostic evaluation framework for industrial tool-use agents. At the request horizon, ATLAS uses trajectory-wise diagnostic signals to relate observed deficiencies to execution locations and capability concerns. At the interaction horizon, it uses user-wise diagnostic signals to assess whether service remains responsive across continued user interaction. Together, these complementary views preserve structured diagnostic evidence beyond outcome-level assessment, supporting targeted analysis of execution deficiencies and sustained service behavior. ATLAS operationalizes these diagnostic views by specifying executable signals with explicit evidence scopes and decision boundaries. For signals requiring semantic assessment, the corresponding LLM judge interfaces are calibrated against high-confidence references from real business logs, and their decision behavior can be distilled into efficient diagnostic models when needed, supporting lower-latency, lower-cost evaluation. The resulting diagnostic feedback further supports policy optimization. We evaluate ATLAS on production traffic from Meituan Xiaotuan. Offline experiments assess diagnostic-signal fidelity and policy improvement under replay, while online A/B experiments show concurrent gains in user engagement, downstream business outcomes, and sampled human-audit quality.  
+
+> Correspondence:
+
+chenweicw@mail.ustc.edu.cn, zhoupeilun02@meituan.com  
+
+> Project Page:
+
+https://atlas-eval.github.io/ 
+
+## 1 Introduction 
+
+Evaluation is fundamental to the iterative improvement of large language models (LLMs): it reveals performance deficiencies and determines whether optimization has produced meaningful gains [1, 6, 14]. As LLM applications evolve from predominantly single-turn content generation toward agents that interpret user goals, invoke external tools [29, 41], and complete real-world tasks [8, 36, 38], the role of evaluation expands accordingly. For industrial tool-use agents embedded in user-facing products and business workflows, evaluation must do more than report the aggregate performance of a system version; it must inform sustained iteration. Because capability improvements compete for finite iteration and deployment resources, development teams 1arXiv:2608.30685v1 [cs.AI] 31 Aug 2026 need to prioritize deficiencies in light of the current user task and product context. Such priorities are scenario dependent. For example, local-services decision support may place particular weight on whether dynamic business information is accurate, timely, and actionable [4, 13, 48], whereas safety- or rule-sensitive applications may prioritize different requirements. Industrial agent evaluation must therefore provide evidence to answer three linked questions: What should be improved? What should be prioritized? Did the intervention work? 
+
+To support such iteration decisions, existing research has expanded agent evaluation beyond end-to-end measures of task success [2, 10, 42, 44] to include process-level analysis of intermediate execution [6, 19] and structured criteria or preference-aligned objectives that can provide optimization feedback [3, 5, 18, 36, 40]. These complementary perspectives provide important evidence for assessing agent behavior, but industrial iteration requires organizing this evidence into an actionable view of capability deficiencies that development teams can prioritize in accordance with the current product context. 小团  
+
+> Figure 1 A real Xiaotuan local-services interaction. To support a user’s decision, the assistant iteratively reasons over the request and uses tools to retrieve and compare business-grounded information, reconcile relevant constraints, and synthesize an actionable recommendation.
+
+This requirement is particularly de-manding in industrial settings such as Xiaotuan, 1 Meituan’s AI assistant for local services. As illustrated in Fig-ure 1, the agent must transform auser’s current request into a decision-supporting recommendation through a multi-step, iterative process. It repeat-edly retrieves business information, com-pares candidate options, and updates subsequent actions in response to inter-mediate observations and tool feedback. This setting raises three distinct eval-uation challenges: 1) Compounding errors in an execution trajectory. 
+
+An early deviation in interpreting a re-quest or selecting an action can accu-mulate through later steps and affect the eventual service outcome [7, 9]. 2) Dynamic business conditions. The business information an agent retrieves, such as search results, merchant supply, and availability, changes with real-world conditions [33, 51], while open-ended user needs may admit multiple reasonable service paths. An apparently acceptable response may consequently conceal whether the underlying process robustly served the user’s goal [15, 39]; it can still leave the user with a recommendation that is inaccurate, outdated, or not actionable under the current business state. 3) Continued interaction and sustained service. Beyond the current request, service unfolds across continued user interaction, where earlier exchanges establish referents, intent, constraints, and explicit corrections. Even if each lifecycle appears to handle its immediate request, failing to resolve, carry forward, or update this context can cause service to drift from the user’s evolving needs. Evaluation for industrial agents must therefore retain interpretable behavioral evidence from both the execution that produces a response and the continued interaction through which service unfolds. For this purpose, we propose ATLAS 2, a dual-horizon diagnostic evaluation framework for industrial tool-use agents that organizes capability analysis, evaluation, and subsequent improvement into an iterative loop grounded in diagnostic evidence. Within-Turn Evaluation uses trajectory-wise diagnostic signals to examine the complete, iterative execution trajectory triggered by a current request, whereas Across-Turn Evaluation 
+
+uses user-wise diagnostic signals to examine whether subsequent service remains responsive to a user’s needs as      
+
+> 1Xiaotuan is Meituan’s AI assistant for local services, operating at the scale of hundreds of millions of active users, with 700 million nationwide merchant-information verifications, 1.3 billion real-review recalibrations, and more than 3.4 million merchant uses of its AI-assistant functions.
+> 2ATLAS stands for Ability Taxonomy and Logical Assessment System.
+
+2the interaction unfolds. The two horizons are complementary but adopt distinct diagnostic structures: within-turn evaluation provides a structured diagnostic space for localizing execution-level capability deficiencies, while across-turn evaluation retains a dedicated view of continued service quality. Within the within-turn horizon, ATLAS localizes deficiencies along two complementary aspects: where they arise in execution and how the behavior at that location falls short of the service requirement. Thinking & Reflection , Tool & Skill Execution ,and Response Generation define key execution locations; Relevance , Factuality , Timeliness , Reliability , and 
+
+Intent & Planning characterize capability concerns that recur across these locations. Together, they form a structured diagnostic space whose locations are instantiated by fine-grained diagnostic signals grounded in concrete behavioral evidence, decision boundaries, and business failure modes. Norms & Compliance serves as a guardrail across execution, covering safety, privacy, compliance, and structural-validity requirements that are not subject to ordinary quality trade-offs. To make this dual-horizon diagnostic view actionable for iteration, ATLAS instantiates the diagnostic structure as executable signals with explicit evidence scopes and decision boundaries. LLM-based signals are calibrated on high-confidence reference sets constructed from real business logs; selected signals are further distilled into efficient diagnostic models that retain their diagnostic semantics while supporting lower-latency, lower-cost evaluation at scale. For policy optimization, calibrated diagnostic signals provide multi-dimensional training feedback, turning observed capability deficiencies into explicit improvement targets. We build and validate ATLAS on real production traffic from Meituan Xiaotuan through offline evaluation of diagnostic signals and diagnosis-driven optimization, together with online A/B experiments in real local-services interactions. The online A/B study further shows that the ATLAS-optimized policy improves user engagement, downstream business outcomes, and sampled human-audit quality. In summary, our contributions are threefold: • Dual-Horizon Diagnostic Evaluation: We introduce ATLAS, a diagnostic evaluation framework that captures how an agent executes an individual request and how its service evolves across continued user interaction. Trajectory-wise within-turn signals localize capability deficiencies, while user-wise across-turn signals assess whether subsequent service remains responsive as user needs develop. Together, these complementary views support diagnosis of execution-level gaps and sustained user service. • Diagnosis-Driven Iteration Mechanism: ATLAS instantiates its diagnostic structure as calibrated, evidence-bound signals whose semantics are preserved from evaluation through optimization. Low-latency diagnostic models support high-frequency use where needed, and the diagnostic signals used for optimization provide multi-dimensional training feedback. This design turns observed capability deficiencies into explicit improvement targets and enables their subsequent reassessment under the same diagnostic framework. • Real-Traffic Validation: We build and validate ATLAS on production traffic from Meituan Xiaotuan. Offline evaluation validates the diagnostic signals and diagnosis-driven optimization, while online A/B experiments show improvements in user engagement, downstream business outcomes, and sampled human-audit quality in real local-services interactions. 
+
+## 2 Related Works 
+
+2.1 Tool-Use Agent Evaluation 
+
+Tool-use agents operate through sequences of decisions that connect a user request with changing external evidence, tool outputs, and a final service response. Accordingly, evaluation has developed along complementary directions. General-purpose benchmarks measure end-to-end performance through task completion, terminal-state matching, or patch validation, providing common and reproducible measures of overall agent success [2, 10, 42, 44]. At the same time, process-oriented studies retain intermediate execution evidence to examine how an outcome is produced. For example, AgentEval models industrial workflows as dependency-aware DAGs for step-level assessment and failure analysis [6], while Agent-RewardBench probes reward-modeling capabilities across perception, planning, and safety [19]. This growing emphasis on execution evidence is particularly consequential for open-ended, multi-step agents, where a final outcome alone may not expose the decisions and conditions that shaped it. It also makes the design of evaluation signals consequential: LLM-based evaluators can vary substantially across agent capabilities [19], and coarse-grained judgments have been shown to miss 3defects in deployed multi-turn transactional agents [47]. Another line of work brings agent evaluation closer to deployment by grounding it in real requests, interaction logs, and dynamic external environments. MobilityBench replays realistic mobility requests for route-planning agents [33]; MindDR evaluates deep-research systems on product-facing queries [21]; RecRMBench studies recommendation rewards in real-world recommendation settings [46]; and CLQT studies portfolio-management agents under dynamic, closed-loop conditions [24]. Beyond a single task episode, RubricsTree evaluates personal-health agents with structured criteria spanning user memory and medical skills [49]. These efforts respectively advance deployment-aligned evaluation, process-sensitive analysis, and longer-lived interaction contexts. ATLAS builds on this landscape by treating two industrial service objects as related but distinct: the iterative execution trajectory initiated by a current request, and the continued service experienced by a user across subsequent interactions. The former calls for evidence that can localize capability deficiencies within an execution, whereas the latter assesses whether service remains responsive as user needs develop. Organizing these objects as within-turn and across-turn evaluation allows each to retain an evaluation structure appropriate to its role while connecting them within one framework. 
+
+2.2 Evaluation Signals for Agent Policy Optimization 
+
+The signals used to optimize agents have likewise evolved from outcome-level rewards toward richer forms of supervision. Terminal task success and auxiliary objectives remain common sources of feedback for tool-use reinforcement learning [23]. Process supervision instead assigns credit to intermediate reasoning steps or actions, as illustrated by process reward models for mathematical reasoning [14, 30, 34]; tool-use RL further constructs local feedback around invocation and execution behavior [23]. Rubric-based approaches extend structured criteria to tasks without a single verifiable outcome [3, 5, 18], while work such as Rubrics to Tokens connects response-level rubrics with finer-grained training signals [40]. Together, these studies show that evaluation criteria can serve not only as offline measures, but also as interfaces for learning. Their signals may be organized around outcomes, local steps, sample-specific constraints, or preference objectives, reflecting the diverse optimization settings in which they are used. Recent work further develops multidimensional signals and evaluation-guided optimization in concrete application domains. In personal health, RubricsTree uses hierarchically organized rubrics for open-ended agents [49]; safety-oriented reinforcement learning incorporates multi-dimensional rubric feedback [17]; in finance, multidimensional trading behaviors are used as feedback for closed-loop reinforcement learning [28]; and in embodied settings, step-wise, multidimensional reward models support virtual-agent learning [20]. Industrial systems similarly connect optimization to product objectives: SearchLLM aligns language models with searcher preferences [36], Interactor targets sponsored-search ad generation [35], multi-objective learning supports e-commerce dialogue [12], and RecGPT-V2 studies recommendation-oriented agent optimization [43]. These directions demonstrate the value of domain-grounded criteria and richer objectives, as well as the practical relevance of linking evaluation with policy improvement. ATLAS complements them by treating calibrated evaluation signals as a persistent semantic interface throughout an iteration cycle. They first characterize capability deficiencies in request-level execution and continued user service; selected signals then provide multi-dimensional feedback for policy optimization; and the resulting policy is reassessed under the same evaluation framework. This continuity preserves the diagnostic meaning of the signals from evaluation to optimization and back to evaluation, rather than using the evaluation result solely as an aggregate report or the optimization objective solely as an undifferentiated return. 
+
+## 3 Methodology 
+
+This section presents ATLAS as a dual-horizon diagnostic evaluation framework for industrial tool-use agents. ATLAS organizes complementary within-turn and across-turn evidence through executable diagnostic signals. The dual-horizon diagnostic structure determines the evidence evaluated by these signals (§3.1); signal construction specifies their evidence scopes and decision boundaries (§3.2); and calibration establishes the fidelity of semantic assessment (§3.3). Selected signals are implemented as efficient diagnostic models to support lower-latency, lower-cost evaluation at scale (§3.4). Diagnostic feedback further supports policy optimization (§3.5). 4Within-Turn Evaluation: 
+
+Trajectory-wise Diagnostic Signals             
+
+> User Query Agent Reasoning Tool Use Response
+> Thinking & Reflection
+> Plan, reason, reflect, verify, and revise Evaluate the agent’s internal cognition and self-correction.
+> Tool & Skill Execution
+> Select, call, observe, and adapt Evaluate the effectiveness and reliability of tool and skills.
+> Response Generation
+> Synthesize, format, and deliver Evaluate the quality, clarity, usefulness of final response.
+> Diagnostic Dimensions & Guardrail Axis:
+> Complementary Views of the Trajectory
+> Norms & Compliance Persistent Guardrails Across The Entire Trajectory
+> Safety •Privacy • Integrity •Format Validity •Structural Gate
+> Single Turn Iterate
+
+Across-Turn Evaluation: 
+
+User-wise Diagnostic Signals 
+
+> Goals
+> Preferences
+> Feedback
+> Evolving User State
+> Constraints Turn 1
+> Turn 2
+> Turn 3
+> Turn T
+
+•••     
+
+> User-wise Diagnostic Signals
+> Feedback Incorporation Context Consistency Preference Alignment User Satisfaction Goal Progress
+> (a) (b)
+> Multiple Turns Relevance Factuality Timeliness Intent & Planning Reliability
+
+••• 
+
+> Fine-grained Reward Signals
+
+••• 
+
+> Fine-grained Reward Signals
+
+••• 
+
+> Fine-grained Reward Signals
+> Trajectory-wise Diagnostic Signals
+> Integrated diagnostic signals for one complete turn
+> Capability Concerns
+
+Figure 2 Overview of ATLAS’s dual-horizon diagnostic evaluation. Within-turn evaluation examines the trajectory generated for a current request, while across-turn evaluation examines how service responds to user-relevant state across multiple complete lifecycles. 
+
+3.1 Dual-Horizon Diagnostic Structure 
+
+ATLAS is designed around the observation that industrial agent service unfolds over two connected temporal scopes, each of which exposes a different kind of evidence about capability. As illustrated in Figure 2, within-turn evaluation examines the complete trajectory initiated by a current user request. During this execution, the agent may repeatedly reason about the request, invoke tools or skills, and update subsequent decisions in response to tool feedback before generating a final response. Within-turn evaluation therefore preserves the process evidence needed to determine where a deficiency manifests in the execution and how the observed behavior falls short of the task requirement. Across-turn evaluation examines a sequence of such complete lifecycles within the same ongoing user interaction. It considers whether user-relevant state established in earlier exchanges—such as referents, intent and constraints, and explicit corrections—is appropriately carried forward, updated, and used in subsequent service. The request-level horizon requires a diagnostic structure that preserves both the location and the character of an observed deficiency. Within-turn evaluation therefore uses the structured diagnostic space in Figure 3. Its execution dimensions— Thinking & Reflection , Tool & Skill Execution , and Response Generation —identify where behavior is observed in an execution, from the agent’s understanding and decision process to its use of external capabilities and delivered answer. Its capability concerns— Relevance , Factuality , Timeliness ,
+
+Reliability , and Intent & Planning —characterize how behavior at those locations serves the task. Their intersections are instantiated by fine-grained diagnostic signals with explicit evidence scopes and decision boundaries; cells without a stable signal family remain intentionally uninstantiated. Reliability concerns whether the observed execution remains operationally dependable, distinct from factual correctness, task relevance, and the user-wise continuity assessed across lifecycles. Norms & Compliance is maintained outside the matrix as an independent guardrail for non-negotiable safety, privacy, compliance, and structural-validity requirements. Together, the matrix and guardrail provide a shared basis for locating trajectory evidence and interpreting the corresponding capability deficiency. This structure is intended to serve as a reusable diagnostic backbone across industrial tool-use settings, while its concrete signal families combine recurring agent failure modes with scenario-specific patterns observed in real traffic. Across-turn evaluation complements this trajectory-wise structure without adding another execution dimension. Its object is the relation among successive lifecycles and the evolving user context they share. ATLAS therefore organizes across-turn signals as a separate user-wise layer that assesses whether prior context is resolved, 5Relevance 
+
+Is it aligned and useful? 
+
+Factuality 
+
+Is it factually accurate? 
+
+Timeliness 
+
+Is it up-to-date and timely? 
+
+Reliability 
+
+Is it available? 
+
+Intent & Planning 
+
+Is it well-aligned and effective? 
+
+Response Generation 
+
+What the agent says 
+
+Tool & Skill Execution 
+
+What the agent does 
+
+Thinking & Reflection 
+
+How the agent thinks Norms & Compliance 
+
+Outside-the-matrix constraints and non-negotiable guardrails 
+
+BOTTOM-LINE CONSTRAINTS APPLY ACROSS ALL CAPABILITIES  
+
+> Opening Relevance Primary Rec. Match Content Relevance Supply Relevance & Diversity Irrelevant Supply Argument Validity Rewrite Validity Constraint Coverage Supply Info Insufficiency Evidence Insufficiency Supply Existence Attribute Consistency Supply Attribution Failure Transparency Rejection Hallucination POI Traceability Tool-Call Hallucination Location Traceability Reflection Hallucination Response Timeliness Outdated Supply Detection Supply Timeliness CoT Token Count Skill Behavior Tool-Call Order Skill Selection Reflection Gain Query Calibration Search Intent Understanding -
+
+Compliance 
+
+proper refusal of invalid requests 
+
+System Safety 
+
+safe and policy-aligned response 
+
+Security & Privacy 
+
+privacy protection and leakage control 
+
+Format Validity 
+
+non-trivial format coherence checks 
+
+Structural Gate 
+
+required structure and hard constraints 
+
+Presentation Integrity 
+
+secondary presentation and formatting rules  
+
+> Tool-Call Turn Count Tool-Call Schema N-gram Repetition Logical Contradiction Semantic Repetition
+
+Figure 3 Within-turn diagnostic structure in ATLAS. The matrix organizes trajectory-wise diagnostic signals by execution dimension and capability concern. Populated cells denote instantiated signal families, while blank cells are intentionally uninstantiated. Norms & Compliance is maintained as an independent guardrail. 
+
+maintained, or corrected in later reasoning, tool use, and responses. This separation preserves the distinct diagnostic role of continued user service while keeping the within-turn matrix focused on the execution of an individual request. The resulting signal outcomes provide structured diagnostic evidence at both horizons. As shown in Figure 4, evidence associated with an individual trajectory can be related to the execution location and capability concern at which a deficiency manifests, while aggregated signal profiles can surface recurring patterns across execution dimensions, concerns, and user-wise behavior. This evidence-based view supports analysis of candidate capability deficiencies and the prioritization of subsequent intervention. USER 
+
+Non-dessert cakes, such as fried-chicken cakes or beef cakes. 
+
+Reasoning 
+
+The user wants a non-dessert item. "Fried-chicken cake" may refer to an egg burger; 
+
+“beef cake ” may refer to a beef pie… Search: "egg burger" • "savory egg pancake" • "beef pie" 
+
+Tool-use 
+
+Tool Response Final Response 
+
+I found several options match your request : egg burgers, beef pies, and potato egg pancakes… Mismatched Recommendation Off-intent candidates are presented as matching recommendations. Supply Relevance Off-Intent Retrieval Tool results fit the rewritten query, not the original request. Irrelevant Supply Intent-Altering Query Rewrite The rewritten query no longer preserves the request. Rewrite Validity Constraint Coverage Intent Misgrounding The requested food form is replaced. Search Intent Understanding Observed Off-Intent Recommendation A TOOL-USE TRAJECTORY ATLAS-SUPPORTED DIAGNOSTIC TRACE 
+
+> Reward Signal from ATLAS Backward Localization
+
+Candidates match rewritten queries. ATLAS Capability Taxonomy 
+
+> ATLAS
+
+(a) (b) 
+
+> Real-World Queries
+> Poli Optimiz
+
+Figure 4 Evidence-based diagnosis with ATLAS. Signal outcomes link observed deficiencies to their evidence, exe-cution location, capability concern, and user-wise context. 
+
+The complete inventory of all diagnostic signals is provided in Appendix Tables 6–10. 
+
+3.2 Diagnostic Signal Construction 
+
+ATLAS instantiates the diagnostic structure in Sec-tion 3.1 as executable diagnostic signals. Figure 5 summarizes how this pathway connects signal con-struction and calibration with efficient implementa-tion and policy optimization. Each signal specifies a diagnostic target, the admissible evidence on which it may rely, a decision boundary that distinguishes satisfactory and deficient behavior, and output se-mantics for reporting the assessment. This specifi-cation connects an observed trajectory or user-wise interaction to an interpretable evaluation result, while allowing signals with different evidence forms to share a common diagnostic framework. Depend-ing on the observability and structure of the target behavior, ATLAS implements signals through ei-ther rule-based or LLM-based mechanisms. 6Signal implementation by evidence type. Rule-based diagnostic signals are used when the relevant bound-ary can be verified programmatically, such as for format constraints, structural validity, explicit enumerations, fixed-schema legality, or deterministic counts. LLM-based diagnostic signals are used when assessment requires open semantic reasoning over evidence that may jointly involve the user query, conversational context, tool outputs, intermediate reasoning, or the final response. For such signals, the LLM judge turns the diagnostic specification into a review task with explicit admissible evidence, decision boundaries, and structured outputs. Each prompt is organized around the target decision and typically includes five components: role and task definition , input field specification , decision criteria with exemption boundaries , stepwise review procedure ,and structured output format . The role and task definition establishes a specific evaluator role; the input specification identifies the evidence and key objects to be assessed; and the decision criteria distinguish failures, exemptions, and inapplicable cases. The review procedure decomposes the assessment into evidence extraction, local comparison, boundary checking, and result consolidation, while the output format standardizes verdicts, counts, rationales, and auxiliary fields. When a boundary is especially subtle or the input form is heterogeneous, a small number of examples further anchor exemptions, near misses, and atypical formats. , such as fried-eef cakes.  
+
+> non-dessert item. ke" may refer to an
+> efer to a beef pie… er" • "savory egg ie"
+> tions match your ers, beef pies, and es… Mismatched Recommendation Off-intent candidates are presented as matching recommendations. Supply Relevance Off-Intent Retrieval Tool results fit the rewritten query, not the original request. Irrelevant Supply Intent-Altering Query Rewrite The rewritten query no longer preserves the request. Rewrite Validity Constraint Coverage Intent Misgrounding The requested food form is replaced. Search Intent Understanding ent Recommendation AJECTORY ATLAS-SUPPORTED DIAGNOSTIC TRACE
+> Reward Signal from ATLAS Backward Localization
+> rewritten queries. ATLAS Diagnostic Structure Signal Construction Rule-based Signal
+> LLM-based Signal
+> Signal Calibration
+> Human Annotation
+> Strong-Model Reference
+> Reference Data
+> Boundary Refinement
+> Calibrated Judge
+> ATLAS Judge Efficient Judge
+> Distillation
+
+(a) (b)  
+
+> Real-World Queries
+> Agent Trajectories
+> Reward Signals ATLAS Judge
+> Policy Optimization
+
+Figure 5 ATLAS’s diagnostic-signal implementation and optimization pathway. (a) The structure guides signal con-struction and calibration. (b) Signals evaluate trajectories and provide feedback for policy optimization. 
+
+Diagnostic score formulation. Binary verdicts are the default output form, while continuous sig-nals are retained when the target naturally admits a quantitative criterion. For a binary signal, the evaluator returns a pass/fail judgment for a local-ized diagnostic target. For a continuous signal, it returns local judgments, counts, or ranking labels that are aggregated in post-processing. Formally, for a sample 𝑥 under metric 𝑚 , the system first identifies a set of locally assessable objects: 
+
+𝐴 𝑚 (𝑥 ) = {𝑎 𝑚, 1, . . . , 𝑎 𝑚,𝐾 }, (1) where 𝐴 𝑚 (𝑥 ) may correspond to a set of claims, candidate supply items, typo positions, or reflection steps. The evaluator then produces local judgments or sufficient statistics, and the final diagnostic score is defined as 
+
+𝑟 𝑚 (𝑥 ) = 𝜙 𝑚 
+
+ 𝑧 𝑚, 1 (𝑥 ), . . . , 𝑧 𝑚,𝐾 (𝑥 ), (2) where 𝑧 𝑚,𝑘 (𝑥 ) denotes the local verdict or derived statistic associated with object 𝑎 𝑚,𝑘 , and 𝜙 𝑚 is a metric-specific normalization function. This con-struction yields interpretable scores for signals such as repetition rate, stale-item ratio, correction rate, or ranking quality, because each aggregate remains grounded in local assessments rather than a holistic scalar judgment. Overall, diagnostic signal construction aligns the evaluation with the available evidence, makes decision boundaries explicit, and preserves interpretable output semantics for subsequent calibration and diagnosis. 
+
+3.3 Signal Calibration and Usability 
+
+The rule-based signals in ATLAS are directly determined by their programmatic specifications. For each LLM-based diagnostic signal, calibration evaluates whether its signal-specific LLM judge interface can reproduce the intended decision boundary on a high-confidence reference set aligned with the real-traffic distribution. This procedure tests the operational fidelity of a signal’s semantic assessment under its defined evidence scope; it does not redefine the diagnostic target or substitute the reference construction process. 
+
+Usability criterion. We use F1 as the primary criterion for calibrating LLM judge interfaces because class imbalance is common across diagnostic targets and F1 better reflects boundary fidelity than raw accuracy. 7For score-valued signals, outputs are first mapped to signal-specific decision units using the corresponding discretization and tolerance rules. Formally, let Dcal  
+
+> 𝑚
+
+denote the calibration set for signal 𝑚 , and let 𝑗 𝑚 denote its signal-specific LLM judge interface. We regard 𝑗 𝑚 as usable when 
+
+F1   𝑗 𝑚 , Dcal 
+
+> 𝑚
+
+ ≥ 𝜏 𝑚 , (3) where 𝜏 𝑚 is set in a high-confidence range, typically 0.90 . The calibration sets are constructed from query samples and execution traces drawn from real logs, with coverage over domains, query styles, and task types. This aligns calibration with the evidence conditions and error sources encountered in deployment rather than a narrow collection of manually constructed examples. 
+
+Reference construction. Reference construction follows the evidence requirements of each signal. For signals in Response Generation , we rely primarily on manual annotation because they act directly on the delivered response and have relatively compact judgment targets. Five senior annotators follow a unified protocol, each sample is independently labeled by at least three annotators, and disputed cases are adjudicated by domain experts. For LLM-based signals involving long tool-use trajectories, long tool outputs, or complex evidence chains, we construct high-confidence subsets through agreement filtering across three strong teacher models and retain only unanimous cases. To cover low-frequency boundaries, including safety and compliance violations, we further introduce controlled query- and trajectory-level perturbations and relabel the resulting samples through the same reference-construction route. Together, these procedures retain both naturally occurring traffic patterns and targeted coverage of difficult decision boundaries. 
+
+Boundary refinement. Each LLM judge interface is evaluated on its signal-specific calibration set. When F1 remains below the target range, we trace error cases to identify boundary ambiguity, missing evidence specifications, or insufficient treatment of exemptions. We then revise the prompt’s decision criteria, evidence binding, exemption conditions, or boundary examples and re-evaluate it on the same calibration set. The resulting judge interface is admitted to subsequent diagnostic use once it reaches the target range. 
+
+3.4 Efficient Diagnostic Model Distillation 
+
+The calibrated LLM judge interfaces in Section 3.3 provide high-capacity semantic assessments, but repeatedly invoking them at scale incurs substantial latency and inference cost. For selected LLM-based diagnostic signals, ATLAS therefore distills efficient diagnostic models that reproduce the corresponding signal-specific decision behavior on the same evidence inputs and decision outputs. These models provide a lower-latency, lower-cost implementation while retaining the diagnostic role established by the calibrated signal. 
+
+Grouping strategy. We adopt group-wise distillation rather than fully independent or fully shared training. Independent models preserve individual decision boundaries but fragment data, duplicate parameters, and increase deployment overhead, whereas a fully shared model can mix signals with incompatible evidence forms and output targets. Distillation groups are therefore organized jointly by the signal’s execution dimension ,
+
+capability concern , and input-output form . The first two preserve a shared diagnostic target, while the third aligns the evidence organization and prediction interface that can be modeled jointly. Signals are grouped only when they are compatible along all three factors. 
+
+Data and supervision. Training data comprise query samples and complete execution traces drawn from real logs, with coverage over query types, domains, and task forms. We further apply controlled response-level perturbation : the final response in an original trajectory is lightly rewritten while preserving the core task semantics and content, introducing variation in wording, style, and formatting. This augmentation encourages the diagnostic model to learn stable decision behavior rather than overfit to a particular surface template. Supervision is produced by multiple strong teacher models through independent judgments followed by voting. Evaluation uses the corresponding high-confidence references in DJudge , with query-disjoint distillation training data, so model quality is measured against the same reference standard used to establish judge usability. 
+
+Filtering and objective. Before training, we apply format consistency filtering to remove structurally abnormal samples, including failed JSON parsing, unclosed <think> tags, repetitive responses, and abnormally short reasoning traces. We then apply confidence-based filtering : when the base model’s prediction already matches the target label with log-probability above a predefined high-confidence threshold, the sample is treated as low-gain and removed from distillation. Within each group, the diagnostic model is trained to map 8the corresponding evidence input to the teacher-derived decision output. When a <think> field is present, it receives a lower loss weight, e.g., 0.1, to reduce overfitting to teacher-specific reasoning style and place greater emphasis on the final verdict and key structured fields. The resulting efficient diagnostic models support low-latency, lower-cost batch evaluation during policy optimization. 
+
+3.5 Policy Optimization with Diagnostic Feedback 
+
+As illustrated by the policy-optimization pathway in Figure 5(b), calibrated diagnostic signals are reused as multi-dimensional feedback for policy optimization. Formally, let 𝑥 denote the input query together with its context, and let 𝜏 denote a complete trajectory generated by the policy. Let Strain denote the set of diagnostic signals used for policy optimization. For each signal 𝑠 ∈ S train , let 𝑟 𝑠 (𝑥, 𝜏 ) denote its output and let 𝜆 𝑠 denote its combination weight. Their weighted sum defines the scalar training reward: 
+
+𝑅 (𝑥, 𝜏 ) =∑︁ 
+
+> 𝑠 ∈ S train
+
+𝜆 𝑠 𝑟 𝑠 (𝑥, 𝜏 ). (4) Each term remains associated with a specific capability location in the diagnostic structure, while policy optimization consumes their fixed combination as an optimizable scalar return. Policy optimization uses Group Relative Policy Optimization (GRPO) [31]. Given an input 𝑥 , the current policy samples a group of trajectories {𝜏 𝑖 }𝐺 𝑖 =1, and each trajectory is assigned the training reward 𝑅 (𝑥, 𝜏 𝑖 ).The group-normalized advantage is computed as 
+
+ˆ𝐴 𝑖 = 𝑅 (𝑥, 𝜏 𝑖 ) − mean 𝑗 
+
+ 𝑅 (𝑥, 𝜏 𝑗 )
+
+std 𝑗 
+
+ 𝑅 (𝑥, 𝜏 𝑗 ) + 𝜖 , (5) which converts the relative quality of candidate trajectories under the same query into the training signal. We omit the standard GRPO objective for brevity, since the key choice here is not the optimization algorithm, but that its advantage estimates are induced by diagnostic feedback with the same semantics used for evaluation. This aligns policy optimization with the diagnostic structure used to assess policy changes, while retaining interpretable capability-specific feedback rather than relying on a single aggregate outcome score. 
+
+## 4 Experiments 
+
+We evaluate ATLAS from four perspectives. RQ1 examines whether different LLM judge interfaces faithfully implement the decision boundaries of LLM-based diagnostic signals. RQ2 studies whether selected diagnostic signals can be implemented by efficient diagnostic models while preserving evaluation fidelity. RQ3 examines whether diagnostic feedback improves policy quality under deployment-aligned offline replay. RQ4 evaluates whether these gains transfer to online traffic. RQ1 and RQ2 establish the empirical basis for the signal construction, calibration, and efficient-model distillation procedures in Sections 3.2–3.4, while RQ3 and RQ4 evaluate policy changes under the same diagnostic framework in offline replay and live traffic. 
+
+4.1 Experimental Setup 
+
+4.1.1 Datasets 
+
+We construct three mutually query-disjoint datasets from real Xiaotuan production traffic: a labeled Di-agnostic Signal Benchmark (DJudge ), an unlabeled Offline Policy Evaluation Set (DPolicy-Eval ), and an unlabeled RL Optimization Set (DRL ). DJudge contains query–trajectory pairs with high-confidence reference labels for calibration and evaluation of the 41 LLM-based diagnostic signals; each calibrated signal is associated with approximately 500–1,000 instances. DPolicy-Eval contains approximately 2,000 queries for deployment-aligned offline replay, whereas DRL contains approximately 10,000 queries for policy optimization. For RQ2, efficient diagnostic models are trained on separately constructed, query-disjoint distillation data and evaluated against the corresponding high-confidence references in DJudge .94.1.2 Evaluation Environment 
+
+Diagnostic signal calibration and efficient diagnostic model evaluation are grounded in real production logs, so the resulting supervision reflects authentic user intents, tool-use trajectories, and business evidence. Agent evaluation uses a deployment-aligned offline replay environment: real user queries are replayed to the tested agent, tool calls are executed through the same production-facing interfaces used online, and merchants, POIs, and supply states are resolved from live business data at execution time. This setup preserves experimental controllability while keeping offline evaluation close to online evidence conditions. 
+
+4.1.3 Compared Methods 
+
+We compare ATLAS along two axes: LLM judge-interface design in RQ1 and efficient diagnostic model distillation in RQ2. Detailed judge-interface configurations are provided in Appendix A.2. 
+
+LLM judge interfaces. Under the same backbone, Direct Judge uses only task definition, input description, and output schema; Static Rubric adds an automatically generated fixed rubric; Curated Rubric retains signal-specific criteria and key exemptions in compact form; and ATLAS Judge uses the full calibrated judge interface in Section 3.3, including evidence binding, stepwise review, and constrained output formatting. 
+
+Efficient diagnostic models. Following Section 3.4, we distill models for selected LLM-based diagnostic signals onto Qwen3.5-9B. We compare the resulting efficient diagnostic models with the untuned Qwen3.5-9B backbone [26], Qwen3.6-27B [25], Qwen3.6-35B-A3B [27], and DeepSeek-V4-Pro [37]. 
+
+4.1.4 Metrics 
+
+For LLM judge-interface and efficient diagnostic model experiments, we report F1 . For offline policy evaluation, we report ATLAS scores aggregated under replay. For online evaluation, we report product metrics, including 
+
+AI message read-through rate , per-user dwell time , 5-second session exit rate , AI search query volume , effective QV , session follow-up rate , and paid GTV , together with sampled human-audit metrics: P0 hallucination rate , ID hallucination rate , and response–supply relevance . Detailed definitions of the automatic metrics are provided in Appendix C. 
+
+4.1.5 Implementation Details 
+
+All experiments run on NVIDIA H20 GPUs. For RQ1, all judge interfaces share the DeepSeek-V4-Pro backbone [37]; judge calibration uses Claude Opus-4.6, GPT-5.4, and Gemini 3.1-Pro for high-confidence supervision construction. For RQ2, we distill efficient diagnostic models with Swift [50] on 8 GPUs, using DeepSeek-V4-Pro, DeepSeek-V4-Flash [37], and GLM-5.1 [45] for supervision construction and Qwen3.5-9B [26] as the student, with AdamW [16], batch size 128, learning rate 1 × 10 −5, maximum output length 2148, and maximum total sequence length 16384. For RL, we optimize Qwen3.6-35B-A3B [27] on 32 GPUs with Verl [32], Megatron [22], and vLLM [11], using AdamW [16], learning rate 1 × 10 −6, batch size 128, rollout group size 16, temperature 1.0, maximum output length 8192, and maximum total sequence length 32768. Additional implementation details are provided in Appendix D. 
+
+4.2 Effectiveness of LLM Judge Interfaces (RQ1) 
+
+To validate whether different LLM judge interfaces faithfully implement signal-specific decision boundaries, we compare ATLAS Judge against three alternatives under the same judge backbone: Direct Judge, Static Rubric, and Curated Rubric. Table 1 summarizes the 41 LLM-based diagnostic signals by within-turn concern and the separate user-wise group, while Tables 4 and 5 report the full results. Rule-based signals are directly determined by their programmatic specifications and are therefore outside this F1 comparison. The results show that ATLAS Judge is the strongest interface across all reported groups , which is the central empirical validation of judge calibration in ATLAS. The gain is not from prompt length alone, but from preserving the full calibrated signal-specific decision procedure through explicit evidence binding, stepwise review, and stable boundary control. The appendix further shows that the baselines fail in different ways rather than forming a simple quality ladder: Direct Judge remains competitive when decision boundaries 10 Table 1 Comparison of LLM judge interfaces across within-turn capability concerns and the user-wise signal group. Scores are average F1 over the comparable LLM-based diagnostic signals. Best results are highlighted in bold .                                        
+
+> Method Relevance Factuality Timeliness Reliability Intent & Planning Norms & Compliance User-wise Overall
+> Direct Judge 0.831 0.842 0.691 0.811 0.768 0.813 0.784 0.800 Static Rubric 0.843 0.853 0.849 0.775 0.811 0.876 0.761 0.826 Curated Rubric 0.885 0.905 0.838 0.808 0.843 0.932 0.880 0.877
+> ATLAS Judge 0.939 0.956 0.961 0.972 0.937 0.984 0.953 0.952
+
+Table 2 Efficient diagnostic model distillation results for the 17 selected LLM-based diagnostic signals in RQ2. Scores are F1 (%). Δ denotes the absolute gain of Ours over the untuned Qwen3.5-9B baseline.                                                                                                                                             
+
+> Signal group Diagnostic signal DS-V4-Pro Qwen3.5-9B Qwen3.6-27B Qwen3.6-35B-A3B Ours Δ
+> Relevance Content Relevance 92.8 80.5 88.9 88.1 92.3 +11.8 Supply Diversity 94.3 83.1 93.4 91.9 93.5 +10.4 Supply Relevance 94.8 78.6 91.0 88.4 91.3 +12.7 Opening Relevance 97.8 72.6 92.6 89.5 94.3 +21.7 Primary Rec. Match 96.4 69.5 88.2 82.9 91.9 +22.4
+> Avg. 95.2 76.9 90.8 88.2 92.7 +15.8 Factuality Supply Existence 93.8 89.6 84.4 87.3 94.5 +4.9 Attribute Consistency 91.0 67.5 76.2 80.2 89.0 +21.5 Supply Attribution 92.5 68.5 81.6 84.4 92.4 +23.9 Failure Transparency 99.8 94.1 97.1 83.3 94.4 +0.3 POI Traceability 99.7 99.2 86.3 90.0 98.6 -0.6 Location Constraint 98.6 69.4 79.2 68.7 98.6 +29.2
+> Avg. 95.9 81.4 84.1 82.3 94.6 +13.2 Reliability Logical Contradiction 96.7 82.6 95.5 90.2 96.1 +13.5 Semantic Repetition 97.7 73.3 95.6 80.9 94.8 +21.5
+> Avg. 97.2 78.0 95.5 85.6 95.5 +17.5 Norms & Compliance Format Validity 98.9 86.2 97.9 97.1 96.1 +9.9 Security & Privacy 99.6 95.7 99.2 95.1 98.9 +3.2 System Safety 98.1 89.9 98.8 71.1 98.4 +8.5 Compliance 97.0 77.5 89.0 74.4 93.5 +16.0
+> Avg. 98.4 87.3 96.2 84.4 96.7 +9.4
+> Overall Avg. 96.4 81.0 90.3 84.9 94.6 +13.6
+
+are local and portable, whereas rubric-based interfaces help more when judgment depends on structured criteria, business evidence, or exception-sensitive boundaries. This clarifies that RQ1 is not a prompt-ablation story, but a comparison of how faithfully each interface preserves diagnostic-signal semantics. Overall, the results support the design choices in Sections 3.2 and 3.3: reliable LLM judge interfaces require both a strong backbone and a calibrated prompt interface that makes the intended decision boundary executable. 
+
+4.3 Efficient Diagnostic Model Distillation (RQ2) 
+
+We next examine whether efficient diagnostic models can reproduce the decision behavior of selected LLM-based diagnostic signals. Following Section 3.4, we distill models for 17 selected signals and group them by execution dimension, capability concern, and input–output form. Table 2 reports the results for these signals, covering Relevance , Factuality , Reliability , and Norms & Compliance . We distill onto Qwen3.5-9B and compare the resulting models with untuned and larger open-source baselines. Table 2 shows that the distilled 9B diagnostic models preserve most of the high-capacity reference performance while clearly outperforming the untuned 9B backbone and substantially larger open baselines . The main insight is not compression alone, but calibrated decision-boundary transfer: once the student is trained against a well-calibrated LLM judge interface, a smaller model can outperform larger general-purpose models whose decision boundaries are not aligned to the target signal semantics. The gains are concentrated on signals where generic prompting is least reliable, especially business-grounded factuality and reliability-oriented signals, precisely where evidence grounding and boundary control are hardest to recover from raw model capacity alone. This pattern supports the group-wise distillation design in Section 3.4. At the same time, the strongest reference interface remains best on the most semantically delicate cases, clarifying the intended role separation in ATLAS: ATLAS Judge serves as the high-capacity reference interface, whereas efficient diagnostic models provide a lower-latency, lower-cost implementation for evaluation at scale. 11 4.4 Offline Policy Evaluation (RQ3) 
+
+We next evaluate whether policy optimization with diagnostic feedback improves agent behavior under deployment-aligned replay. We compare the base model, the deployed version, and the policy optimized with ATLAS diagnostic feedback (Ours). Thinking & Reflection Tool & Skill Execution Response Generation Norms & Compliance User-wise Evaluation 0.65 0.70 0.75 0.80 0.85 0.90 0.95 1.00   
+
+> Mean ATLAS Score
+> Base Model Deployed Version Ours
+
+Figure 6 Offline replay evaluation under ATLAS across within-turn dimensions, the Norms & Compliance guardrail, and the user-wise layer. 
+
+Figure 6 reports group-level mean ATLAS scores across the three within-turn execution dimensions, the Norms & Compliance guardrail, and the user-wise evaluation layer. Ours achieves the highest score in every reported group: it improves both trajectory-wise execution and response generation, maintains the already high Norms & Compliance 
+
+score, and also improves user-wise evaluation. The strongest improvement appears in Tool & Skill Exe-cution , showing that the gains are not limited to the final response. Taken together, these results show that ATLAS connects structured capability diagno-sis with policy optimization: the same diagnostic signals used as feedback support broad improve-ments that are subsequently examined under the dual-horizon evaluation framework. 
+
+4.5 Online Evaluation (RQ4) 
+
+We deploy the policy optimized with ATLAS diagnostic feedback to the entry of Meituan’s local-services assistant and run an online A/B test against the deployed version from June 27 to June 29. The treatment is exposed to a fixed 10% slice of live traffic, and control and treatment are evaluated synchronously over the same period to reduce temporal confounds. Table 3 reports the online product metrics and a sampled human audit over 1,000 responses from the experiment window. 
+
+Table 3 Online evaluation results for RQ4. Panel A reports relative changes in the online A/B test; Panel B reports percentage-point (pp) changes in sampled human audits.   
+
+> Panel A: Online product metrics Metric Direction
+
+Δ 
+
+> AI message read-through rate
+
+↑ +0.92%  
+
+> Per-user dwell time
+
+↑ +1.26%  
+
+> AI search query volume
+
+↑ +0.76%  
+
+> Effective QV
+
+↑ +0.50%  
+
+> Session follow-up rate
+
+↑ +6.9%  
+
+> Paid GTV
+
+↑ +7.32%  
+
+> 5-second session exit rate
+
+↓ -0.31% Panel B: Sampled human-audit metrics Metric Direction Δ 
+
+> Response–supply relevance
+
+↑ +6.2 pp  
+
+> P0 hallucination rate
+
+↓ -6.9 pp  
+
+> ID hallucination rate
+
+↓ -2.0 pp 
+
+The results show that the policy optimized with ATLAS diagnostic feedback improves both engage-ment and downstream business outcomes online. The largest gains appear in session follow-up rate (+6.9%), a session-level indicator of continued user interaction , and paid GTV (+7.32%), while the remaining product metrics also move in the favor-able direction. These outcomes indicate increased continued interaction and downstream transaction activity in live traffic. The sampled human audit points in the same direction: response–supply rel-evance rises by 6.2 pp, while P0 hallucination and ID hallucination rates decrease by 6.9 pp and 2.0 pp, respectively. Together with the offline results, the concurrent improvements in product outcomes and human-audit quality provide deployment-side evidence that policy optimization with ATLAS di-agnostic feedback transfers to real local-services traffic. Overall, the online results provide deployment-side validation of ATLAS. 
+
+## 5 Conclusion 
+
+In this work, we introduced ATLAS , a dual-horizon diagnostic evaluation framework for industrial tool-use agents. Rather than treating agent evaluation as outcome reporting alone, ATLAS organizes interpretable 12 behavioral evidence to support capability analysis and targeted iteration in production settings. It jointly considers trajectory-wise evidence from the iterative execution triggered by a current request and user-wise evidence from continued interaction, preserving complementary views of how service is produced and sustained. Fine-grained diagnostic signals make these views executable through explicit evidence scopes and decision boundaries. Selected calibrated signals are distilled into efficient diagnostic models that support lower-latency, lower-cost evaluation at scale; calibrated diagnostic signals further provide multi-dimensional feedback for policy optimization. Experiments on Meituan Xiaotuan validate the LLM judge interfaces, efficient diagnostic models, and policy improvements under offline replay across both evaluation horizons. Online A/B results further show concurrent gains in product outcomes and sampled human-audit quality in real local-services traffic. Overall, ATLAS provides an evidence-based foundation for analyzing capability deficiencies and supporting targeted iteration of industrial tool-use services. 13 Contributions 
+
+Authors Wei Chen 1,∗, Peilun Zhou 2,∗,‡, Zhaoyu Hu 2, Jiajun Chai 2, Zhongni Hou 2, Yufei Zhang 2, Derong Xu 1, Guojun Yin 2,†, Wei Lin 2,†, Zhi Zheng 1,†, Tong Xu 1,†
+
+Affiliations 1State Key Laboratory of Cognitive Intelligence, University of Science and Technology of China; 
+
+> 2
+
+Meituan  
+
+> ∗
+
+Equal Contribution; ‡ Project Leader; † Corresponding Author 14 References 
+
+[1] Wael Albayaydh, Rui Zhao, and Ivan Flechais. Beyond the leaderboard: A synthesis of tool-use, planning, and reasoning failures in large language model agents. arXiv preprint arXiv:2607.05775 , 2026. [2] Victor Barres, Honghua Dong, Soham Ray, Xujie Si, and Karthik Narasimhan. 𝜏 2-bench: Evaluating conversational agents in a dual-control environment. arXiv preprint arXiv:2506.07982 , 2025. [3] Hao Chen, Ziyu Han, Yukun Yan, Qingfu Zhu, Maosong Sun, and Wanxiang Che. From holistic evaluation to structured criteria: Rubrics across the evolving llm landscape. arXiv preprint arXiv:2606.08625 , 2026. [4] Yashar Deldjoo, Nikhil Mehta, Maheswaran Sathiamoorthy, Shuai Zhang, Pablo Castells, and Julian McAuley. Toward holistic evaluation of recommender systems powered by generative models. arXiv preprint arXiv:2504.06667 ,2025. [5] Anisha Gunjal, Anthony Wang, Elaine Lau, Vaskar Nath, Yunzhong He, Bing Liu, and Sean M Hendryx. Rubrics as rewards: Reinforcement learning beyond verifiable domains. In NeurIPS 2025 Workshop on Efficient Reasoning ,2025. [6] Dongxin Guo, Jikun Wu, and Siu Ming Yiu. Agenteval: Dag-structured step-level evaluation for agentic workflows with error propagation tracking. arXiv preprint arXiv:2604.23581 , 2026. [7] Bhaskar Gurram. Evaluating tool-using language agents: Judge reliability, propagation cascades, and runtime mitigation in agentprop-bench. arXiv preprint arXiv:2604.16706 , 2026. [8] Wei He, Yueqing Sun, Hongyan Hao, Xueyuan Hao, Zhikang Xia, Qi Gu, Chengcheng Han, Dengchang Zhao, Hui Su, Kefeng Zhang, Man Gao, Xi Su, Xiaodong Cai, Xunliang Cai, Yu Yang, and Yunke Zhao. Vitabench: Benchmarking llm agents with versatile interactive tasks in real-world applications. arXiv preprint arXiv:2509.26490 , 2025. [9] Saeid Jamshidi, Arghavan Moradi Dakhel, Kawser Wazed Nafi, and Foutse Khomh. Hallucination cascade: Analyzing error propagation in multi-agent llm systems. arXiv preprint arXiv:2606.07937 , 2026. [10] Carlos E Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik Narasimhan. Swe-bench: Can language models resolve real-world github issues? In International Conference on Learning Representations , volume 2024, pages 54107–54157, 2024. [11] Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph Gonzalez, Hao Zhang, and Ion Stoica. Efficient memory management for large language model serving with pagedattention. In 
+
+Proceedings of the 29th symposium on operating systems principles , pages 611–626, 2023. [12] Mingzhe Li, Jing Xiang, Enguo Zhou, Lang Gao, Tai Li, Qishen Zhang, Xiangliang Zhang, and Xiuying Chen. One model, multiple goals: Adaptive multi-objective learning for e-commerce dialogue systems. arXiv preprint arXiv:2606.09293 , 2026. [13] Hao Liao, Jiwei Zhang, Jianxun Lian, Wensheng Lu, Mingqi Wu, Shuowangg, Yong Zhang, Yitian Huang, Mingyang Zhou, and Rui Mao. Eliminating out-of-domain recommendations in LLM-based recommender systems: A unified view. In Findings of the Association for Computational Linguistics: ACL 2026 , pages 6251–6271, 2026. [14] Hunter Lightman, Vineet Kosaraju, Yuri Burda, Harrison Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. Let’s verify step by step. In The Twelfth International Conference on Learning Representations, ICLR 2024 , 2024. [15] Tianci Liu, Ran Xu, Tony Yu, Ilgee Hong, Carl Yang, Tuo Zhao, and Haoyu Wang. Openrubrics: Towards scalable synthetic rubric generation for reward modeling and llm alignment. In Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 17417–17437, 2026. [16] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. In 7th International Conference on Learning Representations , 2019. [17] Xian Qi Loye, Qinglin Su, Zhexin Zhang, Shiyao Cui, Qi Zhu, Fei Mi, Hongning Wang, and Minlie Huang. RUBAS: Rubric-based reinforcement learning for agent safety. arXiv preprint arXiv:2606.04051 , 2026. [18] Sushant Mehta, Liudas Panavas, Suhaas Garre, and Edwin Chen. ComplexConstraints and beyond: Expert rubrics for RLVR. arXiv preprint arXiv:2606.09118 , 2026. [19] Tianyi Men, Zhuoran Jin, Pengfei Cao, Yubo Chen, Kang Liu, and Jun Zhao. Agent-rewardbench: Towards a unified benchmark for reward modeling across perception, planning, and safety in real-world multimodal agents. 
+
+15 In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 17521–17541, 2025. [20] Bingchen Miao, Yang Wu, Minghe Gao, Qifan Yu, Wendong Bu, Wenqiao Zhang, Yunfei Li, Siliang Tang, Tat-Seng Chua, and Juncheng Li. Boosting virtual agent learning and reasoning: A step-wise, multi-dimensional, and generalist reward model with benchmark. arXiv preprint arXiv:2503.18665 , 2025. [21] MindDR Team and Li Auto Inc. Mind deepresearch technical report. arXiv preprint arXiv:2604.14518 , 2026. [22] Deepak Narayanan, Mohammad Shoeybi, Jared Casper, Patrick LeGresley, Mostofa Patwary, Vijay Korthikanti, Dmitri Vainbrand, Prethvi Kashinkunti, Julie Bernauer, Bryan Catanzaro, et al. Efficient large-scale language model training on gpu clusters using megatron-lm. In Proceedings of the international conference for high performance computing, networking, storage and analysis , pages 1–15, 2021. [23] Cheng Qian, Emre Can Acikgoz, Qi He, Hongru Wang, Xiusi Chen, Dilek Hakkani-Tur, Gokhan Tur, and Heng Ji. Toolrl: Reward is all tool learning needs. Advances in Neural Information Processing Systems , 38:105523–105553, 2026. [24] Bo Qu and Mingguang Chen. CLQT: A closed-loop, cost-aware, strategy-consistent benchmark for diagnostic evaluation of LLM portfolio-management agents. arXiv preprint arXiv:2606.29771 , 2026. [25] Qwen Team. Qwen3.6-27B: Flagship-level coding in a 27B dense model, April 2026. URL https://qwen.ai/blog? id=qwen3.6-27b .[26] Qwen Team. Qwen3.5: Towards native multimodal agents, February 2026. URL https://qwen.ai/blog?id=qwen3. 5.[27] Qwen Team. Qwen3.6-35B-A3B: Agentic coding power, now open to all, April 2026. URL https://qwen.ai/blog? id=qwen3.6-35b-a3b .[28] Mohammad Al Ridhawi, Mahtab Haj Ali, and Hussein Al Osman. Multi-dimensional behavioral evaluation of agentic stock prediction systems using large language model judges with closed-loop reinforcement learning feedback. arXiv preprint arXiv:2605.05739 , 2026. [29] Timo Schick, Jane Dwivedi-Yu, Roberto Dessi, Roberta Raileanu, Maria Lomeli, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. Toolformer: Language models can teach themselves to use tools. arXiv preprint arXiv:2302.04761 , 2023. [30] Rulin Shao, Akari Asai, Shannon Zejiang Shen, Hamish Ivison, Varsha Kishore, Jingming Zhuo, Xinran Zhao, Molly Park, Samuel G Finlayson, David Sontag, et al. Dr tulu: Reinforcement learning with evolving rubrics for deep research. arXiv preprint arXiv:2511.19399 , 2025. [31] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Yang Wu, et al. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. 
+
+arXiv preprint arXiv:2402.03300 , 2024. [32] Guangming Sheng, Chi Zhang, Zilingfeng Ye, Xibin Wu, Wang Zhang, Ru Zhang, Yanghua Peng, Haibin Lin, and Chuan Wu. Hybridflow: A flexible and efficient rlhf framework. In Proceedings of the Twentieth European Conference on Computer Systems , pages 1279–1297, 2025. [33] Zhiheng Song, Jingshuai Zhang, Chuan Qin, Chao Wang, Chao Chen, Longfei Xu, Kaikui Liu, Xiangxiang Chu, and Hengshu Zhu. Mobilitybench: A benchmark for evaluating route-planning agents in real-world mobility scenarios. arXiv preprint arXiv:2602.22638 , 2026. [34] Peiyi Wang, Lei Li, Zhihong Shao, Runxin Xu, Damai Dai, Yifei Li, Deli Chen, Yu Wu, and Zhifang Sui. Math-shepherd: Verify and reinforce llms step-by-step without human annotations. pages 9426–9439, 2024. [35] Penghui Wei, Jiayu Wu, Chao Ye, Zhi Guo, Shuanglong Li, and Lin Liu. Interactor: Agentic RL oriented iterative creation for ad description generation in sponsored search. arXiv preprint arXiv:2606.15911 , 2026. [36] Wei Wu, Peilun Zhou, Liyi Chen, Qimeng Wang, Chengqiang Lu, Yan Gao, Yi Wu, Yao Hu, and Hui Xiong. Aligning large language models with searcher preferences. arXiv preprint arXiv:2603.10473 , 2026. [37] Anyi Xu, Bangcai Lin, Bing Xue, Bingxuan Wang, Bingzheng Xu, Bochao Wu, Bowei Zhang, Chaofan Lin, Chen Dong, Chenchen Ling, et al. Deepseek-v4: Towards highly efficient million-token context intelligence. arXiv preprint arXiv:2606.19348 , 2026. [38] Bin Xu. Ai agent systems: Architectures, applications, and evaluation. arXiv preprint arXiv:2601.01743 , 2026. 
+
+16 [39] Ran Xu, Tianci Liu, Zihan Dong, Tony Yu, Ilgee Hong, Carl Yang, Linjun Zhang, Tao Zhao, and Haoyu Wang. Alternating reinforcement learning for rubric-based reward modeling in non-verifiable llm post-training. arXiv preprint arXiv:2602.01511 , 2026. [40] Tianze Xu, Yanzhao Zheng, Pengrui Lu, Lyumanshan Ye, Yong Wu, Zhentao Zhang, Yuanqiang Yu, Chao Ma, Jihuai Zhu, Pengfei Liu, et al. Rubrics to tokens: Bridging response-level rubrics and token-level rewards in instruction following tasks. arXiv preprint arXiv:2604.02795 , 2026. [41] Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and Yuan Cao. React: Synergizing reasoning and acting in language models. In The Eleventh International Conference on Learning Representations, ICLR 2023 , 2023. [42] Shunyu Yao, Noah Shinn, Pedram Razavi, and Karthik Narasimhan. 𝜏 -bench: A benchmark for tool-agent-user interaction in real-world domains. arXiv preprint arXiv:2406.12045 , 2024. [43] Chao Yi, Dian Chen, Gaoyang Guo, Jiakai Tang, Jian Wu, Jing Yu, Mao Zhang, Wen Chen, Wenjun Yang, Yujie Luo, Yuning Jiang, Zhujin Gao, Bo Zheng, Binbin Cao, Changfa Wu, Dixuan Wang, Han Wu, Haoyi Hu, Kewei Zhu, Lang Tian, Lin Yang, Qiqi Huang, Siqi Yang, Wenbo Su, Xiaoxiao He, Xin Tong, Xu Chen, Xunke Xi, Xiaowei Huang, Yaxuan Wu, Yeqiu Yang, Yi Hu, Yujin Yuan, Yuliang Yan, and Zile Zhou. RecGPT-V2 technical report. arXiv preprint arXiv:2512.14503 , 2025. [44] Peijie Yu, Wei Liu, Yifan Yang, Jinjian Li, Zelong Zhang, Xiao Feng, and Feng Zhang. Benchmarking LLM tool-use in the wild. arXiv preprint arXiv:2604.06185 , 2026. [45] Aohan Zeng, Xin Lv, Zhenyu Hou, Zhengxiao Du, Qinkai Zheng, Bin Chen, Da Yin, Chendi Ge, Chenghua Huang, Chengxing Xie, et al. Glm-5: from vibe coding to agentic engineering. arXiv preprint arXiv:2602.15763 , 2026. [46] Wenwen Zeng, Jinhui Zhang, Hao Chen, Zhaoyu Hu, Yongqi Liang, Jiajun Chai, Dengcan Liu, Zhenfeng Liu, Shurui Yan, Minglong Xue, Xiaohan Wang, Wei Lin, and Guojun Yin. RecRM-Bench: Benchmarking multidimensional reward modeling for agentic recommender systems. arXiv preprint arXiv:2605.11874 , 2026. [47] Sawyer Zhang, Alexander Wang, and Sophie Lei. Catching one in five: LLM-as-judge blind spots in production multi-turn transaction agents. arXiv preprint arXiv:2606.10315 , 2026. [48] Weichen Zhang, Yiyou Sun, Pohao Huang, Jiayue Pu, Heyue Lin, and Dawn Song. Mirage-bench: Llm agent is hallucinating and where to find them. arXiv preprint arXiv:2507.21017 , 2025. [49] Weizhi Zhang, Zechen Li, Hamid Palangi, Ben Graef, A Ali Heydari, Simon A Lee, Salman Rahman, Ray Luo, Zeinab Esmaeilpour, Erik Schenck, et al. Rubricstree: Scalable and evolving open-ended evaluation of personal health agents across health memory and medical skills. arXiv preprint arXiv:2606.18203 , 2026. [50] Yuze Zhao, Jintao Huang, Jinghan Hu, Xingjun Wang, Yunlin Mao, Daoze Zhang, Zeyinzi Jiang, Zhikai Wu, Baole Ai, Ang Wang, et al. Swift: a scalable lightweight infrastructure for fine-tuning. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 39, pages 29733–29735, 2025. [51] Dongsheng Zhu, Xuchen Ma, Yucheng Shen, Xiang Li, Yukun Zhao, Shuaiqiang Wang, Lingyong Yan, and Dawei Yin. When tools fail: Benchmarking dynamic replanning and anomaly recovery in llm agents. arXiv preprint arXiv:2606.05806 , 2026. 
+
+17 Appendix 
+
+## A Additional LLM Judge-Interface Experiments 
+
+A.1 Fine-Grained LLM Judge-Interface Results 
+
+Tables 4 and 5 report the signal-level results underlying the RQ1 main table. All variants share the same backbone and are evaluated against the corresponding high-confidence references. Together, the tables compare Direct Judge, Static Rubric, Curated Rubric, and ATLAS Judge on all LLM-based diagnostic signals. Rule-based signals are directly determined by their programmatic specifications and are therefore not included. 
+
+Table 4 Fine-grained F1 comparison of LLM judge interfaces (Part I: Relevance, Factuality, Timeliness, and Reliability). 
+
+Signal Direct Static Curated ATLAS Relevance 
+
+Opening Relevance 0.940 0.957 0.965 0.978 
+
+Primary Recommendation Match 0.654 0.780 0.873 0.964 
+
+Content Relevance 0.876 0.860 0.902 0.928 
+
+Supply Relevance 0.926 0.904 0.934 0.948 
+
+Supply Diversity 0.942 0.929 0.921 0.943 
+
+Evidence Insufficiency 0.786 0.899 0.907 0.935 
+
+Supply Information Insufficiency 0.661 0.725 0.833 0.918 
+
+Irrelevant Supply 0.861 0.690 0.745 0.901 
+
+Avg. 0.831 0.843 0.885 0.939 Factuality 
+
+Reflection Hallucination 0.843 0.758 0.905 0.947 
+
+Rejection Hallucination 0.933 0.873 0.954 0.989 
+
+Tool-Call Hallucination 0.757 0.774 0.777 0.910 
+
+Supply Existence 0.878 0.917 0.890 0.938 
+
+Attribute Consistency 0.851 0.893 0.872 0.910 
+
+Supply Attribution 0.885 0.817 0.907 0.925 
+
+Failure Transparency 0.739 0.905 0.948 0.998 
+
+POI Traceability 0.911 0.952 0.955 0.997 
+
+Location Constraint 0.784 0.791 0.936 0.986 
+
+Avg. 0.842 0.853 0.905 0.956 Timeliness 
+
+Outdated Supply Detection 0.777 0.942 0.957 0.970 
+
+Response Timeliness 0.843 0.927 0.866 0.970 
+
+Supply Timeliness 0.454 0.678 0.690 0.944 
+
+Avg. 0.691 0.849 0.838 0.961 Reliability 
+
+Logical Contradiction 0.844 0.920 0.938 0.967 
+
+Semantic Repetition 0.778 0.630 0.677 0.977 
+
+Avg. 0.811 0.775 0.808 0.972 
+
+18 Table 5 Fine-grained F1 comparison of LLM judge interfaces (Part II: Intent & Planning, Norms & Compliance, and User-wise Evaluation).                                                                                             
+
+> Signal Direct Static Curated ATLAS Intent & Planning
+> Query Calibration 0.673 0.615 0.786 0.911
+> Reflection Gain 0.682 0.749 0.679 0.916
+> Argument Validity 0.515 0.778 0.806 0.931
+> Rewrite Validity 0.818 0.750 0.800 0.842
+> Constraint Coverage 0.899 0.925 0.936 0.962
+> Search Intent Understanding 0.852 0.868 0.908 0.972
+> Skill Behavior 0.764 0.857 0.841 0.962
+> Skill Selection 0.809 0.804 0.902 0.970
+> Tool-Call Order 0.901 0.949 0.930 0.966
+> Avg. 0.768 0.811 0.843 0.937 Norms & Compliance
+> Compliance 0.798 0.739 0.931 0.970
+> Security & Privacy 0.895 0.874 0.888 0.996
+> Format Validity 0.709 0.967 0.975 0.989
+> System Safety 0.848 0.922 0.933 0.981
+> Avg. 0.813 0.876 0.932 0.984 User-wise Evaluation
+> Cross-Turn Reference 0.905 0.898 0.938 0.970
+> Reasoning-Intent Alignment 0.913 0.784 0.910 0.939
+> Tool-Intent Alignment 0.901 0.856 0.917 0.941
+> Previous-Round Correction 0.378 0.482 0.643 0.938
+> Cross-Round Contradiction 0.911 0.884 0.946 0.970
+> Cross-Round Repetition 0.695 0.663 0.926 0.958
+> Avg. 0.784 0.761 0.880 0.953
+
+A.2 Judge Interface Configurations 
+
+All RQ1 variants use the same DeepSeek-V4-Pro backbone and are evaluated on the same signal-specific reference sets. They differ in how explicitly the interface operationalizes each signal’s decision boundary. 
+
+Direct Judge. The interface provides the task definition, input description, and output schema, leaving signal-specific criteria, evidence selection, and exemptions to the model’s implicit interpretation. 
+
+Static Rubric. The interface augments the basic specification with an automatically generated fixed rubric. It supplies generic checklist guidance but does not encode a complete set of signal-specific decision rules. 
+
+Curated Rubric. The interface retains compact signal-specific criteria and key exemptions. It captures the main judgment considerations in a shorter form, with only partial specification of the evidence-review procedure. 
+
+ATLAS Judge. The calibrated interface binds judgment to the relevant behavioral evidence, specifies decision criteria and exemptions, applies a stepwise review procedure, and constrains the final output format. Its decision boundary is refined against the corresponding high-confidence reference set. 
+
+## B ATLAS Diagnostic Signal Inventory 
+
+Tables 6–9 summarize the within-turn, trajectory-wise diagnostic signals for the three execution dimensions and the independent Norms & Compliance guardrail. Table 10 separately lists the across-turn, user-wise diagnostic signals that assess service behavior over multiple complete agent lifecycles. For each signal, we provide its concern where applicable, type, and a one-line definition. 19 Table 6 Within-turn evaluation: trajectory-wise diagnostic signals for Response Generation. 
+
+Concern Diagnostic signal Type Definition 
+
+Relevance Opening Relevance LLM Checks whether the opening paragraph directly addresses the user request. Primary Rec. Match LLM Checks whether the primary recommended supply item is the most suitable one. Content Relevance LLM Evaluates whether the response content stays on topic and answers the intended need. Supply Relevance LLM Evaluates whether the referenced merchants, POIs, or supply items are relevant and well ranked. Supply Diversity LLM Checks whether the selected supply items provide sufficiently diverse useful options. Factuality Supply Existence LLM Detects hallucinated supply existence such as non-existent merchants or POIs. Attribute Consistency LLM Checks whether response claims remain consistent with supply attributes and evidence. Supply Attribution LLM Detects entity or merchant misattribution in the final response. Failure Transparency LLM Checks whether the response honestly reports tool failure instead of fabricating results. Rejection Hallucination LLM Detects unsupported factual claims inside fallback or refusal responses. Timeliness Response Timeliness LLM Detects whether the response cites stale or temporally invalid supply information. Reliability Logical Contradiction LLM Detects internal logical contradiction in the final delivered response. Semantic Repetition LLM Detects severe semantic repetition or rambling in the final response. N-gram Repetition Rule Detects low-level repeated spans and degenerate repetitive generation. 
+
+Table 7 Within-turn evaluation: trajectory-wise diagnostic signals for Tool & Skill Execution. 
+
+Concern Diagnostic signal Type Definition 
+
+Relevance Constraint Coverage LLM Evaluates whether search or retrieval arguments correctly cover the required objective constraints. Rewrite Validity LLM Evaluates whether a rewritten search query preserves the original intent. Argument Validity LLM Checks whether tool arguments are well formed and semantically valid. Irrelevant Supply LLM Detects retrieved supply that is completely irrelevant to the request. Supply Info. Insufficiency LLM Checks whether retrieved supply contains the information required to answer the request. Factuality POI Traceability LLM Checks whether POI or merchant identifiers can be traced to valid tool evidence. Location Constraint LLM Checks whether location-sensitive parameters remain faithful to evidence and user request. Tool-Call Hallucination LLM Detects invented slots, unsupported arguments, or fabricated tool-call content. Timeliness Supply Timeliness LLM Evaluates whether retrieved supply is temporally valid and up to date. Reliability Tool-Call Schema Rule Checks whether the tool-call schema and parameter structure are legal. Tool-Call Turn Count Rule Monitors whether the number of tool-call turns stays within a reasonable range. Intent & Planning Skill Selection LLM Evaluates whether the selected skill or route is appropriate for the task. Skill Behavior LLM Evaluates whether the activated skill follows its expected behavioral protocol. Tool-Call Order LLM Checks whether tool invocation order follows required workflow constraints. 
+
+Table 8 Within-turn evaluation: trajectory-wise diagnostic signals for Thinking & Reflection. 
+
+Concern Diagnostic signal Type Definition 
+
+Relevance Evidence Insufficiency LLM Checks whether the reflection step correctly identifies insufficient evidence. Factuality Reflection Hallucination LLM Detects whether the reflection step invents unsupported observations. Timeliness Outdated Supply Detection LLM Checks whether reflection correctly identifies stale or outdated supply. Reliability CoT Token Count Rule Monitors reasoning-trace length as a coarse operational reliability signal. Intent & Planning Search Intent Understanding LLM Evaluates whether the model correctly understands the user intent at the first turn. Query Calibration LLM Checks whether the model corrects noisy or malformed user intent when needed. Reflection Gain LLM Measures whether reflection or react reasoning adds useful information. 
+
+Table 9 Within-turn evaluation: diagnostic signals for the Norms & Compliance guardrail. 
+
+Diagnostic signal Type Definition 
+
+Compliance LLM Checks whether the model properly refuses impossible, invalid, or non-completable requests. Security & Privacy LLM Detects privacy leakage, unsafe disclosure, or other security-sensitive violations. System Safety LLM Checks whether the final response satisfies system-level safety requirements. Format Validity LLM Checks non-trivial structural and formatting validity beyond simple rules. Structural Validity Gate Rule Enforces mandatory structural validity and required formatting constraints. Presentation Integrity Rule Enforces secondary presentation and formatting constraints. 
+
+20 Table 10 Across-turn evaluation: user-wise diagnostic signals.               
+
+> Diagnostic signal Type Definition
+> Cross-Turn Reference LLM Evaluates whether the model resolves referential ambiguity using prior interaction context. Reasoning-Intent Alignment LLM Evaluates whether subsequent-lifecycle reasoning remains aligned with the user intent. Tool-Intent Alignment LLM Evaluates whether subsequent-lifecycle tool use remains aligned with the intended task. Previous-Round Correction LLM Checks whether the model corrects a previously misunderstood intent. Cross-Round Contradiction LLM Detects contradiction across dialogue turns or reasoning steps. Cross-Round Repetition LLM Detects severe repetition across turns.
+
+## C Metric Definitions 
+
+This section defines the automatic metrics used in the main experiments. 
+
+C.1 LLM Judge-Interface and Diagnostic Model Evaluation 
+
+For both LLM judge-interface validation and efficient diagnostic model evaluation, we report F1 against high-confidence reference labels. For a signal with its target event as the positive class, F1 is defined as 
+
+F1 = 2 Precision Recall Precision + Recall , (6) where 
+
+Precision = TP TP + FP , Recall = TP TP + FN . (7) For score-valued signals, both predictions and references are mapped to comparable signal-specific decision units using the corresponding discretization and tolerance rules before F1 is computed. For the group-level and overall summaries in Tables 1 and 2, we report the unweighted mean of the corresponding signal-level F1 values. Rule-based diagnostic signals are excluded from these F1 comparisons. 
+
+C.2 Offline Policy Evaluation 
+
+Offline policy evaluation is conducted under replay, where each tested policy generates trajectories that are scored by the ATLAS diagnostic signals. Let Deval denote the replay evaluation set, S𝑔 the signals in a reported group 𝑔 , and 𝑠 𝑚 (𝑥, 𝜏 𝑥 ) the scalar output of signal 𝑚 for the trajectory 𝜏 𝑥 generated for query 𝑥 . The reported group-level ATLAS score averages over both the signals in the group and the replayed queries: 
+
+𝑆 𝑔 = 1
+
+|D eval |∑︁ 𝑥 ∈ D eval 
+
+1
+
+|S 𝑔 |∑︁ 𝑚 ∈ S 𝑔 
+
+𝑠 𝑚 (𝑥, 𝜏 𝑥 ). (8) When an overall ATLAS score is reported, it is computed analogously over the diagnostic signals included in that summary: 
+
+𝑆 overall = 1
+
+|D eval |∑︁ 𝑥 ∈ D eval 
+
+1
+
+|S| ∑︁ 𝑚 ∈ S 
+
+𝑠 𝑚 (𝑥, 𝜏 𝑥 ). (9) This formulation preserves signal-level diagnostic detail while enabling comparisons across reported groups and, where applicable, the overall summary. 
+
+C.3 Online Product Metrics 
+
+For online evaluation, we report the following automatic product metrics measured from live traffic: • AI message read-through rate: the fraction of sessions in which the AI response is read through to the end or reaches the platform-defined completion criterion. • Per-user dwell time: the average user dwell time on AI-search responses. • 5-second session exit rate: the fraction of sessions that terminate within 5 seconds after entering the AI-search interaction. 21 • AI search query volume: the total number of AI-search queries issued during the reporting window. • Effective QV: the volume of valid AI-search visits that satisfy the platform’s effectiveness criterion. • Session follow-up rate: a session-level indicator of continued user interaction, measured as the fraction of AI-search sessions in which the user issues a follow-up query within the same session. • Paid GTV: the total paid gross transaction volume attributed to AI-search traffic. 
+
+## D Additional Implementation Details 
+
+All experiments are conducted on NVIDIA H20 GPUs. For LLM judge-interface validation, all compared interfaces use the same DeepSeek-V4-Pro backbone [37]; the calibration pipeline further relies on Claude Opus-4.6, GPT-5.4, and Gemini 3.1-Pro to construct high-confidence supervision, following Section 3.3. For efficient diagnostic model distillation, we follow the group-wise construction in Section 3.4 and train with Swift [50] on 8 GPUs. The student model is Qwen3.5-9B [26]. Supervision is constructed from multiple strong models, including DeepSeek-V4-Pro, DeepSeek-V4-Flash [37], and GLM-5.1 [45]. We use AdamW [16] with batch size 128, learning rate 1×10 −5, maximum output length 2148, and maximum total sequence length 16384. We keep the same data construction, filtering, and objective design described in the main method, including multi-model voting, response-level perturbation, format-consistency filtering, confidence-based filtering, and reduced weighting on the <think> field when present. For RL, we optimize Qwen3.6-35B-A3B [27] with the GRPO-based training pipeline in Section 3.5. Training runs on 32 GPUs with Verl [32], using Megatron [22] for distributed training and vLLM [11] for rollout acceleration. The batch size is 128, the rollout group size is 16, the sampling temperature is 1.0, the maximum output length is 8192, and the maximum total sequence length is 32768. We use AdamW [16] with learning rate 1 × 10 −6.
+
+## E Case Study 
+
+Figures 7–10 show four representative cases sampled from Xiaotuan’s real online traffic. Each compares the deployed baseline (left) and the policy optimized with ATLAS diagnostic feedback (right) for the same user query. Human auditors score the displayed responses on response–supply relevance, P0 hallucination, and ID hallucination (0–3, higher is better). The cases cover complementary failure modes of industrial tool-use agents. In Figure 7, the baseline produces fluent but unverifiable merchant descriptions for a family-dinner restaurant request, whereas the optimized policy grounds intent-aligned recommendations in retrieved supply cards with ratings, distances, and bookable packages. In Figure 8, the baseline mixes entertainment-oriented SPA venues into a qualification-sensitive search, whereas the optimized policy separates regulated medical TCM clinics from traditional blind-massage shops and maps the user need to tool-grounded recommendations. In Figure 9, the baseline lists product names without purchasable supply, whereas the optimized policy returns store-level product cards with verifiable prices, sales, and instant-delivery information. In Figure 10, the baseline fails to retrieve the target hotel and falls back to generic advice, whereas the optimized policy provides review-grounded evidence, practical booking details, and a caveat about room-type differences. The displayed human-audit scores favor the optimized policy on all three dimensions in each selected case. Together, these examples illustrate more supply-grounded, structured, and appropriately qualified responses; they complement the aggregate online results in RQ4. 22 哪家酒楼适合家庭聚餐？ 
+
+Baseline ATLAS 
+
+> 小团 小团
+> Response–supply relevance: 0 P0 hallucination rate: 0 ID hallucination rate: 0 Response–supply relevance: 3 P0 hallucination rate: 3 ID hallucination rate: 3
+
+Evaluation Evaluation Figure 7 Case 1: supply-grounded restaurant recommendation for the query “Which restaurant is suitable for a family dinner?” The baseline (left) recommends merchants with fluent but unverifiable descriptions, whereas the policy optimized with ATLAS diagnostic feedback (right) organizes verified merchants and bookable deals into intent-aligned groups with traceable attributes and concrete selection advice. Bottom: sampled human-audit scores (response–supply relevance, P0 hallucination, and ID hallucination; 0–3, higher is better). 
+
+23 找正规的中医推拿或者盲人按摩 
+
+Baseline ATLAS 
+
+> 小团 小团
+> Response–supply relevance: 0 P0 hallucination rate: 0 ID hallucination rate: 0 Response–supply relevance: 3 P0 hallucination rate: 3 ID hallucination rate: 3
+
+Evaluation Evaluation Figure 8 Case 2: qualification-sensitive service search for the query “Find a legitimate TCM tuina or blind-massage parlor.” The baseline (left) mixes entertainment-oriented SPA venues into its recommendation, whereas the policy optimized with ATLAS diagnostic feedback (right) separates regulated medical TCM clinics from traditional blind-massage shops and provides an evidence-grounded need-to-recommendation mapping. Bottom: sampled human-audit scores (0–3, higher is better). 阿迪达斯女鞋有新款吗？ 
+
+Baseline ATLAS 
+
+小团 小团 
+
+Response–supply relevance: 0 P0 hallucination rate: 0 ID hallucination rate: 0 Response–supply relevance: 3 P0 hallucination rate: 3 ID hallucination rate: 3 
+
+Evaluation Evaluation 
+
+Figure 9 Case 3: new-product availability for the query “Does Adidas have new women’s shoes?” The baseline (left) lists model names without any purchasable supply, whereas the policy optimized with ATLAS diagnostic feedback (right) returns store-level product cards with verifiable prices, monthly sales, and instant-delivery information, organized by usage scenario and followed by purchase suggestions. Bottom: sampled human-audit scores (0–3, higher is better). 
+
+24 海盛宾馆隔音效果如何？ 
+
+# Baseline ATLAS 
+
+小团 小团 
+
+Response–supply relevance: 0 P0 hallucination rate: 0 ID hallucination rate: 0 Response–supply relevance: 3 P0 hallucination rate: 3 ID hallucination rate: 3 
+
+# Evaluation Evaluation Figure 10 Case 4: long-tail attribute question for the query “How is the sound insulation of Haisheng Hotel?” The baseline (left) fails to retrieve the hotel and falls back to generic advice, whereas the policy optimized with ATLAS diagnostic feedback (right) retrieves the hotel and answers with review-grounded evidence, practical booking information, and an honest caveat about possible room-type differences. Bottom: sampled human-audit scores (0–3, higher is better). 
+
+25

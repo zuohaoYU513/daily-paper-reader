@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-03</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-06 ~ 2026-09-04</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 17 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 34 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>34</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-03 21:39:49 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-04 03:41:01 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,9 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日聚焦黑盒LLM幻觉检测与知识对齐微调，共追踪17篇论文，精读6篇。</p>
-<p>最值得看：利用互补信号进行幻觉检测（10分）及知识对齐微调（9分），速读中RAG可靠性提升与多模态文档RAG值得关注。</p>
-<p>建议优先精读两篇高分工作，再结合速读中RAG相关方法，梳理检测与增强的互补路径。</p>
+<p>本期速读34篇论文，无精读，全部完成处理。</p>
+<p>最值得关注的是3篇满分(10/10)研究：跨站浏览器代理基准《CAP》、LLM代理一键监控工具《BekchiAI》、以及检索增强代理技能使用评估《Skill Following》。</p>
+<p>建议普通读者可优先将这三篇满分论文纳入精读，深入对照其方法与实践价值。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -80,12 +80,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">6 篇</strong>
+    <strong class="dpr-home-dashboard-count">0 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="From Tokens to Semantics: Leveraging Complementary Signals for Hallucination Detection in Black-Box LLMs">From Tokens to Semantics: Leveraging Complementary Signals for Hallucination Detection in Black-Box LLMs</span></li><li><span class="dpr-home-dashboard-paper-title" title="Stick to What You Know: A Study of Knowledge-Aligned Supervised Fine-Tuning">Stick to What You Know: A Study of Knowledge-Aligned Supervised Fine-Tuning</span></li><li><span class="dpr-home-dashboard-paper-title" title="PRO-Step: Step-level Process Reward Optimization for Retrieval-Augmented Generation">PRO-Step: Step-level Process Reward Optimization for Retrieval-Augmented Generation</span></li></ul>
+<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">hallu-rag <strong>6</strong></span></div>
+
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -93,12 +93,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">11 篇</strong>
+    <strong class="dpr-home-dashboard-count">34 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Knowing Before Answering: Decoding Language Models for Reliable RAG">Knowing Before Answering: Decoding Language Models for Reliable RAG</span></li><li><span class="dpr-home-dashboard-paper-title" title="Doc-REFRAG: Rethinking Multimodal Document Retrieval-Augmented Generation">Doc-REFRAG: Rethinking Multimodal Document Retrieval-Augmented Generation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Learning to Reason and Use Tools through Unsupervised Fine-Tuning in Task-Oriented Dialog Systems">Learning to Reason and Use Tools through Unsupervised Fine-Tuning in Task-Oriented Dialog Systems</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="CAP: A Scalable Benchmark for Evaluating Cross-Site Browser Agents with Complex Actions and Perception">CAP: A Scalable Benchmark for Evaluating Cross-Site Browser Agents with Complex Actions and Perception</span></li><li><span class="dpr-home-dashboard-paper-title" title="BekchiAI: Measuring, Observing, and Controlling LLM Agents in One Click">BekchiAI: Measuring, Observing, and Controlling LLM Agents in One Click</span></li><li><span class="dpr-home-dashboard-paper-title" title="Skill Following: Evaluating Actual Skill Use in Retrieval-Enabled LLM Agents">Skill Following: Evaluating Actual Skill Use in Retrieval-Enabled LLM Agents</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">hallu-rag <strong>11</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-eval <strong>34</strong></span></div>
 </section>
 </div>
 
