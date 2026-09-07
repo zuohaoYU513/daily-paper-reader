@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-06 ~ 2026-09-04</span>
+      <span class="dpr-home-dashboard-kicker">2026-08-29 ~ 2026-09-07</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 34 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 17 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>34</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-04 03:41:01 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-07 05:58:30 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,9 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>本期速读34篇论文，无精读，全部完成处理。</p>
-<p>最值得关注的是3篇满分(10/10)研究：跨站浏览器代理基准《CAP》、LLM代理一键监控工具《BekchiAI》、以及检索增强代理技能使用评估《Skill Following》。</p>
-<p>建议普通读者可优先将这三篇满分论文纳入精读，深入对照其方法与实践价值。</p>
+<p>今日精读6篇/速读11篇，共17篇论文，聚焦大模型幻觉、隐私与可信评估。最值得关注：差分隐私语言模型存在“隐私-幻觉”权衡，以及面向科学同行评审的幻觉检测基准HalluPeer（均获9.0分）。下一步可沿“幻觉检测/防御”与“隐私保护”两大方向深入，留意多元文化角色扮演与代码幻觉等细分前沿。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -80,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">0 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="The Privacy-Hallucination Tradeoff in Differentially Private Language Models">The Privacy-Hallucination Tradeoff in Differentially Private Language Models</span></li><li><span class="dpr-home-dashboard-paper-title" title="HalluPeer: A Taxonomy-driven Benchmark for Detecting Hallucinations in Scientific Peer Reviews">HalluPeer: A Taxonomy-driven Benchmark for Detecting Hallucinations in Scientific Peer Reviews</span></li><li><span class="dpr-home-dashboard-paper-title" title="CAGE: Coherence-Aware Graph Encoding for Retrieval-Augmented Generation">CAGE: Coherence-Aware Graph Encoding for Retrieval-Augmented Generation</span></li></ul>
   </div>
-
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">hallu-rag <strong>6</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -93,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">34 篇</strong>
+    <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="CAP: A Scalable Benchmark for Evaluating Cross-Site Browser Agents with Complex Actions and Perception">CAP: A Scalable Benchmark for Evaluating Cross-Site Browser Agents with Complex Actions and Perception</span></li><li><span class="dpr-home-dashboard-paper-title" title="BekchiAI: Measuring, Observing, and Controlling LLM Agents in One Click">BekchiAI: Measuring, Observing, and Controlling LLM Agents in One Click</span></li><li><span class="dpr-home-dashboard-paper-title" title="Skill Following: Evaluating Actual Skill Use in Retrieval-Enabled LLM Agents">Skill Following: Evaluating Actual Skill Use in Retrieval-Enabled LLM Agents</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="CHARM: Character Hallucination for Multicultural Role Play Benchmark">CHARM: Character Hallucination for Multicultural Role Play Benchmark</span></li><li><span class="dpr-home-dashboard-paper-title" title="IntroConformal: Conformal Factuality Guarantees for Large Vision-Language Models via Introspective Signals">IntroConformal: Conformal Factuality Guarantees for Large Vision-Language Models via Introspective Signals</span></li><li><span class="dpr-home-dashboard-paper-title" title="Refusing the Impossible: A Taxonomy and Benchmark for Code Hallucination in Large Language Models">Refusing the Impossible: A Taxonomy and Benchmark for Code Hallucination in Large Language Models</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">agent-eval <strong>34</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">hallu-rag <strong>11</strong></span></div>
 </section>
 </div>
 

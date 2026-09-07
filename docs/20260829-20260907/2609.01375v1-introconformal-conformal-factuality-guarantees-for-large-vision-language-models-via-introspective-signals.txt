@@ -1,0 +1,960 @@
+Title: IntroConformal: Conformal Factuality Guarantees for Large Vision-Language Models via Introspective Signals
+
+URL Source: https://arxiv.org/pdf/2609.01375v1
+
+Published Time: Wed, 02 Sep 2026 01:33:29 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# IntroConformal: Conformal Factuality Guarantees for Large Vision-Language Models via Introspective Signals 
+
+Md. Atabuzzaman Christian Alexander Chris Thomas 
+
+Department of Computer Science Virginia Tech 
+
+{atabuzzaman, cmalexander, christhomas}@vt.edu 
+
+Abstract 
+
+Large Vision–Language Models (LVLMs) have achieved strong multimodal performance, yet ensuring the factual correctness of generated content remains challenging. Existing meth-ods that provide statistical guarantees on fac-tuality typically rely on external verifiers or generation-time confidence signals, which in-troduce auxiliary dependencies or often fail for confident but incorrect outputs. We argue that reliable factuality control can instead be achieved through introspective signals derived from the model itself. We introduce IntroCon-formal , a training-free Conformal Risk Control (CRC) framework that provides finite-sample, distribution-free factuality guarantees. We first instantiate it with layer-wise semantic stabil-ity, a conformity score derived from hidden-state representations, and then propose verifica-tion probability, a stronger score capturing the model’s self-administered judgment on claim factuality. Across multiple LVLM architec-tures, IntroConformal satisfies the conformal risk guarantee while substantially reducing ab-stention and achieving competitive or superior claim-level discrimination relative to external verifier–based baselines. 1
+
+1 Introduction 
+
+LVLMs have achieved remarkable progress across vision–language tasks and are increasingly de-ployed in high-stakes domains such as medical re-porting and autonomous systems. However, these models remain prone to generating content that is not factually grounded in the input image. Such failures are particularly concerning because users often have no reliable way to distinguish incor-rect outputs from correct ones: confident yet non-factual generations can appear highly plausible, undermining trust and limiting real-world deploy-ment (Zhang et al., 2024; Li et al., 2025).    
+
+> 1Code and Dataset: https://github.com/ Atabuzzaman/Introconformal
+
+Addressing this challenge requires more than heuristic mitigation; it calls for formal, finite-sample bounds on the rate of non-factual claims while preserving useful model outputs. Although many approaches attempt to mitigate factual errors through prompting strategies, decoding heuristics, or auxiliary verification, most do not offer formal statistical guarantees. Recently, conformal predic-tion and CRC have emerged as promising tools for uncertainty quantification in large language models (LLMs), providing finite-sample, distribution-free guarantees on error rates (Vovk et al., 2005; An-gelopoulos et al., 2021; Bates et al., 2021; Quach et al., 2024; Cherian et al., 2024). When applied to LVLMs, these methods can bound factuality risk at user-specified levels, for example targeting a 10% error rate by filtering non-factual claims under factuality control protocols (Li et al., 2025). However, existing conformal factuality frame-works for LVLMs suffer from a fundamental signal bottleneck . They define conformity scores using either generation-time token log-probabilities or external verification models (Quach et al., 2024; Li et al., 2025). Generation-time confidence is of-ten unreliable, as models can remain highly confi-dent even when factually ungrounded (Xiong et al., 2024; Chen et al., 2024), while external verifiers introduce additional dependencies and complicate deployment in resource-constrained settings. In contrast, we argue that reliable factuality con-trol can be achieved through introspective signals derived from the model itself, without external ver-ifiers or auxiliary supervision. Prior work shows that non-factual generation is associated with inter-nal inconsistencies, including layer-wise semantic drift and unstable hidden-state trajectories (Azaria and Mitchell, 2023; Chen et al., 2024; Zhang et al., 2025; Nie et al., 2025; Bu et al., 2026). Although these signals arise during a single forward pass, they are largely ignored by conformal approaches that treat LVLMs as black boxes (Li et al., 2025). 1arXiv:2609.01375v1 [cs.CV] 1 Sep 2026 Building on this observation, we introduce Intro-Conformal , a training-free Conformal Risk Con-trol (CRC) framework that provides finite-sample, distribution-free factuality guarantees using confor-mity scores derived entirely from the model itself. We first instantiate it with layer-wise semantic sta-bility (Ssem ), which measures alignment between mid- and late-layer hidden-state representations on claim tokens. While Ssem satisfies the CRC guarantee across architectures, its discrimination between factual and non-factual claims remains modest (Table 1), resulting in high abstention rates that limit practical utility. To address both limita-tions, we propose verification probability (Sprob ), a stronger conformity score that queries the same model with a binary factuality prompt and reads the output logits rather than sampling a discrete answer. Across multiple LVLM architectures, Sprob reduces abstention and improves claim-level discrimination over both Ssem and external verifier–based base-lines (Table 2), while preserving the conformal risk guarantee. Our main contributions are: • We propose IntroConformal , a training-free CRC framework for LVLM factuality that derives conformity scores from the model itself, without external verifiers or auxiliary supervision. • We introduce two conformity scores: layer-wise semantic stability , capturing cross-layer hidden-state alignment, and verification probability ,which queries the same model with a binary fac-tuality prompt and reads the output logits. • Across multiple LVLM architectures and bench-marks, IntroConformal satisfies the CRC guaran-tee, reducing abstention and improving F1 over external verifier-based baselines, and achieving higher claim-filtering efficiency and response ac-curacy than decoding-based methods. 
+
+2 Related Work 
+
+Uncertainty and Hallucination in LLMs. Un-certainty estimation and hallucination detection in LLMs have been extensively studied. Early approaches based on verbalized confidence and sampling-based consistency (Kuhn et al., 2023; Xiong et al., 2024) require multiple generations and fail on confident hallucinations (Chen et al., 2024), while semantic entropy methods (Kuhn et al., 2023; Nikitin et al., 2024; Duan et al., 2024) require re-peated sampling at inference time. More recent work shows that internal activations encode factu-ality signals through hidden-state classifiers and representation geometry (Han et al., 2024; Li et al., 2026). Most closely related to ours, mechanis-tic interpretability studies reveal that non-factual generations manifest as layer-wise semantic drift and unstable hidden-state trajectories (Azaria and Mitchell, 2023; Chuang et al., 2024; Chen et al., 2024; Zhang et al., 2025; Bu et al., 2026); however, these approaches remain primarily diagnostic and lack distribution-free statistical guarantees. 
+
+Uncertainty in LVLMs. Uncertainty estimation in LVLMs introduces additional multimodal ground-ing challenges. Several approaches focus on se-lective prediction under insufficient visual con-text (Liu et al., 2024; Lau et al., 2025; Khan and Fu, 2024) or address inconsistency through cycle-consistency and attention-alignment frame-works (Shah et al., 2019; Selvaraju et al., 2020), while perturbation-based methods have shown mixed results compared to representation-based sig-nals (Avestimehr et al., 2025). These approaches typically rely on heuristics or auxiliary models and lack formal statistical guarantees—a gap our work addresses through conformal risk control with in-trospective signals. 
+
+Conformal Prediction for Factuality Control. 
+
+Conformal prediction provides distribution-free, finite-sample guarantees for uncertainty quantifi-cation (Vovk et al., 2005; Angelopoulos et al., 2021; Bates et al., 2021). Recent applications to LLMs include multiple-choice tasks (Ye et al., 2024), open-ended generation (Quach et al., 2024), and claim-level filtering for LVLM factuality us-ing learned (Vishwakarma et al., 2025) or exter-nal scoring functions (Li et al., 2025). However, these methods define conformity using generation-time token probabilities or external verifiers such as CLIP (Radford et al., 2021), which are unreliable for confident non-factual generations or require auxiliary models. Our work bridges conformal prediction with mechanistic interpretability (Chen et al., 2024; Zhang et al., 2025; Bu et al., 2026) by defining training-free conformity scores derived en-tirely from the model itself, yielding finite-sample, distribution-free factuality guarantees without ex-ternal verifiers or generated token probabilities. 
+
+3 Method 
+
+We introduce IntroConformal, a framework for sta-tistically controlling non-factual generation risk in LVLMs via introspective conformity scores (Fig-ure 1), where introspective refers to scores derived 2Image  𝑰      
+
+> Response YClaim Decomposer Atomic Claims: 𝑪
+
+= {𝒄 𝟏 ,…, 𝒄 N}  
+
+> Calibration
+> Dataset Dcal
+> Calibrated Threshold
+> ෠𝝀
+
+∈ {෠𝝀 sem , ෠𝝀 prob }                   
+
+> 𝑺 𝒄 ≥෠𝝀?
+> Conformal Risk Control
+> LTT + Hoeffding UCB
+> ෠𝝀 = inf{ 𝝀 ∈ 𝚲: UCB δ𝝀 ≤ 𝜶}
+> Target Risk (𝜶 )
+> Verification Probability: S𝒑𝒓𝒐𝒃 𝒄 𝒊
+> Self -verification: “Is 𝒄 𝒊 true? ”
+> 𝑷 Yes 𝑰, 𝒄 𝒊
+> 𝑷 Yes 𝑰, 𝒄 𝒊 + 𝑷 No 𝑰, 𝒄 𝒊
+> Provide a detailed
+> description of the
+> given image.
+> Prompt 𝑿
+> LLaVA/Phi/Llama/
+> Qwen
+
+LVLM  The image features a young girl sitting on a chair in a room, holding a brown teddy bear in her arms. The teddy bear adds a sense of warmth and comfort to the environment. The room has a window, and a potted plant is placed near the right side of the image, adding a touch of greenery to the space. In addition to the girl and           
+
+> the teddy bear, there is a book located on the right side of the
+> room, possibly a source of entertainment or learning for the child.
+> c1: The image features a young girl.
+> c2: The girl is sitting on a chair.
+> c3: The girl is holding a brown teddy bear in her arms.
+> c4: The scene takes place in a room.
+> c5: There is a potted plant located near the right side.
+> c6: The teddy bear adds a sense of warmth and comfort.
+> Retained Claims: 𝑺 𝒄 ≥ ෠ 𝝀
+> {𝒄 1, 𝒄 3, 𝒄 4, 𝒄 5, 𝒄 6}
+> Filtered Claims: 𝑺 𝒄 < ෠ 𝝀
+> {𝒄 2}
+> Layer-wise Semantic Stability: S𝒔𝒆𝒎 𝒄 𝒊
+> CosSim തℎ𝑡 𝑗
+> mid , ത ℎ𝑡 𝑗
+> late
+> Hidden states of claim tokens
+
+Figure 1: Overview of IntroConformal . Our framework decomposes an LVLM response into atomic claims (non-factual claim c2 highlighted in red) and computes two conformity scores: layer-wise semantic stability Ssem from hidden-state representations and verification probability Sprob from the model’s Yes /No factuality judgment; the user selects one score for calibration and filtering. Conformal risk control then calibrates a threshold ˆλ ∈ { ˆλsem , ˆλprob }
+
+on Dcal , retaining claims with S(c) ≥ ˆλ and providing finite-sample, distribution-free factuality guarantees. 
+
+from the same LVLM without external verifiers or auxiliary supervision. Unlike prior conformal ap-proaches that rely on generation-time token proba-bilities (Quach et al., 2024) or external verifiers (Li et al., 2025), IntroConformal derives both scores directly from the model itself. We propose two such scores: layer-wise semantic stability (Ssem ), measuring hidden-state alignment across layers, and verification probability (Sprob ), capturing the model’s binary factuality judgment. We first instan-tiate the CRC framework with Ssem , then show that 
+
+Sprob improves discrimination and reduces absten-tion while preserving the guarantee. 
+
+3.1 Problem Formulation 
+
+Given an image I, a textual prompt X, and a model response Y , we decompose Y into atomic, veri-fiable claims C = {c1, . . . , c N } following prior work (Li et al., 2025). Our goal is to retain a subset 
+
+ˆC ⊆ C whose factuality is statistically controlled while providing response-level risk guarantees. Let 
+
+L(c, I ) ∈ { 0, 1} denote a non-factuality indicator, where L(c, I ) = 1 if claim c is not supported by image I and 0 otherwise. Formally, we construct a selection rule such that the expected rate of non-factual claims among the retained set is bounded by a user-specified risk level α ∈ [0 , 1] :
+
+E
+
+ 1
+
+| ˆC| 
+
+X
+
+c∈ ˆC
+
+L(c, I )
+
+ ≤ α, (1) with risk defined as zero when | ˆC| = 0 . This objective aligns with CRC, which provides finite-sample, distribution-free guarantees for selection-conditional risk. We next define our two scores. 
+
+3.2 Layer-wise Semantic Stability 
+
+Our first conformity score captures semantic sta-bility across the model’s internal representations. Prior work shows that non-factual generation is accompanied by semantic drift in the final layers, where representations diverge from those formed at intermediate decoding stages (Chen et al., 2024; Wang et al., 2025; Bu et al., 2026). Let h(ℓ)
+
+t ∈ Rd
+
+denote the hidden state of token t at layer ℓ. We define two disjoint layer sets: M, comprising the 
+
+Kmid = 8 transformer layers immediately preced-ing T , and T , comprising the final Klate = 4 layers. These values are fixed across all architectures; a sensitivity analysis is provided in Appendix A.4. For each claim token tj , we compute averaged hidden representations: 
+
+¯hmid 
+
+tj = 1
+
+|M| 
+
+X
+
+ℓ∈M 
+
+h(ℓ)
+
+tj , ¯hlate 
+
+tj = 1
+
+|T | 
+
+X
+
+ℓ∈T 
+
+h(ℓ)
+
+tj .
+
+(2) We compute the cosine similarity between these representations and average across tokens to obtain the claim-level semantic stability score: 
+
+Ssem (ci) = 1
+
+|ci|
+
+|ci|
+
+X
+
+j=1 
+
+CosSim 
+
+¯hmid 
+
+tj , ¯hlate 
+
+tj
+
+
+
+. (3) Higher Ssem indicates stable semantic grounding, where representations remain consistent from mid to late layers. Lower values reflect semantic drift associated with non-factual claims. 
+
+3.3 Verification Probability 
+
+While Ssem provides a hidden-state signal of seman-tic consistency, its discriminative power is modest. 3To address this limitation, we propose verification probability (Sprob ), a stronger conformity score cap-turing the model’s binary judgment on claim factu-ality. Given an image I and an atomic claim ci, we prompt the same LVLM to assess whether ci is supported by I via: “Based on the image, is the following statement true? Answer with Yes or No. Statement: ci.” We apply each model’s standard chat template and extract the Yes -token probability at the first answer position from a single forward pass, normalizing against No to isolate relative con-fidence from absolute output magnitudes: 
+
+Sprob (ci) = P (Yes | I, c i)
+
+P (Yes | I, c i) + P (No | I, c i) . (4) Higher Sprob indicates greater support for the claim; lower values reflect the model’s disagreement with claims extracted from its earlier response. 
+
+Sprob is related to CoVe (Dhuliawala et al., 2024) but differs in a key respect: unlike CoVe, which samples discrete verification answers and condi-tions further generation on them, Sprob extracts the 
+
+Yes -token probability directly without additional decoding steps. This makes it strictly single-pass and avoids the sampling overhead of CoVe while still conditioning explicitly on claim-image consis-tency rather than next-token prediction. 
+
+3.4 Conformal Risk Control 
+
+To control the non-factual claim risk defined in Eq. (1), we adopt a Conformal Risk Control (CRC) framework based on the Learn–Then–Test (LTT) paradigm (Angelopoulos et al., 2022; Bates et al., 2021). Unlike split-conformal calibration (Vovk et al., 2005; Angelopoulos and Bates, 2022), which calibrates a quantile of nonconformity scores to control coverage probability, CRC handles real-valued losses such as the response-level non-factual rate by selecting the least conservative thresh-old whose Hoeffding upper confidence bound (UCB) satisfies the target risk α. This yields a high-probability guarantee P(R(ˆλ) ≤ α) ≥
+
+1 − δ. We assume access to a calibration set 
+
+{(Ik, X k, Ck, Lk)}nk=1 drawn i.i.d. from the same distribution as test inputs, where Ck denotes the set of atomic claims extracted from the model output for image-prompt pair (Ik, X k), and Lk provides claim-level non-factuality labels. 
+
+Nested claim selection. Given a threshold λ ∈ R,we define a claim-level filtering operator 
+
+ˆCλ(Ik, X k) = {c ∈ C k : S(c) ≥ λ}, (5) where S(c) denotes the chosen conformity score. These sets are nested in λ, with larger thresholds inducing more aggressive filtering. 
+
+Per-response empirical risk. For each calibration example k, let 
+
+mk(λ) ≜ ˆCλ(Ik, X k) (6) denote the number of retained claims. We define the response-level non-factual rate among retained claims as 
+
+rk(λ) = 
+
+P    
+
+> c∈ˆCλ(Ik,X k)
+
+L(c, I k)
+
+mk(λ) , if mk(λ) > 0,
+
+0, if mk(λ) = 0 .
+
+(7) where the numerator counts non-factual claims among those retained. Following the selective pre-diction convention (Geifman and El-Yaniv, 2017; Li et al., 2025), we assign zero loss to a response when the model abstains by filtering all claims. Note that rk(λ) ∈ [0 , 1] by construction. This fractional loss is not monotone in λ: remov-ing a factual claim can raise the ratio. We retain it because the proportion of incorrect claims, not the absolute number, is our object of interest. We address this via a Hoeffding concentration inequality with family-wise error rate (FWER) cor-rection, bounding the risk below a corrected level (α′ ≤ 0.170 ) with probability ( 1 − δ), equivalently guaranteeing that at least (83%) of retained claims are factual in expectation. 
+
+LTT calibration via Hoeffding UCB. Let Λ de-note a finite set of thresholds, taken as the unique values of {S(c) : c ∈ C k, k = 1 , . . . , n } (option-ally augmented with a value below the minimum to allow retaining all claims). For each λ ∈ Λ, we compute the empirical risk 
+
+ˆR(λ) = 1
+
+n
+
+> n
+
+X
+
+> k=1
+
+rk(λ). (8) We then construct an upper confidence bound using Hoeffding’s inequality (Hoeffding, 1963): 
+
+Pr( ˆR(λ) − R(λ) ≤ − x) ≤ exp( −2nx 2), (9) where R(λ) = E(Ik ,X k )∼D [rk(λ)] denotes the true expected risk over test inputs drawn from the same distribution as Dcal .We take x =
+
+q log(1 /δ )2n to deduce a per-λ bound, which holds with probability ≥ 1 − δ, R(λ) ≤ UCB δ(λ) ≜ ˆR(λ) + 
+
+r log(1 /δ )2n . (10) 4A per-λ bound does not guarantee that all λ ∈ Λ
+
+concurrently satisfy the risk constraint. Trading slightly in α, a Bonferroni correction (Angelopou-los et al., 2022) ensures concurrent validity: the adjustment 
+
+α′ ≜ α +
+
+"r log( m/δ )2n −
+
+r log(1 /δ )2n
+
+#
+
+(11) is sufficient such that if λ ∈ Λ′ satisfy UCB δ(λ) ≤
+
+α individually, then they all concurrently satisfy 
+
+Pr( R(λ) ≤ α′) ≥ 1 − δ. (12) In our experiments, with n = 400 calibration prompts and at most 50 claims per response, the candidate set Λ contains |Λ| ≤ n · 50 = 20 ,000 
+
+unique thresholds. Testing individually at α =
+
+δ = 0 .1 then yields concurrent risk control at α′ ≤
+
+0.170 .
+
+We select the smallest feasible threshold satisfy-ing the risk constraint: the infimal λ ∈ Λ′, i.e. 
+
+ˆλ = inf {λ ∈ Λ : UCB δ(λ) ≤ α}. (13) This choice maximizes claim retention by select-ing the least conservative threshold among concur-rently valid choices. Appendix A.1 (Algorithm 1) summarizes the full procedure. (Note that the algo-rithm assumes that input α is to be respected, i.e. regarded as the α′ of the derivation above.) 
+
+4 Experiments and Evaluation 
+
+We evaluate IntroConformal on three vision– language generation tasks requiring grounded fac-tual generation: general scene understanding, fine-grained captioning, and document understanding. We design our experiments to assess two key ques-tions: (i) whether signals extracted from the model itself meaningfully separate factual and non-factual claims, and (ii) whether these signals enable valid and efficient conformal risk control under finite-sample guarantees. Following CONFLVLM (Li et al., 2025), we evaluate both response-level con-formal risk and claim-level diagnostic metrics across multiple LVLM architectures and datasets. 
+
+4.1 Experimental Setup 
+
+We evaluate IntroConformal on three representa-tive vision–language benchmarks. For general scene understanding, we use the MSCOCO-based benchmark introduced by CONFLVLM (Li et al., 2025), consisting of 500 images (400 calibration, 100 test) with claim-level factuality annotations. For fine-grained captioning, we construct a bal-anced benchmark using CUB (Wah et al., 2011), Stanford Cars (Krause et al., 2013), and Stanford Dogs (Khosla et al., 2011) by selecting one image per category, resulting in 516 images (400 cali-bration, 116 test). For document understanding, we use invoice images from SROIE (Huang et al., 2019), randomly selecting 500 images following the same 400/100 calibration–test split. We evalu-ate five LVLM architectures: LLaVA-1.5-7B (Liu et al., 2023), Phi-3.5-Vision-Instruct (Abdin et al., 2024), Llama-3.2-11B-Vision (Grattafiori et al., 2024), Qwen2.5-VL-7B-Instruct (Bai et al., 2025b), and Qwen3-VL-8B-Instruct (Bai et al., 2025a). Following CONFLVLM (Li et al., 2025), we de-compose model responses into atomic claims and annotate for factual correctness with respect to the input image. Annotation reliability is established at two levels. For general scene understanding, we directly use the publicly available CONFLVLM annotations, where GPT-4o (OpenAI, 2024) labels were validated against human raters with an Intra-class Correlation Coefficient (ICC) of 0.85, indicat-ing strong inter-rater reliability. For fine-grained captioning and document understanding, claim de-composition is performed using GPT-4o-mini and factuality labels are generated using GPT-5.4. To assess reliability, one human annotator indepen-dently reviewed 372 claims (54.3% factual, 45.7% non-factual by GPT label) across 50 randomly se-lected images, achieving 86.0% agreement with GPT-5.4 labels and Cohen’s κ of 0.71, indicating substantial inter-annotator agreement (Landis and Koch, 1977). Together, these results confirm strong alignment between automatic and human factuality judgments. Appendix A.5 presents claim decom-position and annotation prompts. 
+
+4.2 Introspective Signal Quality 
+
+Table 1 evaluates the ability of different confor-mity signals to distinguish factual from non-factual claims on the calibration set. We compare the exter-nal CLIP-based verifier used by CONFLVLM (Li et al., 2025), average token probability ( Tprob ), and our proposed introspective signals: layer-wise se-mantic stability ( Ssem ) and verification probability (Sprob ). For each signal, we report the mean score on factual and non-factual claims, their difference, AUROC, and Welch’s t-test p-value. 
+
+Sprob substantially outperforms external and confidence-based signals. Across all tasks and 5Task Model Signal Mean (F) Mean (NF) Difference AUROC ↑ p-value 
+
+General Scene Understanding (MSCOCO) LLaVA-1.5 CLIP 0.2108 0.1911 +0.0196 0.631 7.6 × 10 −33 
+
+Tprob 0.2723 0.2200 +0.0523 0.611 1.2 × 10 −26 
+
+Ssem 0.8689 0.8674 +0.0015 0.556 3.1 × 10 −9
+
+Sprob 0.8598 0.6584 +0.2014 0.819 < 10 −100 
+
+Phi-3.5-Vision CLIP 0.2065 0.2029 +0.0037 0.523 3.6 × 10 −2
+
+Tprob 0.2444 0.2200 +0.0244 0.555 8.9 × 10 −9
+
+Ssem 0.9041 0.9022 +0.0019 0.576 2.2 × 10 −10 
+
+Sprob 0.8506 0.6109 +0.2397 0.763 < 10 −80 
+
+Llama-3.2-Vision CLIP 0.2103 0.2067 +0.0036 0.519 4.3 × 10 −2
+
+Tprob 0.1015 0.0958 +0.0056 0.531 3.5 × 10 −3
+
+Ssem 0.6827 0.6830 −0.0003 0.488 3.5 × 10 −1
+
+Sprob 0.8312 0.7108 +0.1204 0.716 < 10 −50 
+
+Qwen2.5-VL-7B CLIP 0.2060 0.2037 +0.0024 0.512 1.3 × 10 −1
+
+Tprob 0.0203 0.0163 +0 .0040 0.579 4.7 × 10 −7
+
+Ssem 0.7933 0.7921 +0 .0011 0.527 1.6 × 10 −3
+
+Sprob 0.9169 0.7414 +0.1755 0.739 < 10 −50 
+
+Qwen3-VL-8B CLIP 0.2036 0.2010 +0.0026 0.516 8.5 × 10 −2
+
+Tprob 0.1067 0.0802 +0 .0265 0.605 1.4 × 10 −30 
+
+Ssem 0.8966 0.8932 +0 .0035 0.566 2.5 × 10 −13 
+
+Sprob 0.9327 0.7654 +0.1673 0.699 < 10 −42 
+
+Fine-Grained Captioning LLaVA-1.5 CLIP 0.2068 0.1831 +0.0236 0.655 < 10 −50 
+
+Tprob 0.2794 0.2150 +0.0645 0.652 < 10 −40 
+
+Ssem 0.8703 0.8695 +0.0008 0.536 3.7 × 10 −4
+
+Sprob 0.8604 0.6756 +0.1849 0.765 < 10 −100 
+
+Phi-3.5-Vision CLIP 0.1989 0.1925 +0.0064 0.536 8.1 × 10 −7
+
+Tprob 0.2429 0.2098 +0.0331 0.583 3.1 × 10 −20 
+
+Ssem 0.9033 0.9025 +0.0008 0.530 6.4 × 10 −3
+
+Sprob 0.8220 0.5751 +0.2468 0.770 < 10 −100 
+
+Document Understanding LLaVA-1.5 CLIP 0.2452 0.2278 +0.0173 0.631 < 10 −40 
+
+Tprob 0.2416 0.2598 −0.0182 0.493 9.8 × 10 −7
+
+Ssem 0.8710 0.8691 +0.0018 0.575 5.0 × 10 −21 
+
+Sprob 0.8617 0.7680 +0.0937 0.728 < 10 −100 
+
+Phi-3.5-Vision CLIP 0.2434 0.2275 +0.0159 0.597 2.4 × 10 −31 
+
+Tprob 0.3017 0.2792 +0.0225 0.537 5.8 × 10 −6
+
+Ssem 0.8837 0.8818 +0.0019 0.530 5.7 × 10 −6
+
+Sprob 0.8767 0.7621 +0.1147 0.677 < 10 −50 
+
+Table 1: Signal quality across all three tasks and LVLM architectures on the calibration set. For each signal we report the mean score on factual (F) and non-factual (NF) claims, their difference, AUROC, and Welch’s t-test 
+
+p-value. CLIP (CLIP-ViT-Large) is the external verifier used by CONFLVLM (Li et al., 2025); Tprob is the average log-probability of claim tokens ci force-decoded under the verification prompt context, serving as a token-confidence baseline distinct from the Yes/No judgment of Sprob ; Ssem and Sprob are our proposed conformity scores. Sprob 
+
+consistently achieves the strongest discrimination across all tasks and architectures. 
+
+LVLM architectures, Sprob consistently achieves the strongest separation between factual and non-factual claims. On MSCOCO, Sprob improves the factual/non-factual score gap from +0 .0196 (CLIP) and +0 .0523 (Tprob ) to +0 .2014 on LLaVA-1.5, while achieving the highest AUROC of 0.819. Similar trends hold for Phi-3.5-Vision, where 
+
+Sprob attains a separation of +0 .2397 and AUROC of 0.763, substantially outperforming the exter-nal CLIP verifier used by CONFLVLM. In con-trast, generation-time confidence signals ( Tprob )exhibit substantially weaker discrimination across most settings, suggesting that decoding confidence alone is insufficient for reliable factuality estima-tion. The baseline signals can in fact be anti-correlated with factuality: Tprob on document un-derstanding (LLaVA-1.5) yields a negative gap (−0.0182 , AUROC 0.493 ), and Ssem on Llama-3.2-Vision MSCOCO reverses similarly ( −0.0003 ,AUROC 0.488 ), assigning higher scores to non-6Task Model Method Response-level Claim-level Risk ↓ Abst. ↓ TPR ↑ Precision ↑ F1 ↑
+
+General Scene Understanding (MSCOCO) LLaVA-1.5 CONFLVLM 0.102 57% 0.953 0.343 0.504 
+
+Tprob 0.045 74% 0.981 0.354 0.520 
+
+Ssem 0.030 64% 0.981 0.366 0.533 
+
+Sprob 0.054 25% 0.974 0.414 0.581 
+
+Phi-3.5-Vision CONFLVLM 0.094 65% 0.945 0.254 0.401 
+
+Tprob 0.068 64% 0.947 0.263 0.412 
+
+Ssem 0.042 65% 0.969 0.269 0.421 
+
+Sprob 0.065 23% 0.951 0.295 0.450 
+
+Llama-3.2-Vision CONFLVLM 0.105 51% 0.936 0.157 0.269 
+
+Tprob 0.045 64% 0.973 0.154 0.266 
+
+Ssem 0.067 73% 0.967 0.151 0.262 
+
+Sprob 0.037 13% 0.940 0.180 0.302 
+
+Qwen2.5-VL-7B CONFLVLM 0.039 42% 0.959 0.142 0.247 
+
+Tprob 0.053 53% 0.971 0.139 0.243 
+
+Ssem 0.075 61% 0.959 0.135 0.237 
+
+Sprob 0.045 0% 0.852 0.194 0.316 
+
+Qwen3-VL-8B CONFLVLM 0.063 30% 0.943 0.081 0.150 
+
+Tprob 0.035 12% 0.974 0.086 0.158 
+
+Ssem 0.070 43% 0.961 0.079 0.146 
+
+Sprob 0.036 0% 0.794 0.116 0.202 
+
+Fine-Grained Captioning LLaVA-1.5 CONFLVLM 0.015 61 % 0.990 0.412 0.582 
+
+Tprob 0.022 83% 0.992 0.391 0.561 
+
+Ssem 0.052 91% 0.984 0.383 0.551 
+
+Sprob 0.003 78% 0.997 0.398 0.569 Phi-3.5-Vision CONFLVLM 0.047 63% 0.959 0.296 0.453 
+
+Tprob 0.030 77% 0.991 0.296 0.456 
+
+Ssem 0.039 88% 0.989 0.291 0.450 
+
+Sprob 0.059 8% 0.961 0.346 0.508 
+
+Document Understanding LLaVA-1.5 CONFLVLM 0.073 77% 0.976 0.437 0.604 
+
+Tprob 0.070 92% 0.985 0.431 0.599 
+
+Ssem 0.020 94% 0.996 0.434 0.605 
+
+Sprob 0.075 40% 0.978 0.462 0.627 
+
+Phi-3.5-Vision CONFLVLM 0.095 68% 0.970 0.239 0.384 
+
+Tprob 0.040 88% 0.987 0.239 0.385 
+
+Ssem 0.035 87% 0.990 0.243 0.390 
+
+Sprob 0.020 53% 0.995 0.252 0.402 
+
+Table 2: Conformal risk control on the test sets. The per-λ test uses α = 0 .10 , yielding a concurrently guaranteed level α′ = 0 .170 (Section 3.4). Response-level metrics (empirical risk, abstention) reflect the formal CRC guarantee; claim-level metrics (TPR, precision, F1) are diagnostic. Abstention is a response-level metric: the fraction of responses for which all generated claims are filtered by the calibrated threshold (and which incur zero loss under the selective-prediction convention, Section 3.4), not the fraction of individual claims filtered. CONFLVLM uses CLIP-ViT-Large as its conformity score (Li et al., 2025); Tprob is a token-probability baseline; Ssem and Sprob are our proposed conformity signals. All methods satisfy the bound; Sprob achieves the lowest abstention and highest F1 in most settings, while Ssem tends to be more conservative (higher abstention) through stricter filtering. 
+
+factual claims. These reversals show that neither generation-time confidence nor hidden-state stabil-ity is universally reliable across architectures and tasks, motivating the more direct Sprob signal. 
+
+Sprob generalizes consistently across tasks and architectures. The same trend holds beyond scene understanding. On fine-grained captioning, Sprob 
+
+achieves the highest AUROC across both models (0.765 and 0.770), with large factual/non-factual separations of +0 .1849 and +0 .2468 . On docu-ment understanding, despite the increased difficulty of structured financial documents, Sprob contin-ues to provide the strongest discrimination, reach-ing AUROC values up to 0.728. In comparison, 70.050.100.150.200.250.300.350.40  
+
+> Target risk
+> 0.0 0.1 0.2 0.3 0.4
+> Test empirical risk  y=
+> LLaVA-1.5 Phi-3.5-Vision Llama-3.2-Vision
+
+(a) 0.95 0.90 0.85 0.80 0.75 0.70 0.65 0.60  
+
+> Desired coverage 1
+> 020 40 60 80 100
+> Abstention rate (%)  LLaVA-1.5 Phi-3.5-Vision Llama-3.2-Vision
+
+(b) 50 100 150 200 250 300 350 400   
+
+> Calibration size Dcal
+> 0.00 0.02 0.04 0.06 0.08 0.10 0.12
+> Test empirical risk  = 0.1
+> LLaVA-1.5 Phi-3.5-Vision Llama-3.2-Vision
+
+(c) 50 100 150 200 250 300 350 400   
+
+> Calibration size Dcal
+> 020 40 60 80 100
+> Abstention rate (%)  LLaVA-1.5 Phi-3.5-Vision Llama-3.2-Vision
+
+(d) 
+
+Figure 2: MSCOCO evaluation across three LVLMs. (a) CRC validity under varying user target α ∈ [0 .05 , 0.40] :empirical risk remains below the target for all models, confirming the conformal guarantee. (b) Abstention rate as a function of desired coverage 1 − α, characterizing the utility cost of stricter risk control. (c) Test empirical risk and (d) abstention rate under varying calibration size Dcal , at the operating point used throughout (per-λ test at 
+
+α = 0 .10 , concurrently guaranteed level α′ = 0 .170 ; shown as α = 0 .1 in the panel legends). 
+
+Ssem alone yields only modest separability, with factual/non-factual score differences often below 
+
++0 .002 , though it remains statistically significant in most settings, confirming that hidden-state tra-jectories carry a weak but consistent factuality sig-nal. Overall, Sprob provides substantially stronger factuality cues than external verification or token confidence across all evaluated settings. 
+
+4.3 Conformal Risk Control Results 
+
+Table 2 reports conformal risk control performance on the held-out test sets, using a per-λ test at α =0.10 with a concurrently guaranteed level α′ =0.170 (Section 3.4). Following CONFLVLM (Li et al., 2025), we evaluate response-level empirical risk and abstention, which correspond directly to the formal CRC guarantee, while claim-level filter-ing efficiency (TPR), precision, and F1 are reported as diagnostic metrics. We compare IntroConfor-mal against CONFLVLM using its CLIP external verifier and the token-probability baseline Tprob .
+
+Sprob satisfies the CRC guarantee with substan-tially lower abstention and stronger claim-level discrimination. Across all tasks and LVLM archi-tectures, the proposed conformity signals satisfy the conformal risk requirement, with empirical test risk consistently below the guaranteed level. Ssem 
+
+is conservative, often yielding low empirical risk at the cost of high abstention, whereas Sprob delivers substantially lower abstention and stronger claim-level performance. On MSCOCO with LLaVA-1.5, 
+
+Sprob reduces abstention from 57% (CONFLVLM) and 64% ( Ssem ) to 25% while improving F1 from 0.504 to 0.581, and it improves F1 from 0.269 to 0.302 on Llama-3.2-Vision. Sprob achieves the highest F1 in three of four fine-grained captioning and document understanding settings, indicating that stronger signal-level discrimination translates into more efficient conformal filtering while retain-ing substantially more responses. Figure 2 further analyzes CRC behavior on MSCOCO across varying target risks and calibra-tion sizes. Figure 2a shows that empirical risk remains below the desired target across all models and values of α, confirming valid finite-sample con-formal control. Figure 2b illustrates the expected abstention–coverage trade-off, where stricter risk control induces higher abstention. Figures 2c and 2d sweep the calibration set size from 50 to 400 examples: calibration becomes increasingly efficient as it grows, with empirical risk approach-ing the target from below and abstention decreas-ing substantially between 100 and 200 samples before stabilizing. Extended CRC analyses for fine-grained captioning and document understanding are in Appendix A.3. 
+
+Method Claim Filtering Efficiency (TPR) ↑
+
+Response Accuracy ↑
+
+Woodpecker 59.1% 41% CoVe 37.0% 23% VCD ( β = 0.1) 35.5% 20% ICD ( β = 0.1, P) 41.1% 26% CONFLVLM 95.3% 90% IntroConformal 97.4% 91 %
+
+Table 3: Comparison with decoding- and verification-based methods on claim filtering efficiency and response accuracy. IntroConformal ( Sprob ) outperforms all base-lines, including CONFLVLM, while requiring no exter-nal models or decoding-time perturbations. 
+
+4.4 Comparison with Decoding- and Verification-Based Methods 
+
+We further compare IntroConformal against repre-sentative hallucination mitigation approaches, in-cluding Woodpecker (Yin et al., 2024), Chain-of-Verification (CoVe) (Dhuliawala et al., 2024), Vi-sual Contrastive Decoding (VCD) (Leng et al., 2024), and Instruction Contrastive Decoding (ICD) (Wang et al., 2024). Baseline results are taken directly from CONFLVLM, where all meth-8ods were evaluated on the LLaVA-1.5 general scene understanding benchmark using the same 100-image subset and original implementation set-tings. Response accuracy measures the fraction of responses in which all retained claims are factual. 
+
+IntroConformal outperforms all decoding- and verification-based baselines. As shown in Ta-ble 3, IntroConformal achieves the strongest overall performance, improving claim filtering efficiency from 95.3% to 97.4% over CONFLVLM while also achieving slightly higher response accuracy (91% vs. 90%). It further outperforms Woodpecker, CoVe, VCD, and ICD, all of which exhibit con-siderably lower filtering efficiency and response accuracy. These results suggest that signals derived directly from the model provide a more reliable ba-sis for factuality control than external verification heuristics or decoding-time perturbation strategies. 
+
+4.5 Robustness to Annotation Noise 
+
+Because the CRC guarantee is defined relative to the calibration labels, we assess how label noise affects calibration. On LLaVA-1.5 MSCOCO, we inject symmetric noise into the calibration labels at 
+
+5% , 10% , and 15% by randomly flipping that frac-tion of claim labels, recalibrate the threshold on the corrupted labels, and evaluate empirical risk on the held-out test set against the true labels, averaging over 20 noise draws (Table 4).                        
+
+> Noise ˆλTest Risk Abstention
+> 0% 0.940 0.054 25 .0% 5% 0.956 0.012 53 .5% 10% 0.961 0.001 67 .8% 15% 0.964 <0.001 77 .1%
+> Table 4: Robustness to calibration label noise on LLaVA-1.5 MSCOCO. Symmetric noise is injected into the calibration labels, and test risk is measured against the true labels ( 20 draws averaged). The 0% row repro-duces the LLaVA-1.5 operating point in Table 2 (per-λ
+> test at α= 0 .10 , concurrent guarantee α′= 0 .170 ). Test risk stays below the target at every noise level.
+
+Across all noise levels, the empirical test risk stays below the target α = 0 .10 and in fact de-creases as noise increases, from 0.054 at 0% noise to below 0.001 at 15% . The mechanism is struc-tural: random flips inflate the apparent risk on the calibration set, so the LTT procedure selects a larger threshold and filters more conservatively, raising abstention (from 25% to 77% ) rather than violating the bound. The guarantee therefore de-grades gracefully under symmetric annotation error, trading utility for continued validity. We note this analysis addresses symmetric noise; systematic an-notation bias, which need not inflate apparent risk, could in principle select a permissive threshold, which we flag in the Limitations. 
+
+5 Conclusion 
+
+We introduced IntroConformal, a training-free framework for conformal factuality control in LVLMs using introspective signals derived entirely from the model itself. By leveraging layer-wise semantic stability and verification probability, In-troConformal provides finite-sample, distribution-free guarantees on response-level non-factual risk without relying on external verifiers or auxiliary models. Across diverse vision–language gener-ation tasks, Sprob consistently achieves stronger factual/non-factual discrimination than CLIP-based verification and generation-time confidence signals, leading to lower abstention while maintaining valid conformal guarantees. These results indicate that model-internal signals provide a reliable predic-tive indicator of non-factual generation, and that combining model-derived conformity scores with CRC offers a principled foundation for trustworthy LVLM deployment in safety-critical applications. 
+
+Limitations 
+
+Ssem requires white-box access to hidden states, limiting it to architectures that expose internal ac-tivations, whereas Sprob needs only output logits at a single position and thus applies to any open-weight model or logit-exposing API, but not to APIs that withhold logits. Both signals require an additional forward pass per claim, comparable in cost to the CLIP scoring used by CONFLVLM. The guarantee is defined relative to the calibration labels rather than to human ground truth: while it is robust to symmetric label noise (Section 4.5), systematic annotation bias could select a permis-sive threshold, and our human validation used only a single annotator. The reported α′ = 0 .170 is the FWER-corrected bound for a user target of 
+
+α = 0 .10 , a benchmark demonstration point rather than a deployment recommendation, and the α-to-
+
+α′ gap narrows with calibration size. The guarantee assumes a fixed model under exchangeability, so fine-tuning, RLHF updates, or checkpoint changes (as on versioned APIs) require recalibration; relat-edly, since Sprob reads the model’s own verification logits, adversarially crafted inputs could bias the Yes/No logits and void the bound, motivating future 9work on robustifying introspective scores. Finally, as guarantees are probabilistic (holding with prob-ability at least 1 − δ), safety-critical deployment should retain human oversight. 
+
+Acknowledgments 
+
+We acknowledge Advanced Research Computing (ARC) at Virginia Tech for providing the compu-tational resources and technical support that con-tributed to the results reported in this paper. We thank the authors of CONFLVLM for sharing their resources. We also thank the reviewers for their constructive feedback, which helped improve this paper. 
+
+References 
+
+Marah Abdin, Jyoti Aneja, Hany Awadalla, Ahmed Awadallah, Ammar Ahmad Awan, Nguyen Bach, Amit Bahree, Arash Bakhtiari, Jianmin Bao, Harkirat Behl, Alon Benhaim, Misha Bilenko, Johan Bjorck, Sébastien Bubeck, Martin Cai, Qin Cai, Vishrav Chaudhary, Dong Chen, Dongdong Chen, and 110 others. 2024. Phi-3 technical report: A highly capa-ble language model locally on your phone. Preprint ,arXiv:2404.14219. Anastasios N. Angelopoulos and Stephen Bates. 2022. A gentle introduction to conformal prediction and distribution-free uncertainty quantification. Preprint ,arXiv:2107.07511. Anastasios N. Angelopoulos, Stephen Bates, Em-manuel J. Candès, Michael I. Jordan, and Lihua Lei. 2022. Learn then test: Calibrating predic-tive algorithms to achieve risk control. Preprint ,arXiv:2110.01052. Anastasios Nikolas Angelopoulos, Stephen Bates, Michael Jordan, and Jitendra Malik. 2021. Uncer-tainty sets for image classifiers using conformal pre-diction. In International Conference on Learning Representations .Kiana Avestimehr, Emily Aye, Zalan Fabian, and Erum Mushtaq. 2025. Detecting unreliable responses in generative vision-language models via visual uncer-tainty. In ICLR Workshop: Quantify Uncertainty and Hallucination in Foundation Models: The Next Frontier in Reliable AI .Amos Azaria and Tom Mitchell. 2023. The internal state of an llm knows when it’s lying. In Findings of the Association for Computational Linguistics: EMNLP 2023 , pages 967–976. Shuai Bai, Yuxuan Cai, Ruizhe Chen, Keqin Chen, Xionghui Chen, Zesen Cheng, Lianghao Deng, Wei Ding, Chang Gao, Chunjiang Ge, Wenbin Ge, Zhi-fang Guo, Qidong Huang, Jie Huang, Fei Huang, Binyuan Hui, Shutong Jiang, Zhaohai Li, Mingsheng Li, and 45 others. 2025a. Qwen3-vl technical report. 
+
+Preprint , arXiv:2511.21631. Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wen-bin Ge, Sibo Song, Kai Dang, Peng Wang, Shi-jie Wang, Jun Tang, Humen Zhong, Yuanzhi Zhu, Mingkun Yang, Zhaohai Li, Jianqiang Wan, Pengfei Wang, Wei Ding, Zheren Fu, Yiheng Xu, and 8 oth-ers. 2025b. Qwen2.5-vl technical report. Preprint ,arXiv:2502.13923. Stephen Bates, Anastasios Angelopoulos, Lihua Lei, Jitendra Malik, and Michael Jordan. 2021. Distribution-free, risk-controlling prediction sets. 
+
+Journal of the ACM (JACM) , 68(6):1–34. Yixin Bu, Guanyun Zou, Renzhi Wang, Runze Xia, Cunjun Wang, Hongliang Dai, Xiaoqing Ma, and Piji Li. 2026. Sampling-free uncertainty quantification via hidden state dynamics in language models. In 
+
+Proceedings of the AAAI Conference on Artificial Intelligence , volume 40, pages 30104–30111. Chao Chen, Kai Liu, Ze Chen, Yi Gu, Yue Wu, Mingyuan Tao, Zhihang Fu, and Jieping Ye. 2024. Inside: Llms’ internal states retain the power of hal-lucination detection. In The Twelfth International Conference on Learning Representations .John Cherian, Isaac Gibbs, and Emmanuel Candes. 2024. Large language model validity via enhanced conformal prediction methods. Advances in Neural Information Processing Systems , 37:114812–114842. Yung-Sung Chuang, Yujia Xie, Hongyin Luo, Yoon Kim, James R Glass, and Pengcheng He. 2024. Dola: Decoding by contrasting layers improves factuality in large language models. In The Twelfth International Conference on Learning Representations .Shehzaad Dhuliawala, Mojtaba Komeili, Jing Xu, Roberta Raileanu, Xian Li, Asli Celikyilmaz, and Jason Weston. 2024. Chain-of-verification reduces hallucination in large language models. In Findings of the association for computational linguistics: ACL 2024 , pages 3563–3578. Jinhao Duan, Hao Cheng, Shiqi Wang, Alex Zavalny, Chenan Wang, Renjing Xu, Bhavya Kailkhura, and Kaidi Xu. 2024. Shifting attention to relevance: To-wards the predictive uncertainty quantification of free-form large language models. In Proceedings of the 62nd Annual Meeting of the Association for Compu-tational Linguistics (Volume 1: Long Papers) , pages 5050–5063. Yonatan Geifman and Ran El-Yaniv. 2017. Selective classification for deep neural networks. Advances in neural information processing systems , 30. Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schel-ten, Alex Vaughan, Amy Yang, Angela Fan, Anirudh Goyal, Anthony Hartshorn, Aobo Yang, Archi Mi-tra, Archie Sravankumar, Artem Korenev, Arthur 
+
+10 Hinsvark, and 542 others. 2024. The llama 3 herd of models. Preprint , arXiv:2407.21783. Jiatong Han, Jannik Kossen, Muhammed Razzak, Lisa Schut, Shreshth A Malik, and Yarin Gal. 2024. Se-mantic entropy probes: Robust and cheap hallucina-tion detection in llms. In ICML 2024 Workshop on Foundation Models in the Wild .Wassily Hoeffding. 1963. Probability inequalities for sums of bounded random variables. Journal of the American statistical association , 58(301):13–30. Zheng Huang, Kai Chen, Jianhua He, Xiang Bai, Di-mosthenis Karatzas, Shijian Lu, and CV Jawahar. 2019. Icdar2019 competition on scanned receipt ocr and information extraction. In 2019 International Conference on Document Analysis and Recognition (ICDAR) , pages 1516–1520. IEEE. Zaid Khan and Yun Fu. 2024. Consistency and uncer-tainty: Identifying unreliable responses from black-box vision-language models for selective visual ques-tion answering. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recog-nition , pages 10854–10863. Aditya Khosla, Nityananda Jayadevaprakash, Bangpeng Yao, and Fei-Fei Li. 2011. Novel dataset for fine-grained image categorization: Stanford dogs. In Proc. CVPR workshop on fine-grained visual categoriza-tion (FGVC) , volume 2. Jonathan Krause, Michael Stark, Jia Deng, and Li Fei-Fei. 2013. 3d object representations for fine-grained categorization. In Proceedings of the IEEE inter-national conference on computer vision workshops ,pages 554–561. Lorenz Kuhn, Yarin Gal, and Sebastian Farquhar. 2023. Semantic uncertainty: Linguistic invariances for un-certainty estimation in natural language generation. In The Eleventh International Conference on Learn-ing Representations .J Richard Landis and Gary G Koch. 1977. The mea-surement of observer agreement for categorical data. 
+
+biometrics , pages 159–174. Gregory Kang Ruey Lau, Hieu Dao, and Bryan Kian Hsiang Low. 2025. Uncertainty quantification for mllms. In ICLR Workshop: Quantify Uncertainty and Hallucination in Foundation Models: The Next Frontier in Reliable AI .Sicong Leng, Hang Zhang, Guanzheng Chen, Xin Li, Shijian Lu, Chunyan Miao, and Lidong Bing. 2024. Mitigating object hallucinations in large vision-language models through visual contrastive decod-ing. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 13872–13882. Xiaomin Li, Zhou Yu, Ziji Zhang, Yingying Zhuang, Swair Shah, Narayanan Sadagopan, and Anurag Beni-wal. 2026. Semantic volume: Quantifying and de-tecting both external and internal uncertainty in llms. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 40, pages 31751–31759. Zhuohang Li, Chao Yan, Nicholas J Jackson, Wendi Cui, Bo Li, Jiaxin Zhang, and Bradley A Malin. 2025. Towards statistical factuality guarantee for large vision-language models. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 11446–11467. Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee. 2023. Visual instruction tuning. Advances in Neural Information Processing Systems , 36. Junzhang Liu, Zhecan Wang, Hammad Ayyubi, Haox-uan You, Chris Thomas, Rui Sun, Shih-Fu Chang, and Kai-Wei Chang. 2024. Detecting multimodal sit-uations with insufficient context and abstaining from baseless predictions. In Proceedings of the 32nd ACM International Conference on Multimedia , pages 8402–8411. Ercong Nie, Helmut Schmid, and Hinrich Schütze. 2025. Mechanistic understanding and mitigation of lan-guage confusion in english-centric large language models. In Findings of the Association for Computa-tional Linguistics: EMNLP 2025 , pages 690–706. Alexander Nikitin, Jannik Kossen, Yarin Gal, and Pekka Marttinen. 2024. Kernel language entropy: Fine-grained uncertainty quantification for llms from se-mantic similarities. Advances in Neural Information Processing Systems , 37:8901–8929. OpenAI. 2024. Gpt-4o system card. arXiv preprint arXiv:2410.21276 .Victor Quach, Adam Fisch, Tal Schuster, Adam Yala, Jae Ho Sohn, Tommi S Jaakkola, and Regina Barzi-lay. 2024. Conformal language modeling. In The Twelfth International Conference on Learning Repre-sentations .Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sas-try, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. 2021. Learn-ing transferable visual models from natural language supervision. In International conference on machine learning , pages 8748–8763. PMLR. Ramprasaath R Selvaraju, Purva Tendulkar, Devi Parikh, Eric Horvitz, Marco Tulio Ribeiro, Besmira Nushi, and Ece Kamar. 2020. Squinting at vqa models: In-trospecting vqa models with sub-questions. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 10003–10011. Meet Shah, Xinlei Chen, Marcus Rohrbach, and Devi Parikh. 2019. Cycle-consistency for robust visual question answering. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recog-nition , pages 6649–6658. 
+
+11 Harit Vishwakarma, Alan Mishler, Thomas Cook, Nic-colo Dalmasso, Natraj Raman, and Sumitra Ganesh. 2025. Prune’n predict: Optimizing llm decision-making with conformal prediction. In Forty-second International Conference on Machine Learning .Vladimir Vovk, Alexander Gammerman, and Glenn Shafer. 2005. Algorithmic learning in a random world . Springer. Catherine Wah, Steve Branson, Peter Welinder, Pietro Perona, and Serge Belongie. 2011. The caltech-ucsd birds-200-2011 dataset. Technical Report CNS-TR-2011-001, California Institute of Technology. Chenxi Wang, Xiang Chen, Ningyu Zhang, Bozhong Tian, Haoming Xu, Shumin Deng, and Huajun Chen. 2025. Mllm can see? dynamic correction decoding for hallucination mitigation. In International Con-ference on Learning Representations , volume 2025, pages 13712–13736. Xintong Wang, Jingheng Pan, Liang Ding, and Chris Biemann. 2024. Mitigating hallucinations in large vision-language models with instruction contrastive decoding. In Findings of the Association for Compu-tational Linguistics ACL 2024 , pages 15840–15853. Miao Xiong, Zhiyuan Hu, Xinyang Lu, Yifei Li, Jie Fu, Junxian He, and Bryan Hooi. 2024. Can llms express their uncertainty? an empirical evaluation of confidence elicitation in llms. In International Conference on Learning Representations , volume 2024, pages 23650–23678. Fanghua Ye, Mingming Yang, Jianhui Pang, Longyue Wang, Derek Wong, Emine Yilmaz, Shuming Shi, and Zhaopeng Tu. 2024. Benchmarking llms via uncertainty quantification. Advances in Neural Infor-mation Processing Systems , 37:15356–15385. Shukang Yin, Chaoyou Fu, Sirui Zhao, Tong Xu, Hao Wang, Dianbo Sui, Yunhang Shen, Ke Li, Xing Sun, and Enhong Chen. 2024. Woodpecker: Hallucina-tion correction for multimodal large language models. 
+
+Science China Information Sciences , 67(12):220105. Ruiyang Zhang, Hu Zhang, and Zhedong Zheng. 2024. Vl-uncertainty: Detecting hallucination in large vision-language model via uncertainty estimation. 
+
+arXiv preprint arXiv:2411.11919 .Zhenliang Zhang, Xinyu Hu, Huixuan Zhang, Junzhe Zhang, and Xiaojun Wan. 2025. Icr probe: Track-ing hidden state dynamics for reliable hallucination detection in llms. In Proceedings of the 63rd An-nual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 17986– 18002. 
+
+A Appendix 
+
+This section discusses the following topics in detail: • Algorithm for IntroConformal (Appendix A.1) • Qualitative Examples of IntroConformal (Ap-pendix A.2) • CRC Behavior Across Tasks and Calibration Sizes (Appendix A.3) • Effect of Layer Selection on Semantic Stabil-ity (Appendix A.4) • Claim Decomposition and Annotation Prompts (Appendix A.5) 
+
+A.1 Algorithm for IntroConformal 
+
+Algorithm 1 summarizes the full IntroConformal pipeline. For each calibration claim, we extract 
+
+Ssem from hidden-state representations and Sprob 
+
+from the model’s binary verification judgment in a single forward pass. The calibration phase applies the Learn–Then–Test procedure with Hoeffding’s inequality to select the least conservative threshold satisfying the target risk α. Formal definitions and theoretical guarantees appear in the main text. 
+
+A.2 Qualitative Examples of IntroConformal IntroConformal correctly filters all non-factual claims. Figure 3a illustrates a representative case where Sprob achieves perfect claim-level filter-ing. Given a black-and-white photograph of three baseball players, LLaVA-1.5 generates a response containing two non-factual claims: “Each player is holding a baseball bat” ( Sprob = 0 .619 ) and “The scene captures the camaraderie and teamwork among the players” ( Sprob = 0 .882 ). Both fall be-low the calibrated threshold ˆλprob = 0 .940 , while all four factual claims score above it ( Sprob ∈
+
+[0 .947 , 0.972] ). IntroConformal retains the entire factual set and filters both non-factual claims, yield-ing a fully grounded response with zero non-factual content among retained claims. 
+
+Sprob is sensitive near the decision boundary, reflecting calibrated conservatism. Figure 3b illustrates the risk–utility trade-off inherent to con-formal risk control at stringent target levels. Given a pizza image, LLaVA-1.5 generates 6 claims, two of which are non-factual: “There are a few cups on the table” ( Sprob = 0 .696 ) and “A person is par-tially visible in the background” ( Sprob = 0 .385 ); both are correctly filtered. The factual claim “There is a wine glass on the table” ( Sprob = 0 .927 ) falls just below ˆλprob = 0 .940 , reflecting the sensitiv-ity of the decision boundary where Sprob is close to the threshold, and the borderline claim “The scene is set in a cozy and inviting atmosphere” 12 Provide a detailed description of the given image. 
+
+LLaVA-1.5 
+
+C1: The image is a black and white photograph. 
+
+C2: The photograph features three baseball players. 
+
+C3: The players are standing next to each other. 
+
+C4: The players are all wearing baseball uniforms. 
+
+C5: Each player is holding a baseball bat. 
+
+C6: The scene captures the camaraderie and teamwork among 
+
+the players. 
+
+Decomposed Claims 
+
+Retained Claims 
+
+Filtered Claims 
+
+C1: The image is a black and white photograph. 
+
+(Sprob=0.972). 
+
+C2: The photograph features three baseball players. 
+
+(Sprob=0.955). 
+
+C3: The players are standing next to each other. 
+
+(Sprob=0.947) 
+
+C4: The players are all wearing baseball uniforms. (Sprob=0.951) 
+
+C5: Each player is holding a baseball bat. 
+
+(Sprob=0.619). 
+
+C6: The scene captures the camaraderie and teamwork among the players. (Sprob= 0.882). 
+
+> The image is a black and white photograph featuring three baseball players posing for a picture. They are all wearing baseball uniforms and are standing next to each other, with one player on the left, another in the middle, and the third on the right. Each player is holding a baseball bat, with one bat located in the middle of the group, another on the right
+> side, and the third on the left side. The scene captures the camaraderie
+> and teamwork among the players, reflecting the spirit of the sport. The overall atmosphere of the image is nostalgic, as it captures a moment in the history of baseball.
+
+Response Y  ෡𝝀 prob = 0.940 (a) A general scene understanding image whose LVLM response is decomposed into 6 atomic claims. IntroConformal retains all 4 factual claims (green) and correctly filters both non-factual claims (red) using Sprob , with ˆλprob = 0 .940 .Provide a detailed description of the given image. 
+
+LLaVA-1.5 
+
+C1: There is a dining table with a white plate holding a pizza. 
+
+C2: The pizza is topped with olives. 
+
+C3: There are a few cups on the table. 
+
+C4: There is a wine glass on the table. 
+
+C5: A person is partially visible in the background. 
+
+C6: The scene is set in a cozy and inviting atmosphere. 
+
+Decomposed Claims 
+
+Retained Claims 
+
+Filtered Claims 
+
+C1: There is a dining table with a white plate holding a pizza. (Sprob=0.967). 
+
+C2: The pizza is topped with olives. 
+
+(Sprob=0.943). 
+
+C3: There are a few cups on the table. 
+
+(Sprob=0.696). 
+
+C4: There is a wine glass on the table. 
+
+(Sprob=0.927) 
+
+C5: A person is partially visible in the 
+
+background. (Sprob= 0.385). 
+
+C6: The scene is set in a cozy and inviting atmosphere. (Sprob= 0.827). 
+
+> The image features a dining table with a delicious pizza placed on a white plate. The pizza is topped with olives and meat, making it a mouth-watering meal. The table is set with various items, including a wine glass, a few cups, a fork, and a knife. A person is partially
+> visible in the background, suggesting the meal is being enjoyed in
+> company. The scene is set in a cozy and inviting atmosphere, with two bowls and a bottle also visible on the table.
+
+Response Y  ෡𝝀 prob = 0.940 
+
+(b) A general scene understanding image whose response is decomposed into 6 atomic claims. IntroConformal correctly filters both non-factual claims (red) while retaining 2 factual claims (green); two additional factual claims are conservatively filtered (black), reflecting the risk–utility trade-off at stringent risk levels, with ˆλprob = 0 .940 .
+
+Figure 3: Qualitative examples of IntroConformal at the operating point used throughout (per-λ test at α = 0 .10 ,concurrently guaranteed level α′ = 0 .170 ). 
+
+(Sprob = 0 .827 ) is likewise filtered. This conser-vative filtering is expected at the operating point (per-λ α = 0 .10 , guaranteed α′ = 0 .170 ) and is a principled consequence of the guarantee: the threshold is set to bound the non-factual rate among retained claims, which necessarily filters some bor-derline claims. 
+
+A.3 CRC Behavior Across Tasks and Calibration Sizes 
+
+Figures 4 and 5 extend the CRC analysis from the main text to fine-grained captioning and document understanding, respectively. Across both tasks and all evaluated architectures, the conformal guaran-tee holds consistently: empirical risk remains be-low the target α for all values in [0 .05 , 0.40] , con-firming valid finite-sample risk control (Figures 4a and 5a). The abstention–coverage trade-off (Fig-ures 4b and 5b) follows the expected monotonic pattern, where stricter coverage requirements in-duce higher abstention, with Phi-3.5-Vision exhibit-ing a sharper abstention increase at high coverage thresholds compared to LLaVA-1.5. Figures 4c, 4d, 5c, and 5d analyze the effect of calibration size |D cal |, swept from 50 to 400 exam-ples, at the operating point used throughout (per-λ
+
+test at α = 0 .10 , concurrently guaranteed level 
+
+α′ = 0 .170 ). On fine-grained captioning, LLaVA-1.5 achieves near-zero empirical risk even at small calibration sizes, reflecting the stronger intrinsic signal quality on this task, while Phi-3.5-Vision re-quires larger calibration sets before risk stabilizes. On document understanding, both models show a consistent decrease in abstention as |D cal | grows, with abstention plateauing beyond |D cal | ≈ 200 ,consistent with the O(1 /√n) shrinkage of the Ho-effding upper confidence bound. These results confirm that the calibration efficiency observed on 13 Algorithm 1 IntroConformal: Factuality control via introspective signals  
+
+> 1:
+
+Input: Calibration set Dcal =
+
+{(Ii, X i, Ci, Li)}ni=1 ; risk level α; fail-ure probability δ; conformity score 
+
+S(·) ∈ { Ssem , S prob }. 
+
+> 2:
+
+Output: Calibrated threshold ˆλ. 
+
+> 3:
+
+Step 1: Extract introspective signals (single forward pass per claim).  
+
+> 4:
+
+for i = 1 to n do  
+
+> 5:
+
+for each claim c ∈ C i do  
+
+> 6:
+
+Run LVLM inference with hidden-state outputs on verification prompt.  
+
+> 7:
+
+Compute Ssem (c) via cosine similarity of mid- and late-layer hidden states.  
+
+> 8:
+
+Compute Sprob (c) via P (Yes )/(P (Yes )+ 
+
+P (No )) at answer position.  
+
+> 9:
+
+end for  
+
+> 10:
+
+end for  
+
+> 11:
+
+Step 2: Define candidate thresholds and ˆα. 
+
+> 12:
+
+Λ ← { S(c) : i ∈ [n], c ∈ C i}. 
+
+> 13:
+
+Optionally augment Λ with a value below 
+
+min(Λ) to represent retaining all claims.  
+
+> 14:
+
+ˆα ← α −
+
+q log( m/δ )2n −
+
+q log(1 /δ )2n
+
+ 
+
+> 15:
+
+Step 3: Compute per-response risk for each threshold.  
+
+> 16:
+
+for i = 1 to n do  
+
+> 17:
+
+for each λ ∈ Λ do  
+
+> 18:
+
+ˆCλ(Ii, X i) ← { c ∈ C i : S(c) ≥ λ}. 
+
+> 19:
+
+mi(λ) ← ˆCλ(Ii, X i) . 
+
+> 20:
+
+if mi(λ) = 0 then  
+
+> 21:
+
+ri(λ) ← 0 {Abstention}  
+
+> 22:
+
+else  
+
+> 23:
+
+ri(λ) ← 1
+
+> mi(λ)
+
+P  
+
+> c∈ˆCλ(Ii,X i)
+
+L(c, I i) 
+
+> 24:
+
+end if  
+
+> 25:
+
+end for  
+
+> 26:
+
+end for  
+
+> 27:
+
+Step 4: Compute aggregate risk and UCB for each threshold.  
+
+> 28:
+
+for each λ ∈ Λ do  
+
+> 29:
+
+ˆR(λ) ← 1
+
+> n
+
+Pni=1 ri(λ). 
+
+> 30:
+
+UCB δ(λ) ← ˆR(λ) + 
+
+q log(1 /δ )2n 
+
+> 31:
+
+end for  
+
+> 32:
+
+Step 5: Select least conservative concur-rently valid threshold.  
+
+> 33:
+
+ˆλ ← min {λ ∈ Λ : UCB δ(λ) ≤ ˆα}. 
+
+> 34:
+
+Return: ˆλ.MSCOCO in the main text generalizes across tasks, and that approximately 200 calibration samples suffice for stable conformal risk control in practice. 
+
+A.4 Effect of Layer Selection on Semantic Stability 
+
+Table 5 compares two layer selection strategies for computing the semantic stability score. The old configuration compares hidden-state represen-tations from the first quarter to the network mid-point against the final quarter of layers, following earlier mechanistic interpretability work (Azaria and Mitchell, 2023; Chen et al., 2024). The new configuration instead compares the 8 layers im-mediately preceding the final block against the final 4 layers, motivated by recent observations that factual representations tend to stabilize in late-stage hidden-state trajectories, where the model commits to its final output (Wang et al., 2025; Bu et al., 2026). While the old configuration achieves higher AUROC in several settings (e.g., 0.578 vs. 0.556 on general scene understanding with LLaVA-1.5), it exhibits two failure modes. First, on fine-grained captioning with LLaVA-1.5, the directional difference is negative ( −0.0029 ), meaning the old configuration assigns higher scores to non-factual than factual claims, reversing the intended ordering. Second, on fine-grained cap-tioning with Phi-3.5-Vision, it fails to reach signifi-cance ( p = 2 .1 × 10 −1), indicating no reliable sep-aration. We acknowledge that the old configuration achieves notably higher AUROC on document un-derstanding with Phi-3.5-Vision (0.628 vs. 0.530), a gap that warrants attention; however, we priori-tize cross-architecture consistency over per-setting AUROC maximization, as a score with reversed or unreliable ordering in some settings cannot serve as a dependable conformity score. The new configu-ration yields consistent directional separation with statistically significant results across the tasks and architectures in this ablation (LLaVA-1.5 and Phi-3.5-Vision), and we adopt it as our default through-out all experiments. 
+
+A.5 Claim Decomposition and Annotation Prompts 
+
+We provide the full prompts used for claim decom-position and factuality annotation. The annotation models and reliability study are described in Sec-tion 4.1; here we give the exact prompt text. The claim decomposition prompt and the fine-grained captioning annotation prompt are shown below, fol-14 0.050.100.150.200.250.300.350.40  
+
+> Target risk
+> 0.0 0.1 0.2 0.3 0.4
+> Test empirical risk  y=
+> LLaVA-1.5 Phi-3.5-Vision
+
+(a) 0.95 0.90 0.85 0.80 0.75 0.70 0.65 0.60  
+
+> Desired coverage 1
+> 020 40 60 80 100
+> Abstention rate (%)
+> LLaVA-1.5 Phi-3.5-Vision
+
+(b) 50 100 150 200 250 300 350 400   
+
+> Calibration size Dcal
+> 0.00 0.02 0.04 0.06 0.08 0.10 0.12
+> Test empirical risk  = 0.1
+> LLaVA-1.5 Phi-3.5-Vision
+
+(c) 50 100 150 200 250 300 350 400   
+
+> Calibration size Dcal
+> 020 40 60 80 100
+> Abstention rate (%)
+> LLaVA-1.5 Phi-3.5-Vision
+
+(d) 
+
+Figure 4: Fine-Grained Captioning evaluation across two LVLM architectures. (a) CRC validity under varying user target α: empirical risk remains below the target for all models, confirming the conformal guarantee. (b) 
+
+Abstention rate as a function of desired coverage 1 − α, characterizing the utility cost of stricter risk control. (c) 
+
+Test empirical risk and (d) abstention rate under varying calibration size Dcal (swept 50–400), at the operating point used throughout (per-λ test at α = 0 .10 , concurrently guaranteed level α′ = 0 .170 ; shown as α = 0 .1 in the panel legends). 0.050.100.150.200.250.300.350.40  
+
+> Target risk
+> 0.0 0.1 0.2 0.3 0.4
+> Test empirical risk  y=
+> LLaVA-1.5 Phi-3.5-Vision
+
+(a) 0.95 0.90 0.85 0.80 0.75 0.70 0.65 0.60  
+
+> Desired coverage 1
+> 020 40 60 80 100
+> Abstention rate (%)
+> LLaVA-1.5 Phi-3.5-Vision
+
+(b) 50 100 150 200 250 300 350 400   
+
+> Calibration size Dcal
+> 0.00 0.02 0.04 0.06 0.08 0.10 0.12
+> Test empirical risk  = 0.1
+> LLaVA-1.5 Phi-3.5-Vision
+
+(c) 50 100 150 200 250 300 350 400   
+
+> Calibration size Dcal
+> 020 40 60 80 100
+> Abstention rate (%)
+> LLaVA-1.5 Phi-3.5-Vision
+
+(d) 
+
+Figure 5: Document understanding evaluation across two LVLM architectures. (a) CRC validity under varying user target α: empirical risk remains below the target for all models, confirming the conformal guarantee. (b) 
+
+Abstention rate as a function of desired coverage 1 − α, characterizing the utility cost of stricter risk control. (c) 
+
+Test empirical risk and (d) abstention rate under varying calibration size Dcal (swept 50–400), at the operating point used throughout (per-λ test at α = 0 .10 , concurrently guaranteed level α′ = 0 .170 ; shown as α = 0 .1 in the panel legends). 
+
+Task Model Config Mean (F) Mean (NF) Diff. AUROC ↑ p-value General Scene Understanding LLaVA-1.5 Old 0.4952 0.4887 +0.0065 0.578 2.7 × 10 −13 
+
+New 0.8689 0.8674 +0.0015 0.556 3.1 × 10 −9
+
+Phi-3.5-Vision Old 0.2710 0.2618 +0.0092 0.601 6.2 × 10 −26 
+
+New 0.9041 0.9022 +0.0019 0.576 2.2 × 10 −10 
+
+Fine-Grained Captioning LLaVA-1.5 Old 0.4921 0.4950 -0.0029 0.471 6.2 × 10 −4
+
+New 0.8703 0.8695 +0.0008 0.536 3.7 × 10 −4
+
+Phi-3.5-Vision Old 0.2772 0.2765 +0.0008 0.520 2.1 × 10 −1
+
+New 0.9033 0.9025 +0.0008 0.530 6.4 × 10 −3
+
+Document Understanding LLaVA-1.5 Old 0.4846 0.4814 +0.0032 0.555 4.7 × 10 −10 
+
+New 0.8710 0.8691 +0.0018 0.575 5.0 × 10 −21 
+
+Phi-3.5-Vision Old 0.2458 0.2364 +0.0094 0.628 3.9 × 10 −55 
+
+New 0.8837 0.8818 +0.0019 0.530 5.7 × 10 −6
+
+Table 5: Effect of Ssem layer selection on signal quality. Old takes M to span the first quarter to the network midpoint and T the final quarter. New takes M to be the 8 layers preceding the final block and T the final 4 layers, following Wang et al. (2025) and Bu et al. (2026). Results are reported on the calibration set for LLaVA-1.5 and Phi-3.5-Vision. 
+
+lowed by the document understanding annotation prompt. The three share an identical claim-level JSON output format; the document prompt differs only in its error taxonomy, which covers field mis-interpretation, numerical and quantitative errors, date errors, item errors, and OCR or layout issues. 15 Claim decomposition prompt System “Given a model-generated response about an image, decompose it into a list of atomic, verifiable claims.” 
+
+User “Statement: {response} Break down the above statement into a list of atomic claims. Each claim must: • Express exactly one fact (no compound claims joined by ‘and’/‘or’) • Be self-contained, with all referents resolved (no pronouns like ‘it’, ‘they’, ‘this’) • Be directly supported by the original statement (do not add inferences or interpretations) • Ensure all distinct facts from the original statement are represented • Be a short, declarative sentence • Omit interpretive or evaluative claims that cannot be verified from the image alone (e.g., ‘the scene is dynamic’, ‘a majestic sight’, ‘a serene backdrop’) • If a claim contains a hedge (‘possibly’, ‘appears to’, ‘seems to’, ‘might be’), restate it as a direct assertion without the hedge Output only a numbered list in the format: 1. ⟨claim ⟩
+
+2. ⟨claim ⟩
+
+. . . 
+
+Do not include any explanation or preamble.” 16 Factuality annotation prompt for Fine-Grained Captioning System “You are an expert annotator tasked with evaluating statements generated by a vision-language model (VLM). Given an image and a list of claims, verify the factuality of each claim based on how well it aligns with the provided image. Focus only on significant or material correctness, ignoring minor differences or non-essential details. The errors are categorized as follows: 1. Object Identification : The claim involves hallucinated or wrongly identified objects, including species, breed, or model misidentification (e.g., wrong bird species, wrong car model, wrong dog breed). Ignore minor distinctions between similar objects unless it fundamentally changes the meaning of the claim. 2. Attribute Accuracy : The claim involves incorrect visual attributes (e.g., color, size, shape, markings, body parts). Only flag if critical to the understanding of the claim. 3. Spatial Relations : The claim involves incorrect spatial relationships between objects. Only flag if they significantly change the scene. 4. Interaction/Action Accuracy : The claim involves incorrect or hallucinated action or interac-tion. 5. Quantitative Information : The claim involves incorrect numeric details (e.g., wrong object count).” 
+
+User “Given the image and the caption below, determine whether each claim is supported by the image. Caption: {caption} Claims: {numbered_claims} For each claim, assign: • true : the claim is factually correct and supported by visible evidence in the image • false : the claim is incorrect, hallucinated, or not visually verifiable The output list length must exactly match the number of input claims. Preserve the exact order of the input claims. Output format (one boolean per claim, in order): 
+
+{"labels": [true, false, true, ...]} ”17 Factuality annotation prompt for Document Understanding System “You are an expert annotator tasked with evaluating statements generated by a Document AI model. Given a document image and a list of claims, verify the factuality of each claim based on how well it aligns with the provided document. The errors are categorized as follows: 1. Field Misinterpretation: Incorrectly identifying important fields such as mistaking “Subtotal” for “Total Amount”, or misrecognizing non-existing fields. 2. Numerical and Quantitative Errors: Incorrect amounts, totals, or quantity values, as well as calculation discrepancies (e.g., subtotal, tax, and total relationship). 3. Date Error: Misrecognizing date or misinterpreting date formats. 4. Item Error: Misrecognizing item or item details, or falsely identifying non-existing items. 5. Other Errors: Other errors such as misspelling or misrecognizing characters, layout, and alignment issues. Return ONLY valid JSON with no explanation and no markdown.” 
+
+User “Given the document image and the claims below, determine whether each claim is supported by the document. Claims: {numbered_claims} For each claim, assign: • true: the claim is factually correct and supported by visible content in the document • false: the claim is incorrect, hallucinated, or not verifiable from the document The output list length must exactly match the number of input claims. Preserve the exact order of the input claims. Output format: {“labels”: [true, false, true, ...]}” 
+
+> Figure 6: Factuality annotation prompt for the document understanding task (SROIE). The claim decomposition and output format are identical to the other tasks; only the error taxonomy is task-specific.
+
+18
