@@ -313,6 +313,49 @@ class SelectPapersDeepPriorityModeTest(unittest.TestCase):
         deep_scores = [float(item.get("llm_score", 0)) for item in result.get("deep_dive", [])]
         self.assertEqual(deep_scores, sorted(deep_scores, reverse=True))
 
+    def test_budgeted_mode_keeps_top_four_without_low_score_backfill(self):
+        candidates = [
+            {"id": "p-1", "llm_score": 9.7},
+            {"id": "p-2", "llm_score": 9.2},
+            {"id": "p-3", "llm_score": 8.6},
+            {"id": "p-4", "llm_score": 8.4},
+            {"id": "p-5", "llm_score": 7.8},
+            {"id": "p-low", "llm_score": 6.9},
+        ]
+
+        result = self.mod.process_mode_budgeted(
+            candidates=candidates,
+            mode="standard",
+            min_score=8.0,
+            max_total=4,
+            max_deep=3,
+        )
+
+        deep_ids = [item.get("id") for item in result.get("deep_dive", [])]
+        quick_ids = [item.get("id") for item in result.get("quick_skim", [])]
+        self.assertEqual(deep_ids, ["p-1", "p-2", "p-3"])
+        self.assertEqual(quick_ids, ["p-4"])
+        self.assertEqual(result.get("stats", {}).get("low_score_backfill"), False)
+
+    def test_budgeted_mode_returns_fewer_when_only_fewer_meet_threshold(self):
+        candidates = [
+            {"id": "p-high", "llm_score": 8.4},
+            {"id": "p-medium", "llm_score": 7.3},
+            {"id": "p-low", "llm_score": 6.9},
+        ]
+
+        result = self.mod.process_mode_budgeted(
+            candidates=candidates,
+            mode="standard",
+            min_score=8.0,
+            max_total=4,
+            max_deep=3,
+        )
+
+        selected = result.get("deep_dive", []) + result.get("quick_skim", [])
+        self.assertEqual([item.get("id") for item in selected], ["p-high"])
+        self.assertNotIn("p-low", [item.get("id") for item in selected])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -37,6 +37,50 @@ class LlmRefineRecoveryTest(unittest.TestCase):
             "score": score,
         }
 
+    def test_select_llm_candidate_ids_caps_and_prefers_cross_query_support(self):
+        queries = [
+            {
+                "ranked": [
+                    {"paper_id": "single", "star_rating": 5, "score": 1.0},
+                    {"paper_id": "shared", "star_rating": 5, "score": 0.9},
+                    {"paper_id": "below", "star_rating": 3, "score": 1.0},
+                ]
+            },
+            {
+                "ranked": [
+                    {"paper_id": "shared", "star_rating": 5, "score": 1.0},
+                    {"paper_id": "second", "star_rating": 4, "score": 0.8},
+                ]
+            },
+        ]
+
+        selected = self.mod.select_llm_candidate_ids(
+            queries,
+            min_star=4,
+            max_candidates=2,
+        )
+
+        self.assertEqual(selected, ["shared", "single"])
+        self.assertNotIn("below", selected)
+
+    def test_select_llm_candidate_ids_zero_cap_preserves_all_eligible(self):
+        queries = [
+            {
+                "ranked": [
+                    {"paper_id": "p-1", "star_rating": 5, "score": 1.0},
+                    {"paper_id": "p-2", "star_rating": 4, "score": 0.8},
+                ]
+            }
+        ]
+
+        selected = self.mod.select_llm_candidate_ids(
+            queries,
+            min_star=4,
+            max_candidates=0,
+        )
+
+        self.assertEqual(selected, ["p-1", "p-2"])
+
     def test_recover_filter_results_retries_for_missing_ids(self):
         docs = [
             {"id": "p-1", "content": "doc1"},

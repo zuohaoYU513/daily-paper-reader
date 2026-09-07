@@ -987,6 +987,51 @@ def process_mode_all_quick_min_score(
         "quick_skim": sanitize_items(picked),
     }
 
+
+def process_mode_budgeted(
+    candidates: List[Dict[str, Any]],
+    mode: str,
+    min_score: float,
+    max_total: int,
+    max_deep: int,
+) -> Dict[str, Any]:
+    """Keep only the globally strongest papers without low-score backfilling."""
+    threshold = max(float(min_score), 0.0)
+    total_cap = max(int(max_total), 0)
+    deep_cap = min(max(int(max_deep), 0), total_cap)
+    eligible = sort_by_score(
+        [p for p in candidates if float(p.get("llm_score", 0)) >= threshold]
+    )
+    selected = eligible[:total_cap]
+
+    deep_selected: List[Dict[str, Any]] = []
+    quick_selected: List[Dict[str, Any]] = []
+    for paper in selected:
+        score = float(paper.get("llm_score", 0))
+        if score >= 8.0 and len(deep_selected) < deep_cap:
+            deep_selected.append(paper)
+        else:
+            quick_selected.append(paper)
+
+    stats = {
+        "mode": mode,
+        "budgeted": True,
+        "min_score": threshold,
+        "max_total": total_cap,
+        "deep_cap": deep_cap,
+        "eligible_candidates": len(eligible),
+        "deep_selected": len(deep_selected),
+        "quick_selected": len(quick_selected),
+        "low_score_backfill": False,
+    }
+    return {
+        "mode": mode,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "stats": stats,
+        "deep_dive": sanitize_items(deep_selected),
+        "quick_skim": sanitize_items(quick_selected),
+    }
+
 def force_all_into_quick(result: Dict[str, Any]) -> Dict[str, Any]:
     """
     将精读区合并进速览区，确保所有论文都归入 quick_skim。
@@ -1060,6 +1105,24 @@ def main() -> None:
         type=float,
         default=None,
         help="When set, output ALL candidates with llm_score >= min_score into quick_skim (no caps).",
+    )
+    parser.add_argument(
+        "--min-score",
+        type=float,
+        default=float(os.getenv("DPR_SELECT_MIN_SCORE") or "0"),
+        help="minimum LLM relevance score for budgeted selection.",
+    )
+    parser.add_argument(
+        "--max-total",
+        type=int,
+        default=int(os.getenv("DPR_SELECT_MAX_TOTAL") or "0"),
+        help="maximum total recommendations in budgeted mode; 0 keeps legacy selection.",
+    )
+    parser.add_argument(
+        "--max-deep",
+        type=int,
+        default=int(os.getenv("DPR_SELECT_MAX_DEEP") or "0"),
+        help="maximum deep summaries in budgeted mode.",
     )
 
     args = parser.parse_args()
@@ -1203,7 +1266,15 @@ def main() -> None:
     log_substep("5.4", "按模式生成推荐结果", "START")
     for mode in modes:
         cfg = MODES.get(mode) or {}
-        if args.all_quick_min_score is not None:
+        if args.max_total > 0:
+            result = process_mode_budgeted(
+                candidates=candidates,
+                mode=mode,
+                min_score=args.min_score,
+                max_total=args.max_total,
+                max_deep=args.max_deep,
+            )
+        elif args.all_quick_min_score is not None:
             result = process_mode_all_quick_min_score(
                 candidates=candidates,
                 mode=mode,

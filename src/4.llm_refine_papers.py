@@ -312,6 +312,68 @@ def chunk_list(items: List[Any], batch_size: int) -> List[List[Any]]:
     return [items[i : i + batch_size] for i in range(0, len(items), batch_size)]
 
 
+def select_llm_candidate_ids(
+    queries: List[Dict[str, Any]],
+    min_star: int,
+    max_candidates: int = 0,
+) -> List[str]:
+    """Select the strongest unique rerank candidates before paid LLM filtering.
+
+    Candidates are ranked by their best reranker star/score first, then by
+    cross-query reciprocal-rank support. A non-positive cap preserves the
+    historical unlimited behaviour.
+    """
+    metrics: Dict[str, Dict[str, Any]] = {}
+    first_seen = 0
+
+    for query in queries:
+        ranked = query.get("ranked") or []
+        for rank_index, item in enumerate(ranked, start=1):
+            try:
+                star = float(item.get("star_rating", 0) or 0)
+            except (TypeError, ValueError):
+                star = 0.0
+            if star < min_star:
+                continue
+
+            pid = _norm_text(item.get("paper_id") or item.get("id"))
+            if not pid:
+                continue
+            try:
+                score = float(item.get("score", 0) or 0)
+            except (TypeError, ValueError):
+                score = 0.0
+
+            if pid not in metrics:
+                metrics[pid] = {
+                    "best_star": star,
+                    "best_score": score,
+                    "rrf_support": 0.0,
+                    "appearances": 0,
+                    "first_seen": first_seen,
+                }
+                first_seen += 1
+            entry = metrics[pid]
+            entry["best_star"] = max(float(entry["best_star"]), star)
+            entry["best_score"] = max(float(entry["best_score"]), score)
+            entry["rrf_support"] = float(entry["rrf_support"]) + 1.0 / (60 + rank_index)
+            entry["appearances"] = int(entry["appearances"]) + 1
+
+    ordered = sorted(
+        metrics,
+        key=lambda pid: (
+            -float(metrics[pid]["best_star"]),
+            -float(metrics[pid]["best_score"]),
+            -float(metrics[pid]["rrf_support"]),
+            -int(metrics[pid]["appearances"]),
+            int(metrics[pid]["first_seen"]),
+            pid,
+        ),
+    )
+    cap = max(int(max_candidates or 0), 0)
+    return ordered[:cap] if cap else ordered
+
+
 def build_repeated_user_prompt(query: str) -> str:
     base = _norm_text(query)
     if not base:
@@ -772,6 +834,7 @@ def process_file(
     filter_model: str,
     max_output_tokens: int,
     filter_concurrency: int,
+    max_candidates: int = 0,
 ) -> None:
     # 检查输入文件是否存在，如果不存在说明今天没有新论文，优雅退出
     if not os.path.exists(input_path):
@@ -804,17 +867,11 @@ def process_file(
         f"concurrency={filter_concurrency}"
     )
 
-    candidate_ids: List[str] = []
-    for q in queries:
-        ranked = q.get("ranked") or []
-        for item in ranked:
-            if item.get("star_rating", 0) >= min_star:
-                pid = str(item.get("paper_id"))
-                if pid:
-                    candidate_ids.append(pid)
-
-    candidate_ids = unique_tagged([{"tag": pid} for pid in candidate_ids])
-    candidate_ids = [item["tag"] for item in candidate_ids]
+    candidate_ids = select_llm_candidate_ids(
+        queries,
+        min_star=min_star,
+        max_candidates=max_candidates,
+    )
     if not candidate_ids:
         log("[WARN] no candidates found with star_rating >= min_star.")
         save_json(data, output_path)
@@ -841,7 +898,8 @@ def process_file(
     batches = chunk_list(docs, batch_size)
     log(
         f"[INFO] global candidates={len(docs)} batches={len(batches)} "
-        f"| user_requirements={len(user_requirements)}"
+        f"| user_requirements={len(user_requirements)} "
+        f"| max_candidates={max_candidates or 'unlimited'}"
     )
 
     merged: Dict[str, Dict[str, Any]] = {}
@@ -982,6 +1040,12 @@ def main() -> None:
         default=DEFAULT_FILTER_CONCURRENCY,
         help="concurrent LLM filter requests.",
     )
+    parser.add_argument(
+        "--max-candidates",
+        type=int,
+        default=int(os.getenv("DPR_LLM_MAX_CANDIDATES") or "0"),
+        help="maximum unique rerank candidates sent to the paid LLM; 0 means unlimited.",
+    )
 
     args = parser.parse_args()
 
@@ -1007,6 +1071,7 @@ def main() -> None:
         filter_model=args.filter_model,
         max_output_tokens=args.max_output_tokens,
         filter_concurrency=args.filter_concurrency,
+        max_candidates=args.max_candidates,
     )
 
 
