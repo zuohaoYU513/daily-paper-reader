@@ -1,21 +1,21 @@
 ---
 title: "All That Glitters is Not Gold: Improving Robust Retrieval-Augmented Language Models with Fact-Centric Preference Alignment"
-title_zh: 闪光并非皆是金：基于事实中心偏好对齐提升鲁棒检索增强语言模型
+title_zh: 闪光的未必是金：通过以事实为中心的偏好对齐提升鲁棒检索增强语言模型
 authors: "Jia Hao, Chunhong Zhang, Jiarun Liu, Haiyu Zhao, Zhiqiang Zhan, Zheng Hu"
 date: 2025-07-01
 pdf: "https://aclanthology.org/2025.findings-acl.588.pdf"
-tags: ["query:faithfulness"]
-score: 8.0
-evidence: 以事实为中心的偏好对齐训练使模型在噪声检索文档中直接抽取有用信息，提升证据依赖并降低幻觉
-tldr: 检索增强语言模型面对带噪声或语义高相关的干扰文档时，容易生成错误答案，而简单过滤噪声会丢失关键信息。论文提出以事实为中心的偏好对齐(FPA)，构造偏好对让模型直接抽取检索文档中的有用事实。实验显示FPA提升了模型在噪声检索环境下的事实准确性和鲁棒性，是缓解无依据生成的有效训练方案。
+tags: ["query:hallu-rag"]
+score: 7.0
+evidence: 针对检索增强生成中噪声或干扰文档造成的幻觉问题，提出基于事实中心的偏好对齐以提升生成可靠性
+tldr: 针对检索增强语言模型易受高相关噪声文档干扰、从而影响事实性生成的问题，提出以事实为中心的偏好对齐方法FPA。该方法构建偏好数据让模型从检索结果中提取真正有用的事实信息，而不是依赖整段文档或先过滤噪声。实验表明该方法相较于传统噪声过滤和自适应检索方案更具鲁棒性，能有效缓解检索噪声导致的幻觉。
 source: ACL-2025-Findings
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/acl-2025-findings/anthology-2025findings-acl588/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 791, \"height\": 651}, {\"url\": \"assets/figures/acl-2025-findings/anthology-2025findings-acl588/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1630, \"height\": 768}, {\"url\": \"assets/figures/acl-2025-findings/anthology-2025findings-acl588/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 784, \"height\": 524}, {\"url\": \"assets/figures/acl-2025-findings/anthology-2025findings-acl588/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 805, \"height\": 358}, {\"url\": \"assets/figures/acl-2025-findings/anthology-2025findings-acl588/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 790, \"height\": 506}, {\"url\": \"assets/figures/acl-2025-findings/anthology-2025findings-acl588/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 81, \"height\": 98}, {\"url\": \"assets/figures/acl-2025-findings/anthology-2025findings-acl588/fig-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 765, \"height\": 497}, {\"url\": \"assets/figures/acl-2025-findings/anthology-2025findings-acl588/fig-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 765, \"height\": 490}]"
 tables_json: "[{\"url\": \"assets/tables/acl-2025-findings/anthology-2025findings-acl588/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 715, \"height\": 276}, {\"url\": \"assets/tables/acl-2025-findings/anthology-2025findings-acl588/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1586, \"height\": 671}, {\"url\": \"assets/tables/acl-2025-findings/anthology-2025findings-acl588/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1642, \"height\": 371}, {\"url\": \"assets/tables/acl-2025-findings/anthology-2025findings-acl588/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 796, \"height\": 197}, {\"url\": \"assets/tables/acl-2025-findings/anthology-2025findings-acl588/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 797, \"height\": 345}, {\"url\": \"assets/tables/acl-2025-findings/anthology-2025findings-acl588/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1640, \"height\": 1340}, {\"url\": \"assets/tables/acl-2025-findings/anthology-2025findings-acl588/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1631, \"height\": 1677}]"
-motivation: 检索噪声特别是高语义相关干扰文档会让检索增强模型生成错误，而简单过滤会丢失关键信息。
-method: 提出事实中心偏好对齐FPA，以有用事实为偏好训练LLM直接抽取检索结果中的核心信息。
-result: 实验证明FPA提高了模型在含有噪声检索文档时的回答准确率和鲁棒性。
-conclusion: 以事实为中心的偏好训练可以增强模型对检索证据的聚焦能力，降低幻觉风险。
+motivation: 已有噪声过滤会丢失关键信息，且难以应对高语义相关的干扰文档，降低检索增强模型的生成质量。
+method: 提出FPA，通过基于文档内容事实性的偏好数据与偏好优化训练，让LLM直接抽取有用信息并摆脱噪声。
+result: 实验显示FPA在噪声检索场景下比传统过滤与微调方法更稳健，能有效减少干扰文档导致的错误。
+conclusion: 以事实为中心的偏好对齐能提升检索增强模型的抗噪能力，为RAG幻觉缓解提供了有效训练策略。
 ---
 
 ## Abstract

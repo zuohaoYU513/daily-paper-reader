@@ -1,0 +1,108 @@
+---
+title: "Split and Merge: Aligning Position Biases in LLM-based Evaluators"
+title_zh: 分割与合并：对齐基于LLM评估器的位置偏差
+authors: "Zongjie Li, Chaozheng Wang, Pingchuan Ma, Daoyuan Wu, Shuai Wang, Cuiyun Gao, Yang Liu"
+date: 2024-11-01
+pdf: "https://aclanthology.org/2024.emnlp-main.621.pdf"
+tags: ["query:metacognitio"]
+score: 6.0
+evidence: 校准LLM成对评估中的位置偏差可支撑可靠的回答自我评估
+tldr: 针对大语言模型充当自动评估器时在成对比较中偏袒第一或第二个答案的位置偏差，该文提出PORTIA系统：将待比较回答按长度与语义分割为多个片段并合并到同一提示中评估，通过模仿人的比较策略进行轻量级对齐校准。在六个LLM与1120个答案对上实验，证明该方法能有效降低评估中的位置不一致性。该工作为任意基于LLM的答案评价，包括模型对自身回答的评测，提供了可迁移的评估校准手段。
+source: EMNLP-2024-Main
+selection_source: conference_retrieval
+figures_json: "[{\"url\": \"assets/figures/emnlp-2024-main/anthology-2024emnlp-main621/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 1650, \"height\": 529, \"label\": \"Figure\"}, {\"url\": \"assets/figures/emnlp-2024-main/anthology-2024emnlp-main621/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1633, \"height\": 434, \"label\": \"Figure\"}, {\"url\": \"assets/figures/emnlp-2024-main/anthology-2024emnlp-main621/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1379, \"height\": 430, \"label\": \"Figure\"}, {\"url\": \"assets/figures/emnlp-2024-main/anthology-2024emnlp-main621/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1635, \"height\": 506, \"label\": \"Figure\"}, {\"url\": \"assets/figures/emnlp-2024-main/anthology-2024emnlp-main621/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1651, \"height\": 577, \"label\": \"Figure\"}, {\"url\": \"assets/figures/emnlp-2024-main/anthology-2024emnlp-main621/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 748, \"height\": 1267, \"label\": \"Figure\"}]"
+tables_json: "[{\"url\": \"assets/tables/emnlp-2024-main/anthology-2024emnlp-main621/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 768, \"height\": 1480, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2024-main/anthology-2024emnlp-main621/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1530, \"height\": 851, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2024-main/anthology-2024emnlp-main621/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 797, \"height\": 241, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2024-main/anthology-2024emnlp-main621/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 637, \"height\": 247, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2024-main/anthology-2024emnlp-main621/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1195, \"height\": 389, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2024-main/anthology-2024emnlp-main621/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 536, \"height\": 400, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2024-main/anthology-2024emnlp-main621/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 715, \"height\": 178, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2024-main/anthology-2024emnlp-main621/table-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 701, \"height\": 251, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2024-main/anthology-2024emnlp-main621/table-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 1187, \"height\": 282, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2024-main/anthology-2024emnlp-main621/table-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 760, \"height\": 178, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2024-main/anthology-2024emnlp-main621/table-011.webp\", \"caption\": \"\", \"page\": 0, \"index\": 11, \"width\": 750, \"height\": 182, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2024-main/anthology-2024emnlp-main621/table-012.webp\", \"caption\": \"\", \"page\": 0, \"index\": 12, \"width\": 785, \"height\": 372, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2024-main/anthology-2024emnlp-main621/table-013.webp\", \"caption\": \"\", \"page\": 0, \"index\": 13, \"width\": 1643, \"height\": 482, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2024-main/anthology-2024emnlp-main621/table-014.webp\", \"caption\": \"\", \"page\": 0, \"index\": 14, \"width\": 1417, \"height\": 338, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2024-main/anthology-2024emnlp-main621/table-015.webp\", \"caption\": \"\", \"page\": 0, \"index\": 15, \"width\": 639, \"height\": 312, \"label\": \"Table\"}]"
+motivation: LLM评估器在成对比较中普遍存在位置偏差，导致评估不稳定且不公平。
+method: 提出PORTIA，把回答分割后再合并进同一提示，并模仿人类比较策略以轻量级方式校准位置偏差。
+result: 在六个LLM和大规模答案对上验证，位置偏差显著降低，评估一致性提升。
+conclusion: 分割合并式对齐可有效缓解LLM裁判的位置偏差，增强自动评价的可信度。
+---
+
+## Abstract
+Large language models (LLMs) have shown promise as automated evaluators for assessing the quality of answers generated by AI systems. However, LLM-based evaluators exhibit position bias, or inconsistency, when used to evaluate candidate answers in pairwise comparisons, favoring either the first or second answer regardless of content. To address this limitation, we propose PORTIA, an alignment-based system designed to mimic human comparison strategies to calibrate position bias in a lightweight yet effective manner. Specifically, PORTIA splits the answers into multiple segments, taking into account both length and semantics, and merges them back into a single prompt for evaluation by LLMs. Extensive experiments with six LLMs on 11,520 answer pairs demonstrate that PORTIA markedly enhances the consistency rates for all models and forms of comparison tested, achieving an average relative improvement of 47.46%. It also enables PORTIA-enhanced GPT-3.5 to achieve agreement rates with humans comparable to GPT-4 and elevates GPT-4’s consistency rate up to 98%. Subsequent human evaluations indicate that the PORTIA-enhanced GPT-3.5 model can even surpass standalone GPT-4 in terms of alignment with human evaluators, highlighting PORTIA’s ability to correct position bias, improve LLM consistency, and boost performance while keeping cost efficiency.
+
+---
+
+## 论文详细总结（自动生成）
+
+以下是根据提供的论文内容生成的详细中文总结：
+
+## 1. 论文的核心问题与整体含义
+
+- **研究背景**：大语言模型（LLM）被广泛用于自动评估 AI 生成的回答，有望替代昂贵且耗时的人工评估。在成对比较（pairwise comparison）范式中，LLM 评估器需要判断两个回答哪个更好。
+- **核心问题**：LLM 评估器存在严重的**位置偏差**——无论内容如何，它们可能偏好排在第一或第二个位置的回答。这种偏差导致评估结果不一致、不公平，尤其存在于较弱模型中，使得研究被迫依赖昂贵的 GPT-4 等高级模型。
+- **研究意义**：纠正位置偏差可以提高 LLM 评估的可靠性，让廉价模型（如 GPT-3.5）在高一致性评估场景中替代昂贵模型，降低大规模评估成本。方法不修改模型本身，可灵活适配各类 LLM 评估器。
+
+## 2. 论文提出的方法论
+
+- **方法名称**：PORTIA（命名灵感来自《威尼斯商人》中善于做出公正裁决的角色 Portia）。
+- **核心思想**：模仿人类阅读长文本时“将信息拆分为小单元再比较”的认知策略——先把两个候选回答分别分割为多个片段，再按内容可比性对齐/合并到同一个提示中交给 LLM 评估，从而消除答案顺序带来的影响。
+- **三阶段流程**：
+  1. **格式识别与候选分割位置确定**：以句号、问号等句子边界作为候选分割点；对含代码块的内容，用 treesitter 解析，保留代码语法结构，避免破坏语义。
+  2. **长度对齐（Length Alignment）**：先尝试把每个回答尽量均分为 k 个长度接近的片段（实际切分点取最靠近等分点的句子边界），将对应片段合并后交给 LLM；若 LLM 在交换答案顺序后仍给出一致判断，则直接返回结果。
+  3. **语义对齐（Semantic Alignment）**：若长度对齐后仍不一致，则在所有可能的切分组合中，搜索使“两个回答对应片段之间累积相似度最大”的切分位置。相似度用 token 重叠率计算：`sim_score = |set(r1_t) ∩ set(r2_t)| / max(|set(r1_t)|, |set(r2_t)|)`；最终用最优对齐结果重新合并，再做一次交换顺序的一致性判定。
+- **设计原则**：内容保留（所有片段拼接后与原文完全一致）、顺序保留（不重排原文信息）、资源高效（采用“先长度对齐、后语义对齐”的顺序以尽量节省计算；无额外模型改动）。
+- **关键实现细节**：参数 k 为分割片段数，默认取 k=3——更大 k 会带来组合爆炸（计算量随 k 指数上升），而性能增益有限。方法最后会返回“一致结果”或失败（返回 None）。
+
+## 3. 实验设计
+
+- **数据集 / 基准**：
+  - 主实验使用 **MT-Bench** 的 80 个开放性问题，涵盖 Writing、Roleplay、Reasoning、Math、Coding、Extraction、STEM、Humanities 等 8 类。
+  - 两个回答来源共取 8 组不同的模型配对，每个模型配对在 3 种成对比较形式下评估，共 `80 × 8 × 3 = 1920` 个输入；6 个评估模型合计涉及 **11,520 个答案对**。
+  - 扩展实验：额外用 GPT-4 扩充出 640 个开放问题，并用 GPT-3.5-turbo、DeepSeek-v2、Meta-LLaMA-3-70b-instruct 生成回答，用 GPT-3.5 与 GPT-4o 评估。
+- **成对比较的三种形式**：
+  - relation-based（引导模型输出“A 更好 / B 更好 / 平局”）
+  - score-based（分别给 A、B 打分）
+  - likert-based（在 1–7 的利克特量表上给出偏好分）
+- **LLM 评估器**：本地模型（Llama2-7b/13b、Chatglm2-6b）与云端 API 模型（GPT-3.5、GPT-4、Claude2、Qwen）。
+- **对比方法**（附录 O）：VANILLA（无解释直接输出偏好）、MEC（多轮澄清）、BPC（Baton Passer 的变体）、HITL（人在回环）；以及无语义对齐/长度对齐的消融变体。另外还对比了不同语义相似度指标（token-overlap vs. Sentence-BERT）。
+- **人类评估**：5 位专家（2 位企业开发者、3 位学术研究人员）对 80 个“gpt-3.5-turbo vs. Claude-v1”回答对进行标注，使用 majority vote 汇总人工判断，计算 LLM 与人类的同意率。
+- **评估指标**：一致性率（交换顺序后判断不变的比例）、Fixed Coverage（原有不一致案例中被纠正的比例）、与 GPT-4 的同意率、与人类评估者的同意率。
+
+## 4. 资源与算力
+
+- 论文在附录 A 中说明：实验运行在一台配备 **Intel Xeon Platinum 8276 CPU、256GB RAM 和 4 块 NVIDIA A100 GPU** 的服务器上。
+- 本地模型（Llama2、Chatglm2）使用该服务器进行推理；云端 API 模型（GPT-4 等）通过网络调用。
+- 论文未报告具体 GPU 训练时长（因不需要训练模型，只做推理和查询）。作者提及会在后续公布代码以保证可复现性；所有云 API 推理 temperature 设为 0，本地模型关闭采样以得到确定性输出。
+
+## 5. 实验数量与充分性
+
+- **实验数量较多且覆盖面广**：
+  - 主实验跨 6 个评估器、3 种比较形式、8 组回答来源，共 11,520 对答案；
+  - 额外扩展了 640 个开放问题并在两个新评估器（GPT-4o）上验证；
+  - 包含人工研究（5 人 × 80 问题）、消融实验（去掉长度/语义对齐）、不同 k 值效率/性能对比、不同相似度指标对比、成本与碳排分析、类别级失败率分析。
+- **客观与公平性**：
+  - 使用公开的 MT-Bench 基准和固定 API 版本，temperature 设为 0，保证可复现；
+  - 人类评估者不包含作者，以回避先验知识造成的偏差；
+  - 与更先进基线（MEC、BPC、HITL）对比时，也承认 HITL 虽效果更好，但成本极高。
+- **总体评价**：实验较为充分、设计基本公平，既有广泛性（多种模型/形式），又有细粒度分析（长度、类别、偏好等）。但实验以 MT-Bench 为主，来自真实产品问答的多样性仍相对有限。
+
+## 6. 论文的主要结论与发现
+
+- PORTIA 能显著提升所有测试 LLM 和比较形式下的一致性，平均**相对提升 47.46%**，平均纠正 **62.31%** 的原有不一致案例；GPT-4 的一致性率最高达 **98%**。
+- 对于不同模型表现不同的偏差方向（如 GPT-4 更偏好第一个回答、GPT-3.5 更偏好第二个），PORTIA 能将选择比例推向 50% 附近，但保持模型自身的一定特性。
+- 在现实成本层面，PORTIA 增强的 GPT-3.5 与 GPT-4 的同意率达 88%，成本仅为 GPT-4 的约 **9.57%**，展示了以廉价模型替代昂贵模型的潜力。
+- 在人类评估中，PORTIA 增强了所有评估器与人类的一致性；增强后的 GPT-3.5 与人类的一致率（63.75%）已经超过原始 GPT-4（60%），Claude2 从 6.25% 大幅上升到 47.50%。
+- 消融实验表明长度对齐和语义对齐都对提升有效，但贡献因评估器与比较形式而异（如语义对齐对 likert 形式更重要）。
+- 在失败案例分析中，PORTIA 对 Coding 类问题的失败率最高（17.13%），主要因为代码的上下文依赖和结构约束更强；此外在伦理敏感问题上也可能无法收敛到一致结果。
+
+## 7. 优点
+
+- **轻量且通用**：不修改 LLM 内部参数，只需调整提示构造方式；可适配任何成对比较形式的 LLM 评估器。
+- **效果显著**：在 6 种 LLM 上均稳定提升一致性，对 GPT-4 这样本身较稳定的模型也有额外改善（可达 98%）。
+- **成本低**：只需少量额外 prompt token 和轻量分词重叠计算，不使用重型的 LM 相似度模型，计算开销可控。
+- **有认知科学依据**：采取“拆分-对齐-合并”的策略，与人类阅读和比较复杂信息的方式吻合，直觉清晰。
+- **考虑细致**：设计了内容保留、顺序保留等原则；对代码回答利用 treesitter 做结构感知切分，体现了工程上的严谨性。
+- **实验分析完整**：覆盖效果、成本、效率、消融、人工评估、失败案例、类别差异等多个维度，对位置偏差的方向和大小都做了剖析。
+
+## 8. 不足与局限
+
+- **上下文窗口限制**：合并后的提示包含问题与两个完整回答，若回答超长，可能超出 LLM 的上下文窗口，从而违背内容保留原则（论文中未遇到，但对短上下文模型构成潜在限制）。
+- **对结构复杂数据效果有限**：在 Coding 类问题上失败率最高（17.13%），说明固定的句级切分与合并对程序代码的逻辑结构仍不够理想。
+- **部分模型“过度对齐”而拒答**：如 GPT-3.5 在 Roleplay 类问题上有时拒绝给出有意义的判定，PORTIA 无法强制模型走出保守状态。
+- **无法处理极端不均衡长度**：虽然对“极短回答”场景（长度约为 1/8 原始回答）的测试显示无需对齐且无不一致，但当回答普遍过短（少于两句）时，方法的前提条件（可分割成至少 2–3 段）会失效。
+- **伦理与安全性问题**：在涉及人类伦理、复杂道德判断的问题上，PORTIA 仍可能无法达成一致结果；若被恶意利用，也可用于一致性评估来引导训练有害模型。
+- **实验覆盖范围有限**：主实验仅基于 MT-Bench 的 80 个问题（虽然附录扩展到 640 题，其问题类型也由 GPT-4 生成，可能存在分布漂移）；答案组合来自有限的预先收集的 LLM 输出，未必覆盖真实世界全部开放性问题。
+- **参数与相似度选择较浅**：默认 k=3 由小规模对比实验确定，而不是理论上最优；token-overlap 相似度指标对同义异形表达的配对可能不敏感（虽作者说明加入 BERT 类模型增益很小）。
+
+（完）
