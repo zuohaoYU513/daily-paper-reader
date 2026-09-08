@@ -1,21 +1,21 @@
 ---
 title: Unstructured Evidence Attribution for Long Context Query Focused Summarization
-title_zh: 面向长上下文查询聚焦摘要的非结构化证据归因
+title_zh: 长上下文查询聚焦摘要中的非结构化证据归因
 authors: "Dustin Wright, Zain Muhammad Mujahid, Lu Wang, Isabelle Augenstein, David Jurgens"
 date: 2025-11-01
 pdf: "https://aclanthology.org/2025.emnlp-main.95.pdf"
-tags: ["query:faithfulness"]
-score: 8.0
-evidence: 提出任意长度非结构化证据片段归因，增强摘要对源证据的引用一致性与可信度
-tldr: 长上下文查询聚焦摘要中固定粒度的证据引用难以覆盖任意长度的相关片段，且模型在引用非结构化证据时常出现失配或丢失。论文提出抽取任意长度的非结构化证据，并构建带专家标注的SUnsET数据集以支持该任务。研究显示现有系统难以正确复制和引用这类证据，中间丢失现象严重。SUnsET有助于缓解该问题，为提升长文档摘要的证据归因质量和可信度提供了新资源和方法。
+tags: ["query:evidence-qa"]
+score: 9.0
+evidence: 在长文档摘要中抽取任意长度的证据片段并回链到原文
+tldr: 长上下文查询聚焦摘要通常只支持固定粒度的证据引用，如句子或段落，限制了证据的准确匹配。作者提出抽取任意长度的非结构化证据，以提升相关性和一致性，并构建SUnsET数据集。实验显示现有系统难以正确复制并引用非结构化证据，且这些证据易在长上下文中被丢失（lost in the middle）。该工作为需要生成内容并附原文证据的可信摘要系统提供了新基准和改进方向。
 source: EMNLP-2025-Main
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/emnlp-2025-main/anthology-2025emnlp-main95/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 768, \"height\": 725, \"label\": \"Figure\"}, {\"url\": \"assets/figures/emnlp-2025-main/anthology-2025emnlp-main95/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1341, \"height\": 602, \"label\": \"Figure\"}, {\"url\": \"assets/figures/emnlp-2025-main/anthology-2025emnlp-main95/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1356, \"height\": 595, \"label\": \"Figure\"}, {\"url\": \"assets/figures/emnlp-2025-main/anthology-2025emnlp-main95/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1309, \"height\": 801, \"label\": \"Figure\"}, {\"url\": \"assets/figures/emnlp-2025-main/anthology-2025emnlp-main95/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1339, \"height\": 600, \"label\": \"Figure\"}, {\"url\": \"assets/figures/emnlp-2025-main/anthology-2025emnlp-main95/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1607, \"height\": 873, \"label\": \"Figure\"}, {\"url\": \"assets/figures/emnlp-2025-main/anthology-2025emnlp-main95/fig-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 984, \"height\": 382, \"label\": \"Figure\"}, {\"url\": \"assets/figures/emnlp-2025-main/anthology-2025emnlp-main95/fig-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 1622, \"height\": 896, \"label\": \"Figure\"}, {\"url\": \"assets/figures/emnlp-2025-main/anthology-2025emnlp-main95/fig-009.webp\", \"caption\": \"\", \"page\": 0, \"index\": 9, \"width\": 1601, \"height\": 1356, \"label\": \"Figure\"}, {\"url\": \"assets/figures/emnlp-2025-main/anthology-2025emnlp-main95/fig-010.webp\", \"caption\": \"\", \"page\": 0, \"index\": 10, \"width\": 1627, \"height\": 532, \"label\": \"Figure\"}, {\"url\": \"assets/figures/emnlp-2025-main/anthology-2025emnlp-main95/fig-011.webp\", \"caption\": \"\", \"page\": 0, \"index\": 11, \"width\": 1627, \"height\": 531, \"label\": \"Figure\"}]"
 tables_json: "[{\"url\": \"assets/tables/emnlp-2025-main/anthology-2025emnlp-main95/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 811, \"height\": 218, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2025-main/anthology-2025emnlp-main95/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 702, \"height\": 287, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2025-main/anthology-2025emnlp-main95/table-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 764, \"height\": 677, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2025-main/anthology-2025emnlp-main95/table-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 1634, \"height\": 1325, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2025-main/anthology-2025emnlp-main95/table-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1584, \"height\": 1332, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2025-main/anthology-2025emnlp-main95/table-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1544, \"height\": 1319, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2025-main/anthology-2025emnlp-main95/table-007.webp\", \"caption\": \"\", \"page\": 0, \"index\": 7, \"width\": 1365, \"height\": 1319, \"label\": \"Table\"}, {\"url\": \"assets/tables/emnlp-2025-main/anthology-2025emnlp-main95/table-008.webp\", \"caption\": \"\", \"page\": 0, \"index\": 8, \"width\": 777, \"height\": 255, \"label\": \"Table\"}]"
-motivation: 固定粒度的证据引用不适配任意长度的证据片段，长上下文中的非结构化证据引用困难且易中间丢失。
-method: 提出抽取任意长度非结构化证据片段的方法，并构建SUnsET数据集以训练和评测模型引用非结构化证据的能力。
-result: 实验显示现有系统对非结构化证据引用不佳，SUnsET能改善模型在该任务上的证据一致性和相关性。
-conclusion: 支持任意长度证据片段是提高查询聚焦摘要可信度和证据归因能力的重要方向。
+motivation: 固定粒度证据引用限制了证据的灵活性，且长上下文证据容易在中间丢失。
+method: 提出非结构化证据抽取任务，创建SUnsET数据集，评估大模型复制和引用任意长度证据的能力。
+result: 现有系统难以稳妥引用非结构化证据，并受长上下文中间丢失影响。
+conclusion: 需更强的复制和归因能力，以支持证据级可信的长文档摘要。
 ---
 
 ## Abstract

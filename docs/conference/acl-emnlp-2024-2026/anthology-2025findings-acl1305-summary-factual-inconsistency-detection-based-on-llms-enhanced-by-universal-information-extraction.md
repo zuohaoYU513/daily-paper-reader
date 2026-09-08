@@ -1,21 +1,21 @@
 ---
 title: Summary Factual Inconsistency Detection Based on LLMs Enhanced by Universal Information Extraction
-title_zh: 基于通用信息抽取增强的大语言模型摘要事实不一致检测
+title_zh: 基于通用信息抽取增强的摘要事实不一致检测
 authors: "Anguo Li, Lei Yu"
 date: 2025-07-01
 pdf: "https://aclanthology.org/2025.findings-acl.1305.pdf"
 tags: ["query:faithfulness"]
-score: 9.0
-evidence: 构建UIEFID框架检测摘要与文档之间的事实不一致，作为可信的事实一致性评测方法
-tldr: 自动摘要中的事实不一致是影响可靠性的关键问题，LLM检测器依赖强大的推理能力且效率和可解释性不足。UIEFID将LLM的信息抽取与推理能力解耦，通过自适应结构化模式引导微调LLM抽取文档和摘要的统一结构化信息，从而判断不一致关系。该方法减少了对纯推理的依赖，提高了检测效率和可解释性。实验证明该框架在摘要事实一致性检测上取得了更好的效果，为生成文本的事实评测提供了实用方案。
+score: 8.0
+evidence: 通过统一信息抽取增强LLM来检测摘要事实不一致，契合生成文本事实一致性评测
+tldr: 自动摘要可能存在事实不一致问题，基于LLM的检测器推理成本高且可解释性不足。本文提出UIEFID框架，把信息抽取和推理能力解耦，通过自适应结构化schema指导微调后的LLM统一抽取文档与摘要中的结构化信息并据此判断不一致。方法兼顾效率与可解释性，为生成文本的事实一致性评测提供了通用范式。
 source: ACL-2025-Findings
 selection_source: conference_retrieval
 figures_json: "[{\"url\": \"assets/figures/acl-2025-findings/anthology-2025findings-acl1305/fig-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 798, \"height\": 380}, {\"url\": \"assets/figures/acl-2025-findings/anthology-2025findings-acl1305/fig-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 1662, \"height\": 556}, {\"url\": \"assets/figures/acl-2025-findings/anthology-2025findings-acl1305/fig-003.webp\", \"caption\": \"\", \"page\": 0, \"index\": 3, \"width\": 1161, \"height\": 670}, {\"url\": \"assets/figures/acl-2025-findings/anthology-2025findings-acl1305/fig-004.webp\", \"caption\": \"\", \"page\": 0, \"index\": 4, \"width\": 794, \"height\": 483}, {\"url\": \"assets/figures/acl-2025-findings/anthology-2025findings-acl1305/fig-005.webp\", \"caption\": \"\", \"page\": 0, \"index\": 5, \"width\": 1636, \"height\": 950}, {\"url\": \"assets/figures/acl-2025-findings/anthology-2025findings-acl1305/fig-006.webp\", \"caption\": \"\", \"page\": 0, \"index\": 6, \"width\": 1654, \"height\": 544}]"
 tables_json: "[{\"url\": \"assets/tables/acl-2025-findings/anthology-2025findings-acl1305/table-001.webp\", \"caption\": \"\", \"page\": 0, \"index\": 1, \"width\": 808, \"height\": 1495}, {\"url\": \"assets/tables/acl-2025-findings/anthology-2025findings-acl1305/table-002.webp\", \"caption\": \"\", \"page\": 0, \"index\": 2, \"width\": 694, \"height\": 229}]"
-motivation: LLM用于摘要事实不一致检测时依赖推理能力，面临效率低和解释性不足的问题。
-method: 提出UIEFID框架，定义自适应结构化模式引导微调LLM抽取文档与摘要的统一信息，解耦抽取和推理过程。
-result: 实验表明UIEFID在事实不一致检测上优于依赖推理的基线，并具备更高的效率和可解释性。
-conclusion: 解耦信息抽取与推理是构建高效可解释的摘要事实一致性检测器的可行路线。
+motivation: 大模型摘要事实检测依赖推理能力，存在效率和可解释性挑战。
+method: 设计自适应结构化schema，指导微调LLM抽取文档与摘要的统一结构化信息，再判断是否不一致。
+result: 在摘要事实不一致检测任务上实现了有效且可解释的检测结果。
+conclusion: 解耦信息抽取和推理是可扩展的摘要事实一致性检测路线。
 ---
 
 ## Abstract

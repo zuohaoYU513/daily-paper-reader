@@ -1,0 +1,435 @@
+Title: 2026.acl-long.785.pdf
+
+URL Source: https://aclanthology.org/2026.acl-long.785.pdf
+
+Published Time: Thu, 11 Jun 2026 01:25:47 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+> Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 17246–17265 July 2-7, 2026 ©2026 Association for Computational Linguistics
+
+# CaseFacts: A Benchmark for Legal Fact-Checking and Precedent Retrieval 
+
+Akshith Reddy Putta, Jacob Devasier, Chengkai Li 
+
+University of Texas at Arlington 
+
+{akshith.putta, jacob.devasier, cli}@uta.edu 
+
+Abstract 
+
+Automated Fact-Checking has largely focused on verifying general knowledge against static corpora, overlooking high-stakes domains like law where truth is evolving and technically complex. We introduce CaseFacts , a bench-mark for verifying colloquial legal claims against U.S. Supreme Court precedents. Un-like existing resources that map formal texts to formal texts, CaseFacts challenges systems to bridge the semantic gap between layperson assertions and technical jurisprudence while accounting for temporal validity. The dataset consists of 6,294 claims categorized as S UP -
+
+> PORTED
+
+, R EFUTED , or O VERRULED . We construct this benchmark using a multi-stage pipeline that leverages Large Language Mod-els (LLMs) to synthesize claims from expert case summaries, employing a novel semantic similarity heuristic to efficiently identify and verify complex legal overrulings. Experiments with state-of-the-art LLMs reveal that the task remains challenging; notably, augmenting mod-els with unrestricted web search degrades per-formance compared to closed-book baselines due to the retrieval of noisy, non-authoritative precedents. We release CaseFacts 1 to spur re-search into legal fact verification systems. 
+
+1 Introduction 
+
+Automated Fact-Checking (AFC) has emerged as a critical safeguard against misinformation, yet ex-isting systems primarily operate within general-knowledge domains, validating claims against cor-pora like Wikipedia (Aly et al., 2021; Akhtar et al., 2022). However, high-stakes domains such as law present unique challenges that render general-purpose AFC systems inadequate. In the legal sphere, verification requires more than surface-level textual overlap; it demands the retrieval of authoritative precedent, the interpretation of com-
+
+> 1https://github.com/idirlab/CaseFacts
+
+plex holdings, and the temporal awareness to deter-mine if a ruling is still valid. The primary bottleneck in Legal AFC is the semantic gap between public discourse and ju-dicial writing. While most people assert claims in colloquial language (e.g., “The Supreme Court banned school prayer”), the supporting evidence exists in formal, technical jurisprudence (e.g., “state officials may not compose an official state prayer”). Current legal benchmarks, such as Legal-Bench (Guha et al., 2023) and CaseHOLD (Zheng et al., 2021), facilitate legal reasoning and judg-ment prediction but operate strictly within the for-mal register—mapping legalese to legalese. They do not evaluate a model’s ability to bridge the lin-guistic disparity between an informal claim and a formal ruling (Chen et al., 2025; Mori et al., 2025). Furthermore, legal truth is temporally fragile. A claim that was true in 1990 may be false today if the underlying precedent has been overruled. Ex-isting datasets rarely explicitly model this validity constraint, often treating legal documents as static text rather than a dynamic system of evolving rules. To address these limitations, we introduce Case-Facts , a new benchmark dataset designed to eval-uate the verification of colloquial claims against U.S. Supreme Court (SCOTUS) rulings. Unlike previous resources, CaseFacts is constructed to test three specific dimensions of legal verification: (1) Retrieval across the semantic gap, mapping infor-mal assertions to technical case law; (2) Reasoning against hard negatives, distinguishing true princi-ples from plausible but factually refuted distortions; and (3) Precedent changes over time, identifying when a claim relies on a precedent that has been explicitly O VERRULED .Constructing such a dataset presents significant challenges due to the scarcity of expert-annotated data. We introduce a rigorous, multi-stage pipeline leveraging Large Language Models (LLMs) to syn-thesize claims from expert summaries of 3,299 
+
+17246 SCOTUS cases sourced from Oyez 2. Our pipeline generates diverse claim-evidence pairs and em-ploys a novel LLM-as-a-Judge verification loop to filter for factuality, resolve internal contradic-tions, and ensure stylistic diversity. To validate the O VERRULED class, we implement a heuristic filtering method based on semantic similarity inter-vals to efficiently locate inter-case contradictions, which are then verified against case metadata. The final dataset consists of 6,294 claims, including a high-quality, human-annotated test set. We benchmark state-of-the-art LLMs and re-trieval models on CaseFacts, yielding several criti-cal insights. First, we find that allowing LLMs un-restricted web search does not necessarily improve performance; in our baselines, a search-enabled GPT-4o performed worse than a naive, closed-book setting, often retrieving noisy or tangentially rel-evant cases. Second, we demonstrate that while standard Natural Language Inference (NLI) mod-els fail to grasp the nuances of legal overrulings, embedding models fine-tuned on our training set significantly improve retrieval recall. In summary, our contributions are as follows: • We introduce CaseFacts , the first large-scale benchmark for verifying colloquial legal claims against SCOTUS precedents, featuring distinct S UPPORTED , R EFUTED , and O VER - 
+
+> RULED
+
+classes. • We propose a robust synthetic data genera-tion pipeline that resolves intra-case and inter-case inconsistencies, using semantic similarity heuristics to efficiently identify legal overrul-ings and confirmations in large corpora. • We provide comprehensive benchmarks demonstrating that CaseFacts poses a signifi-cant challenge to current LLMs, particularly in bridging the semantic gap and retrieving the precise controlling authority required for legal verification. 
+
+2 CaseFacts Benchmark 
+
+2.1 Task Formulation 
+
+We formulate legal fact-checking as a combined retrieval and verification task. Given a collo-quial legal claim c and a knowledge base of case law K, the system must output a verdict y ∈{SUPPORTED , REFUTED , OVERRULED } and a set 
+
+> 2https://www.oyez.org/
+
+of supporting evidence SCOTUS cases E ⊂ K . A claim is S UPPORTED if it is entailed by the holding of a valid case in K. It is R EFUTED if it contradicts the holding of a valid case. It is O VERRULED if it relies on a holding from a case kold ∈ K that has been explicitly overturned by a subsequent revers-ing case knew ∈ K .
+
+2.2 Data Source 
+
+Our primary source for legal documentation is Oyez, a multimedia archive of the US Supreme Court. We utilized the “facts,” “question,” and “conclusion” fields for each case, each of which are summaries synthesized by legal experts using original Supreme Court documentation. We refer to these fields as case “evidence”. These expert summaries provide a high-quality, structured foun-dation for generating synthetic legal claims. We filtered the corpus to include only cases containing all three fields, resulting in a collection of 3,299 cases (as of July 2025). 
+
+2.3 Dataset Creation Pipeline 
+
+We implemented a multi-stage pipeline (Fig-ure 1) to generate synthetic claims and en-sure their factuality, consistency, and diversity. To mitigate self-preference bias during valida-tion (Wataoka et al., 2025), we utilized differ-ent model families for generation (Qwen3-Next-80B-A3B-Thinking) (Qwen Team, 2025) and post-generation validation (gemma-3-27b-it) (Gemma Team et al., 2025). We use open-weight models only to promote reproducibility of our dataset cre-ation method. For all LLMs, temperature was set to 0.6 and top-p to 0.9. 
+
+2.3.1 Claim Generation 
+
+We prompted the generation model with the case evidence from each source case and instructed it to generate claims derived from the case’s legal principles (Prompt 1). To ensure the retrieval task remained non-trivial and generalizable, we explic-itly constrained the model to exclude case-specific identifiers, such as party names or dates. Further-more, we enforced strict stylistic constraints pro-hibiting “court-report phrasing” (e.g., “The court found that...”). This ensures the output consists of direct, atomic legal assertions rather than sum-maries of judicial opinions. This process yielded an initial pool of 10,471 unique claims. 17247 Case Input (Marbury v. Madison)      
+
+> Facts of the case: William Marbury had been appointed Justice of the Peace in the
+> District of Columbia, but his commission was not delivered...
+> Question: Do the plaintiffs have a right to receive their commissions? Can they sue
+> for their commissions in court? Does the Supreme Court have the authority to order
+> the delivery of their commissions?
+> Conclusion: The Court found that Madison’s refusal to deliver the commission was
+> illegal, but did not order Madison to hand over Marbury’s commission...
+
+Claim 
+
+Generation 
+
+Factuality 
+
+Check 
+
+Claim Validation 
+
+Intra-Case 
+
+Contradiction Resolution 
+
+Detection & Removal of Inconsistent Claims 
+
+Overlap Resolution 
+
+Detection & Removal of Redundant Claims 
+
+Inter-Case 
+
+Overruling Identification 
+
+Identifying Contradictions 
+
+Confirmation Identification 
+
+Merging Ground Truth Cases 
+
+Supported Claim 
+
+Courts can strike down laws 
+
+that contradict the constitution. 
+
+Negation 
+
+generation 
+
+Refuted Claim 
+
+There are no judicial procedures 
+
+to overturn bills passed by  congress. 
+
+One Claim 
+
+Selected 
+
+CaseFacts Dataset 
+
+Overruled Claim Figure 1: Dataset creation pipeline with the example of Marbury v. Madison and claims of each class. This case, famous for establishing judicial review, was ruling over the delivery of commissions, not judicial review itself. The pipeline, taking as a case as input, generates and validates claims based on the case. The pipeline’s steps using an LLM are in purple. The Claim Generation step uses a different LLM than the other steps. 
+
+2.3.2 Intra-Case Validation 
+
+We applied filters to ensure factual consistency and minimize redundancy among claims derived from the same case. These inconsistencies would hinder the creation of a high-quality dataset. 
+
+Factuality Check We employed an LLM-as-a-judge to verify that each claim was strictly entailed by the source case evidence (Prompt 2). We also explicitly instructed the model to adhere to a closed-world assumption, prohibiting reliance on outside legal knowledge or assumptions not present in the provided case summary. This process removed 1,484 claims that failed to meet the expected entail-ment criteria, resulting in a pool of 8,987 factually consistent claims. 
+
+Claim Inconsistencies An issue that was noticed was the presence of the LLM creating factually-inconsistent claims for claims within the same case. These are errors associated with LLM generation. We refer to these as “contradictions,” even though most of them are smaller factual inconsistencies with each other when relating to the evidence of the case. Another issue that was noticed was the presence of very similar, redundant claims gener-ated from the same case, and we refer to these as “overlaps.” This is possibly due to the LLM gen-erating unnecessary claims, although it has been instructed not to. The aim of the dataset is to gener-ate claims which have a “legal principle” from the case that is precedent. Therefore, redundant claims must be removed to maintain a dataset consisting of high-quality, meaningfully-different claims. We collectively refer to overlaps and contradictions as claim inconsistencies. 
+
+Intra-Case Inconsistency Resolution We de-tected 90 pairs of internally contradictory claims and 1,568 pairs of semantically redundant claims using Prompts 3 and 4, for pairs within the same case. The smaller number of contradictory claims is possibly due to the factuality check removing most of the inconsistent claims, with the remain-ing identified with this pass. A resolution step (Prompts 5, 6) removed one claim from each of their respective pairs. This removed 1,404 claims, resulting in a filtered pool of 7,583 claims. 17248 2.3.3 Inter-Case Validation 
+
+We addressed inconsistencies across different cases to identify cross-case confirmations (claims sup-ported by the rulings of multiple cases) and con-struct the O VERRULED class with the detected con-tradictions. A naive approach would involve check-ing all N 2 possible cross-case pairs for inconsisten-cies, but this requires over 25 million comparisons, which is computationally infeasible for LLMs, even smaller ones like gemma-3-27b-it. 
+
+Inadequacy of Standard NLI To filter these pairs efficiently, we first attempted to use a standard Natural Language Inference (NLI) model ( textattack/bert-base-uncased-MNLI )to identify contradictions and entailments across the full dataset. However, qualitative analysis re-vealed this standard NLI model consistently per-formed very poorly in grasping the deeper legal entailment required to identify overrulings and con-firmations, rendering its predictions unusable. 
+
+Similarity-Based Filtering Consequently, we adopted a heuristic approach based on semantic similarity (detailed in Section 3.2). To determine the filtering thresholds, we drew a uniform sam-ple of 1,000 pairs from each 0.1-width similarity interval of all claim pair combinations. Then, we applied LLM-as-a-judge to detect contradictions and overlaps in each bin. We then computed per-centile statistics over the detected inconsistencies and selected the 95th-percentile range as our filter-ing window, i.e., the interval capturing 95% of all detected contradictions and overlaps. This yielded specific semantic similarity intervals of 0.70–0.95 for contradictions and 0.80–0.97 for overlaps (as detailed in Table 1). The intervals derived from the sampling distri-bution contained 199,203 pairs for contradictions and 15,874 pairs for overlaps. We therefore re-stricted the expensive LLM-based verification to pairs falling within these high-risk intervals, re-ducing the workload to a manageable subset while maintaining high recall. 
+
+Identifying Overrulings We identified 1,946 contradicting pairs, 0.98% of the sampled range. In the legal domain, such contradictions often signify that one case overrules another. We resolved these using Prompt 9, which provided the model with the ruling dates of both cases to determine tempo-ral precedence. To minimize false positives, the prompt instructed the model to favor an interpreta-
+
+Category Percentile Similarity Range 
+
+Contradictions 50% 0.820 – 0.918 Contradictions 68% 0.809 – 0.922 Contradictions 75% 0.805 – 0.926 Contradictions 95% 0.703 – 0.949 Overlaps 50% 0.902 – 0.934 Overlaps 68% 0.866 – 0.943 Overlaps 75% 0.852 – 0.945 Overlaps 95% 0.804 – 0.969 
+
+> Table 1: Statistics for contradictions and overlaps, in-cluding counts and similarity score distributions. The 95% percentile range was chosen for identifying Inter-Case claim contradiction and overlap inconsistencies.
+
+tion of consistency where possible, reserving the OVERRULED label for clear legal overrulings. We then validated potential overrulings against Oyez disposition metadata. If the overruling case had a valid disposition (e.g., “reversed” or “remanded”), we labeled the claim from the older case as O VER - 
+
+> RULED
+
+and appended the newer case to its evidence. This process established the O VERRULED class, a distinct contribution of our benchmark. 
+
+Identifying Confirmations For the overlap de-tection task, we used prompt 8, yielding 12.31% of the pairs, 1,955 samples. Prompt 10 was used for resolving the overlapping claim pairs. For the over-lapping claim pairs, we have updated the ground truth cases of the remaining claim to consist of both cases from the claim pair that overlapped, as the claim is confirmed by multiple cases. If there is a conflict when merging ground truth cases, where one claim is to merge over or under other claims, we select the pair with the highest similarity and instruct the LLM to indicate if the other claim can be merged under this pair. If so, the 3rd claim’s case will be included as part of the original claim pair’s ground truth cases. 
+
+2.3.4 Negative Claim Generation (Refuted) 
+
+To create the R EFUTED class, we generated nega-tions of the valid S UPPORTED claims using a two-step process designed to produce non-trivial false claims that sound like plausible legal principles. OVERRULED claims are by nature false and cannot have negations. 
+
+Step 1: Plausible Negation We first prompted the model (Prompt 11) to generate a plausible but factually incorrect negation of the original claim 17249 Category Selected (%) Total 
+
+Overall 574 (89%) 638 Supported 353 (91%) 384 Refuted 177 (90%) 195 Overruled 44 (74%) 59 
+
+> Table 2: Quality assessment statistics for the human-annotated test set. Percentages denote the proportion of claims selected as high-quality samples.
+
+based on the case facts. This ensured the negation was grounded in the case context rather than being a generic or trivial contradiction, e.g., simply placing 
+
+not in the claim. 
+
+Step 2: Principle Generalization Initial nega-tions were often lengthy (avg. 212 chars) and con-tained specific conditional clauses (e.g., “unless X occurs...”), acting as artifacts that could allow mod-els to distinguish false claims by length or speci-ficity alone. To address this, we applied a refine-ment LLM pass (Prompt 12) instructing the model to rewrite the false claim as a concise, general le-gal principle. The model was explicitly instructed to remove specific case details and unconditional qualifiers while preserving the (false) core legal assertion. This reduced the average length to 108 chars (see Figure 2) and ensured the R EFUTED 
+
+claims matched the stylistic distribution of the S UP - 
+
+> PORTED
+
+claims. 
+
+2.4 Human Verification 
+
+The test set consists of 500 claims verified by 2 human annotators. Annotators were instructed to select clear, factual claims free of identifying infor-mation. For O VERRULED claims and claims with multiple ground truth cases, annotators verified the verdict against the full set of cases. From a pool of 638 annotated claims, 574 were validated as high-quality, from which we sampled the final 500. We included an overlap of 100 claims between anno-tators to calculate the Cohen’s Kappa of 0.637, in-dicating substantial agreement. Table 2 highlights that the O VERRULED class had a lower human-verification pass rate compared to other classes, indicating the inherent complexity of validating le-gal overrulings. To further validate the legal quality of the test set, an attorney independently reviewed a sample of 50 claims and found no issues with the claims’ factual accuracy or overall quality.             
+
+> Dataset Total Supported Refuted Overruled
+> Train set 5,794 2,605 2,732 457 Test set 500 280 177 43
+> Table 3: Overview of the dataset statistics.
+
+2.5 Dataset Statistics 
+
+The final CaseFacts benchmark consists of a train-ing set of 5,794 claims and a test set of 500 claims. The class distributions are detailed in Table 3. Each sample shares a unique fact_id with its corre-sponding negation and we ensured that no fact_id 
+
+overlaps between the training and test sets and be-tween claims and their negations, to prevent data leakage. The claims were randomly sampled when selecting whether to use the S UPPORTED claim or its R EFUTED negation. In addition to the claims, we release the 3,299 SCOTUS cases used for dataset creation and which serve as ground truth evidence for the claims. 
+
+2.6 Evaluation Metrics 
+
+We evaluate system performance using a tiered framework designed to assess both retrieval quality and decision-making reliability. All metrics are macro-averaged across claims. 
+
+Assessing Retrieval Quality To evaluate the quality of retrieved case law, we utilize the E V- 
+
+> IDENCE
+
+SCORE . This metric is calculated as the recall score between the predicted and gold case sets. If a system fails to retrieve at least half of the gold supporting cases within the top five results (Recall@5 < 0.5), the Evidence Score is penalized to zero. We introduce this threshold because le-gal research that misses the majority of controlling precedents is functionally useless to a user, regard-less of how precise the other retrieved documents might be. This ensures that high scores reflect a robust retrieval of the core legal principles rather than incidental hits. 
+
+Assessing Verdict Reliability While we report standard V ERDICT ACCURACY (a binary measure of whether the predicted verdict matches the gold label), our primary metric for system ranking is the VERDICT SCORE . This joint, un-weighted metric is computed as the product of the Evidence Score and the Verdict Accuracy. We prioritize the Verdict Score because it rigor-ously penalizes ungrounded correctness—instances where a model guesses the correct verdict but cites 17250 Evaluation Judgement Count 
+
+Standard Consistent 8987 (86%) Inconsistent 1484 (14%) Naive Consistent 5964 (57%) Inconsistent 491 (5%) Error 4016 (38%) 
+
+> Table 4: Comparison of standard and naive factuality evaluation results, over 10,471 claims, showing counts and proportions of factuality judgment outcomes.
+
+irrelevant or incorrect cases as evidence. In the high-stakes legal domain, a correct answer derived from faulty reasoning is as dangerous as an in-correct answer. By requiring sufficiently accu-rate retrieval as a prerequisite for a positive score, this metric ensures that systems are only rewarded when they are right for the right reasons. The k=5 recall also prevents fact-checking systems from using random, incidental case hits as evidence. 
+
+3 Experiments 
+
+3.1 Naive Factuality Check 
+
+When performing the regular factuality check in the process of creating the dataset, we have also ran an experiment where the evidence was not provided to the LLM. We used prompt 13, and the results are displayed in Table 4. We can observe from this that the LLM is more hesitant to process when evidence is not provided, from the high number of error cases: occurring when the LLM doesn’t give the output in the requested format. This is possible due to the LLM’s hesitance when instructed to make a decision based on its internal knowledge, when its internal knowledge is not sufficient. In contrast, the LLM never gave outputs in an erroneous format when provided the case’s evidence, even though the prompts (Listings 2 and 13) are quite similar. 
+
+3.2 Similarity Distribution of Cross-Case Claim Inconsistencies 
+
+To locate contradictions and overlapping claims across cases with our compute resource limits, we stratified the space of cross-case claim pairs by their semantic similarity and inspected a uni-form subsample from each bin. First, we com-puted the semantic similarity scores of all possible claim pair combinations, using Qwen3-Embedding-8B (Zhang et al., 2025b). We used cosine similarity as our similarity measure. We then performed stratified sampling to es-timate the density of inconsistencies across the similarity spectrum. We drew a uniform sample of 1,000 pairs from each 0.1 similarity interval between 0.2 and 0.9. The highest interval (0.9– 1.0) contained fewer than 1,000 total pairs; con-sequently, all pairs in this range were included. Conversely, the 0.0–0.2 interval contained negli-gible data and was excluded as the pairs were se-mantically unrelated. For each sampled pair, we employed an LLM-as-a-judge (Prompts 7 and 8) to detect contradictions and overlaps, utilizing the full evidence from both source cases. 
+
+Results We then inspected the subsample predic-tions and computed percentile statistics of similar-ity for contradiction and overlap detections. Both contradictions and overlaps are highly concentrated toward the upper end of the similarity scale: con-tradictions cluster in the high-similarity region (roughly ≥0.7) and overlaps are concentrated even further toward the top (roughly ≥0.8), as can be observed in Table 1. This is inherently logical, as semantically similar claims are more likely to cover similar legal principles. Overlaps exhibit a substantially higher positive-rate within their window than contradictions, while contradictions are rarer. This necessitated the addi-tional resolution step with the filter by disposition for the contradictions. These results justify restrict-ing the LLM-judge to a high-similarity slice of the pairwise space: doing so covers the large major-ity of contradictions and overlaps while keeping compute cost manageable. 
+
+3.3 Baseline Experiments 
+
+We evaluate two LLM baselines for Supreme Court claim verification that differ only in their access to external information at inference time. Both baselines use the same prompt (14), evaluation, and LLM. GPT-4o was selected as the LLM to avoid self-preference bias, as it is not part of the Qwen3 or Gemma3 model families (Wataoka et al., 2025). The prompt presents the model with a legal claim and instructs it to determine the verdict against U.S. Supreme Court case law, with the provided verdict definitions. In addition to predicting a verdict, the model is required to identify the Supreme Court cases that justify the decision and to rank them by importance. To ensure a balanced evaluation, the prompt includes an explicit list of valid Supreme Court case names and instructs the model to cite 17251 only from this list. This consists of the cases that were used to create the dataset. 
+
+Baseline Setting There are two settings for the baseline system: Naive (no-search), and Search enabled. Both baselines were evaluated on the 3 metrics described in Section 2.6. In the naive setting, the model receives only the prompt. The model must rely solely on its internal knowledge to determine the correct verdict and select the cases to be used as evidence. This baseline evaluates the model’s ability to perform reasoning and case recall without external evidence retrieval. In the search setting, the model is additionally allowed to perform web search during inference, using Ope-nAI’s web search tool 3. This enables the model to consult external sources when performing the fact-checking task. 
+
+Results From Table 5, it is evident that the major challenge for this benchmark dataset is gathering evidence, as the evidence score (case recall met-ric) is much lower than the verdict accuracy. This points to the verdicts being easier to predict by the LLM, as both search baselines perform simi-larly on the verdict prediction. However, for a fact-checking application, the quality of the evidence retrieved is quite important for users’ trustworthi-ness (Anand et al., 2023; Schlichtkrull et al., 2023), hence why we use the composite metric of “verdict score” as our primary metric for this dataset. The Naive baseline outperforms the Search base-line on all three metrics, as can be observed from Table 5. This pattern indicates that allowing unre-stricted web search did not improve, and in fact de-graded, both evidence retrieval quality and the joint evidence-weighted verdict performance. A primary contributor is that web search sometimes surfaced cases outside the 3,299 case list or returned noisy, tangentially relevant cases, which led to lower overlap with the gold supporting cases therefore penalties by the evaluation metrics. By contrast, the Naive setting, relying on the model’s internal knowledge and the constrained case list, produced more consistent case selections and higher over-all scores, although not by much. These results suggest that any retrieval augmentation should be tightly constrained to the validated case set and paired with stronger re-ranking or filtering. 
+
+> 3https://platform.openai.com/docs/guides/ tools-web-search
+
+Model Metric Performance 
+
+Naive Evidence Score 0.232 
+
+Naive Verdict Accuracy 0.600 
+
+Naive Verdict Score 0.185 
+
+Search Evidence Score 0.212 Search Verdict Accuracy 0.574 Search Verdict Score 0.169 
+
+> Table 5: Comparison of evidence and verdict metrics for LLM configurations with and without search.
+
+3.4 Finetuning Semantic Similarity Models 
+
+In addition to prompting-based LLM baselines, we fine-tune dense embedding models for map-ping legal claims to the relevant SCOTUS cases, with CaseFacts’ training set. This experiment iso-lates the retrieval component of the broader fact-checking task and assesses whether supervised rep-resentation learning improves the ability to identify legally relevant precedents. Given a legal claim from CaseFacts as a query, the model must retrieve the Supreme Court cases that are the ground truth evidence for that claim. Each case is represented by its textual description, consisting of the case facts, questions and conclu-sions. Performance is measured using the test set, and the metrics are Recall@ k for k ∈ { 1, 5, 10 }.We evaluated three base encoder families (BGE (Xiao et al., 2024), Qwen3-Embedding-0.6B (Zhang et al., 2025b), and MiniLM (Wang et al., 2020)) and compared each base model to versions fine-tuned with MultipleNegativesRankingLoss for 1, 3, and 5 epochs. Fine-tuning encourages the model to embed claims closer to their corresponding cases while pushing apart unrelated cases, aligning the embedding space with the structure of the dataset. 
+
+Results Table 6 reports that, as expected, across all models and epochs, supervised fine-tuning yields substantial improvements over the corre-sponding pretrained baselines. Fine-tuning con-sistently improves Recall@1, indicating that train-ing substantially increases the likelihood that the most relevant Supreme Court case is ranked first. This is particularly pronounced for stronger and larger base models: Qwen3-Embedding-0.6B shows the largest single-step improvement at Re-call@1 (+24.1 points after three epochs), while bge-base-en-v1.5 and MiniLM-L6-v2 exhibit smaller, 17252 Model Epochs Recall@1 Recall@5 Recall@10                                                                                                                     
+
+> BM25 –0.1160 0.2180 0.2500 ColBERT –0.2560 0.4620 0.5420 bge-base-en-v1.5 10.2195 →0.3143 (+.0948) 0.3957 →0.5941 (+.1984) 0.4623 →0.6788 (+.2166)
+> 30.2195 →0.3373 (+.1178) 0.3957 →0.6100 (+.2143) 0.4623 →0.6748 (+.2126)
+> 50.2195 →0.3323 (+.1128) 0.3957 →0.6009 (+.2052) 0.4623 →0.6758 (+.2136)
+> MiniLM-L6-v2 10.1452 →0.2322 (+.0870) 0.3231 →0.4809 (+.1578) 0.3969 →0.5626 (+.1656)
+> 30.1452 →0.2358 (+.0906) 0.3231 →0.5212 (+.1981) 0.3969 →0.6269 (+.2300)
+> 50.1452 →0.2648 (+.1196) 0.3231 →0.5305 (+.2075) 0.3969 →0.6529 (+.2560)
+> Qwen3-Embed-0.6B 10.2952 →0.4999 (+.2047) 0.5415 →0.7930 (+.2515 )0.6471 →0.8382 (+.1911)
+> 30.2952 →0.5364 (+.2412 )0.5415 →0.7652 (+.2237) 0.6471 →0.8368 (+.1897)
+> 50.2952 →0.5240 (+.2288) 0.5415 →0.7669 (+.2254) 0.6471 →0.8524 (+.2053 )
+
+Table 6: Recall@ k comparisons (base → fine-tuned) for baseline and dense retrieval models across training epochs. Parenthesized values show improvement over the base model. The highest accuracy per metric is bolded .
+
+Metric Accuracy Correct Incorrect 
+
+Factuality 97.4% 487 13 Contradiction 95.5% 238,148 11,352 Overlap 97.4% 243,113 6,387 Total 96.5% 481,748 17,752 
+
+Table 7: Evaluation of LLM-judge across various tasks. 
+
+but steady gains as training epochs increase. This pattern of increasing gains for more epochs holds for the smaller models as well. This demonstrates the usefulness of CaseFacts’ training set for supervised fine-tuning of the re-trieval portion, displaying that trained retrieval models can be complementary to an LLM-based fact-checking system. This approach can be an alternative to naive and web-search LLM fact-checkers in the legal domain. 
+
+3.5 LLM-Judge Reliability 
+
+To evaluate the reliability of the LLM-as-a-judge steps, we have repeated the factuality, cross-case contradiction and overlap tasks on the human-annotated claims from the test set. As the issues the inconsistencies identified by the aforementioned tasks should not be present in the test set, this exper-iment evaluates alignment with human annotations. The results in Table 7 indicate that the LLM is very consistent with human judgment on the sub-tasks. 
+
+3.6 Effectiveness of Private Information Removal 
+
+To ascertain the effectiveness of the pri-vate information removal in Section 2.3.1, we evaluated our dataset’s claims with 
+
+roberta-large-ner-english and found that approximately 25% of the claims mentioned an entity. Upon further observation, we found that most of these were “The United States” or some legal entity/statute, which we felt were capturing undesirable entities. We used an LLM judge to check the claims and found that only 154 (2.5%) of the claims contained a relevant entity. To assess whether these claims posed a prob-lem for evaluation, we compared baseline perfor-mance on this entity-containing subset against the test set. The results for both Search-enabled and Naive show no meaningful difference; for example, under the Naive setting, E VIDENCE SCORE was 0.232 on the entity subset versus 0.222 on the test, and V ERDICT SCORE was 0.222 versus 0.185. We therefore retain these claims in the dataset, as they may better reflect a real-world distribution where a minority of legal claims do reference specific iden-tifying information, and this subset remains small enough (2.5%) to have negligible impact on overall benchmark statistics. 
+
+4 Related Work 
+
+Legal Reasoning and Benchmarks. Recent ef-forts have established robust benchmarks to evalu-ate Large Language Models (LLMs) on legal tasks. LegalBench (Guha et al., 2023) provides a compre-hensive suite of tasks ranging from clause classifi-cation to rule application. While LegalBench cov-ers various aspects of legal reasoning, none of its constituent tasks directly tackle the problem of au-tomated fact-checking, where a system must verify an external claim against a corpus. Our work can be viewed as a synthesis of multiple LegalBench reasoning skills—requiring both the retrieval of 17253 relevant precedent and the entailment capabilities necessary to verify a claim. Similarly, CaseHOLD (Zheng et al., 2021) fo-cuses on identifying case holdings—the govern-ing legal rules applied to specific facts that serve as binding precedent. However, this benchmark operates strictly within the formal legal register, using judicial citations as prompts rather than col-loquial claims. Additionally, it frames the task as multiple-choice matching where distractors are simply irrelevant precedents selected via TF-IDF, rather than the adversarial distortions found in real-world misinformation. The Competition on Legal Information Extraction/Entailment (Goebel et al., 2024) similarly addresses case law retrieval and entailment, but operates over formal legal texts in a formal-to-formal setting. Our benchmark addresses these gaps by verifying informal assertions against formal rulings, testing resilience against subtle mis-interpretations rather than just formal document retrieval precision. 
+
+The Semantic Gap in Legal Retrieval A pri-mary challenge in legal fact-checking is the lin-guistic disparity between colloquial claims and for-mal legal texts. Chen et al. (2025) and Mori et al. (2025) investigate this friction, highlighting the dif-ficulty of retrieving relevant legal provisions using informal or layperson queries. This issue is further compounded by the structural complexity of legal documents; Reuter et al. (2025) identify that lexical redundancy and fragmented information in legal datasets cause standard RAG systems to fail fre-quently. Similarly, Ajay Mukund and Easwaraku-mar (2025) argue that traditional semantic simi-larity metrics often miss the nuanced relevance of statutes, requiring dynamic adaptation rather than static retrieval. The limited performance observed in these studies underscores the difficulty of the task and motivates our focus on bridging the gap between informal political discourse and the tech-nical language of SCOTUS opinions. 
+
+Domain-Specific Fact-Checking There is agrowing paradigm shift in automated fact-checking, moving away from “one-size-fits-all” systems (Putta et al., 2025; Braun et al., 2024) to-ward domain-specific architectures. Wang et al. (2025) and Devasier et al. (2025) argue that spe-cialized domains—such as congressional law or medicine—require distinct pipelines that general-purpose systems cannot support. Hu et al. (2025) recently addressed this in the context of Legal Ques-tion Answering by fine-tuning models to reduce hallucinations; however, their work focuses on generating truthful answers to questions, whereas our work focuses on the task of verifying external claims against precedents. To address the scarcity of real-world training data in these specialized domains, recent works have successfully employed synthetic data gen-eration. Zhao and Flanigan (2025) and Zhang et al. (2025a) demonstrate that creating synthetic factual claims from source texts can significantly improve performance on downstream verification tasks. This methodology is supported by broader surveys in the field, such as Nadˇ a¸ s et al. (2025), which validate the use of LLMs to generate high-quality training data in domains constrained by data scarcity and privacy. Following this methodol-ogy, we leverage LLMs to generate diverse claim-evidence pairs. 
+
+5 Conclusion 
+
+In this work, we introduced CaseFacts , a bench-mark designed to address the unique challenges of automated fact-checking in the legal domain. By bridging the semantic gap between colloquial assertions and formal Supreme Court precedents, CaseFacts moves beyond traditional “legalese-to-legalese” tasks, offering a more realistic evaluation of how legal information is consumed in public dis-course and social media. A key contribution of our work is the rigorous modeling of precedent validity through the O VERRULED class. By developing a scalable pipeline to identify and verify overrulings, we demonstrate that legal truth is not static and that robust verification systems must account for the dynamic evolution of case law and the formation of new legal precedent. Our experiments reveal significant limitations in current state-of-the-art models. We observed that providing LLMs with unrestricted web search often degrades performance due to the retrieval of noisy or irrelevant case law, highlighting the need for retrieval systems that prioritize authorita-tive and precise evidence. Furthermore, while fine-tuning embedding models on our synthetic training data yielded substantial gains in retrieval, the gap between simple verdict prediction and evidence-grounded verification remains large. This opens the door to creation of specialized systems that can better navigate the hierarchical and temporal structures of legal evidence. 17254 Limitations 
+
+First, CaseFacts relies on expert-synthesized sum-maries from Oyez rather than full judicial opinions. While this ensures high-quality structured evidence, it abstracts away the complex, long-context reason-ing found in raw legal texts, potentially simplifying retrieval compared to a full-text corpus. Our heuristic approach to identifying overruled cases relies on semantic similarity thresholds. While necessary for computational feasibility, this method inherently misses some cases with low se-mantic similarity, though we expect the number to be quite small. While we employ a rigorous pipeline to generate hard negative refuted claims, they remain synthet-ically derived. They may not fully capture the nuance of human-generated legal misinformation, which often relies on subtle misinterpretation or out-of-context citation rather than the direct nega-tion of legal principles. Finally, CaseFacts focuses exclusively on U.S. Supreme Court rulings. It does not account for statutory law, regulatory codes, or state-level ju-risprudence, which are frequent targets of misin-formation in the broader legal domain. This also means that if supreme court rulings are overridden by congressional legislation, we are unable to label them as overruled. Furthermore, this work does not consider legal precedence in other countries. 
+
+Ethical Concerns 
+
+No Legal Advice and Risk of Harm While CaseFacts aims to improve the reliability of au-tomated fact-checking in the legal domain, the models trained or evaluated on this benchmark are research prototypes and should not be used as a substitute for professional legal counsel. Legal AI systems are prone to hallucinations, and in high-stakes environments, such errors can lead to severe consequences, including financial loss or the de-privation of rights. We emphasize that any down-stream application derived from this work should utilize a human-in-the-loop workflow, particularly when verifying claims that influence real-world le-gal decision-making. 
+
+Bias and Harmful Historical Content Our dataset is derived from U.S. Supreme Court rul-ings via Oyez summaries. Historically, judicial corpora reflect the prejudices of their time. Conse-quently, the dataset contains assertions regarding slavery, segregation, and disenfranchisement (e.g., claims stating that enslaved persons are property). While these claims are labeled as O VERRULED or contextually specific to valid historical precedents, they represent morally wrong viewpoints which we do not agree with. We retain them because a ro-bust legal fact-checker must be able to identify that such precedents—though once "the law"—are no longer valid. Users should be aware that the dataset contains text describing human rights violations. 
+
+Dual Use and Misinformation Our methodol-ogy includes a specific pipeline for generating hard negatives. While this is necessary to train robust discriminators, the same techniques could theoreti-cally be misused to generate convincing legal disin-formation at scale. However, we believe the benefit of releasing a dataset to detect such misinformation outweighs the risk. 
+
+Privacy and Data Usage Our claim generation pipeline explicitly prompts models to remove spe-cific identifiers, such as party names and dates, to focus on general legal principles. This minimizes the risk of generating claims that unintentionally expose sensitive information regarding private indi-viduals involved in historical litigation. All source data is derived from publicly available summaries provided by Oyez. 
+
+References                  
+
+> S Ajay Mukund and K. S. Easwarakumar. 2025. Op-timizing Legal Text Summarization Through Dy-namic Retrieval-Augmented Generation and Domain-Specific Adaptation. Symmetry , 17(5). Mubashara Akhtar, Oana Cocarascu, and Elena Sim-perl. 2022. PubHealthTab: A Public Health Table-based Dataset for Evidence-based Fact Checking. In
+> Findings of the Association for Computational Lin-guistics: NAACL 2022 , pages 1–16, Seattle, United States. Association for Computational Linguistics. Rami Aly, Zhijiang Guo, Michael Sejr Schlichtkrull, James Thorne, Andreas Vlachos, Christos Christodoulopoulos, Oana Cocarascu, and Arpit Mittal. 2021. FEVEROUS: Fact extraction and VERification over unstructured and structured information. In Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track (Round 1) .Avishek Anand, Procheta Sen, Sourav Saha, Manisha Verma, and Mandar Mitra. 2023. Explainable Infor-mation Retrieval. In Proceedings of the 46th Inter-national ACM SIGIR Conference on Research and Development in Information Retrieval , SIGIR ’23,
+
+17255 page 3448–3451, New York, NY, USA. Association for Computing Machinery. Tobias Braun, Mark Rothermel, Marcus Rohrbach, and Anna Rohrbach. 2024. DEFAME: Dynamic Evidence-based FAct-checking with Multimodal Ex-perts. arXiv preprint arXiv:2412.10510 .Szu-Ju Chen, Jing Jin, Sheng-Lun Wei, Chien-Hung Chen, and Hsin-Hsi Chen. 2025. Retrieving the Right Law: Enhancing Legal Search with Style Translation. In Proceedings of the 48th International ACM SI-GIR Conference on Research and Development in Information Retrieval , SIGIR ’25, page 2951–2955, New York, NY, USA. Association for Computing Machinery. Jacob Devasier, Akshith Reddy Putta, Rishabh Medi-ratta, and Chengkai Li. 2025. Task-Oriented Au-tomatic Fact-Checking with Frame-Semantics. In 
+
+Findings of the Association for Computational Lin-guistics: ACL 2025 , pages 13825–13842, Vienna, Austria. Association for Computational Linguistics. Gemma Team, Aishwarya Kamath, Johan Ferret, Shreya Pathak, Nino Vieillard, Ramona Merhej, Sarah Perrin, Tatiana Matejovicova, Alexandre Ramé, Morgane Rivière, Louis Rouillard, Thomas Mesnard, Geoffrey Cideron, Jean bastien Grill, Sabela Ramos, Edouard Yvinec, Michelle Casbon, Etienne Pot, Ivo Penchev, and 197 others. 2025. Gemma 3 Technical Report. 
+
+Preprint , arXiv:2503.19786. Randy Goebel, Yoshinobu Kano, Mi-Young Kim, Ju-liano Rabelo, Ken Satoh, and Masaharu Yoshioka. 2024. Overview of Benchmark Datasets and Meth-ods for the Legal Information Extraction/Entailment Competition (COLIEE) 2024. In New Frontiers in Artificial Intelligence , pages 109–124, Singapore. Springer Nature Singapore. Neel Guha, Julian Nyarko, Daniel Ho, Christopher Ré, Adam Chilton, Alex Chohlas-Wood, Austin Peters, Brandon Waldon, Daniel Rockmore, Diego Zam-brano, and 1 others. 2023. Legalbench: A collab-oratively built benchmark for measuring legal reason-ing in large language models. Advances in neural information processing systems , 36:44123–44279. Yinghao Hu, Leilei Gan, Wenyi Xiao, Kun Kuang, and Fei Wu. 2025. Fine-tuning Large Language Models for Improving Factuality in Legal Question Answer-ing. In Proceedings of the 31st International Con-ference on Computational Linguistics , pages 4410– 4427, Abu Dhabi, UAE. Association for Computa-tional Linguistics. Larissa Mori, Carlos Sousa de Oliveira, Yuehwern Yih, and Mario Ventresca. 2025. Assessing the perfor-mance gap between lexical and semantic models for information retrieval with formulaic legal language. In Proceedings of the Twentieth International Con-ference on Artificial Intelligence and Law , pages 114– 128. Mihai Nadˇ a¸ s, Laura Dio¸ san, and Andreea Tomescu. 2025. Synthetic Data Generation Using Large Lan-guage Models: Advances in Text and Code. IEEE Access , 13:134615–134633. Akshith Reddy Putta, Jacob Devasier, and Chengkai Li. 2025. ClaimCheck: Real-Time Fact-Checking with Small Language Models. Preprint ,arXiv:2510.01226. Qwen Team. 2025. Qwen3 Technical Report. Preprint ,arXiv:2505.09388. Markus Reuter, Tobias Lingenberg, Ruta Liepina, Francesca Lagioia, Marco Lippi, Giovanni Sartor, Andrea Passerini, and Burcu Sayin. 2025. Towards Reliable Retrieval in RAG Systems for Large Le-gal Datasets. In Proceedings of the Natural Legal Language Processing Workshop 2025 , pages 17–30, Suzhou, China. Association for Computational Lin-guistics. Michael Sejr Schlichtkrull, Zhijiang Guo, and Andreas Vlachos. 2023. AVeriTeC: A Dataset for Real-world Claim Verification with Evidence from the Web. In 
+
+Thirty-seventh Conference on Neural Information Processing Systems Datasets and Benchmarks Track .Wenhui Wang, Furu Wei, Li Dong, Hangbo Bao, Nan Yang, and Ming Zhou. 2020. Minilm: Deep self-attention distillation for task-agnostic compression of pre-trained transformers. Advances in neural in-formation processing systems , 33:5776–5788. Yuxia Wang, Minghan Wang, Hasan Iqbal, Georgi N. Georgiev, Jiahui Geng, Iryna Gurevych, and Preslav Nakov. 2025. OpenFactCheck: Building, Bench-marking Customized Fact-Checking Systems and Evaluating the Factuality of Claims and LLMs. In 
+
+Proceedings of the 31st International Conference on Computational Linguistics , pages 11399–11421, Abu Dhabi, UAE. Association for Computational Linguis-tics. Koki Wataoka, Tsubasa Takahashi, and Ryokan Ri. 2025. Self-Preference Bias in LLM-as-a-Judge. 
+
+Preprint , arXiv:2410.21819. Shitao Xiao, Zheng Liu, Peitian Zhang, Niklas Muen-nighoff, Defu Lian, and Jian-Yun Nie. 2024. C-pack: Packed resources for general chinese embeddings. In 
+
+Proceedings of the 47th international ACM SIGIR conference on research and development in informa-tion retrieval , pages 641–649. Jingze Zhang, Jiahe Qian, Yiliang Zhou, and Yifan Peng. 2025a. Enhancing Health Fact-Checking with LLM-Generated Synthetic Data. Preprint ,arXiv:2508.20525. Yanzhao Zhang, Mingxin Li, Dingkun Long, Xin Zhang, Huan Lin, Baosong Yang, Pengjun Xie, An Yang, Dayiheng Liu, Junyang Lin, Fei Huang, and Jingren Zhou. 2025b. Qwen3 Embedding: Advancing Text Embedding and Reranking Through Foundation Mod-els. Preprint , arXiv:2506.05176. 17256 Rongwen Zhao and Jeffrey Flanigan. 2025. SYN-THVERIFY: Enhancing Zero-Shot Claim Verifica-tion through Step-by-Step Synthetic Data Generation. In Findings of the Association for Computational Linguistics: ACL 2025 , pages 3257–3274, Vienna, Austria. Association for Computational Linguistics. Lucia Zheng, Neel Guha, Brandon R Anderson, Peter Henderson, and Daniel E Ho. 2021. When does pre-training help? assessing self-supervised learning for law and the casehold dataset of 53,000+ legal hold-ings. In Proceedings of the eighteenth international conference on artificial intelligence and law , pages 159–168. 
+
+A Appendix 
+
+A.1 Reproducibility 
+
+All of our code is open-sourced at https://github.com/idirlab/ supreme-court-dataset . Github Copilot was used in the creation of some of our code. 
+
+A.2 Token Length Distribution 
+
+Figure 2 provides an analysis of the token length distributions for the claims in our dataset. It com-pares the lengths of the originally generated valid claims against the generated negations to demon-strate that the negation length-fixing step (Listing 12) successfully maintained comparable claim com-plexity. 
+
+A.3 LLM Prompts 
+
+This section details the specific prompts used to construct the dataset and run baseline experiments. 
+
+Claim Generation and Factuality Listing 1 dis-plays the prompt used to extract atomic legal claims from case summaries. To ensure these claims are supported by the text, we utilize a factuality checker (Listing 2). We also include a “naive” fac-tuality prompt (Listing 13) used for ablation studies where the model judges factuality without access to the case evidence. 
+
+Intra-Case Relationships For claims derived from the same case, we verify their relationship to ensure diversity and consistency. We detect con-tradictions using Listing 3 and semantic overlaps (redundancy) using Listing 4. If conflicts or re-dundancies are found, they are resolved using the prompts in Listing 5 and Listing 6, respectively. 
+
+Inter-Case Relationships We perform similar consistency checks for claims originating from dif-ferent cases. Listings 7 and 9 show the prompts for detecting and resolving contradictions (e.g., over-ruling) between cases. Listings 8 and 10 detail the detection and resolution of cross-case redundan-cies. 
+
+Negation Generation To create “Refuted” sam-ples, we generate plausible negations of valid claims using the prompt in Listing 11. We then apply a length-fixing and style-refinement prompt (Listing 12) to ensure the negated claims remain concise and comparable to the original claims. 
+
+Baselines Finally, Listing 14 provides the prompt used for the zero-shot baseline predictions, where the model must retrieve evidence and output a ver-dict based on a provided list of valid cases. 17257 Figure 2: Graph displaying the changes in character length before and after the LLM pass with prompt 12. The length of the supported claims, which negations are generated from, is provided for comparison. Listing 1: Prompt for Claim Generation 
+
+# Instructions: Generate truthful, factual claims about the legal implications of this case using simple, everyday language. Avoid legal jargon or court-report phrasing. Do not use phrases like "the court found," "the decision clarified," or "under this test." Write claims as clear statements of what the law allows or does not allow. Adhere to the following rules: - Do not use any part of the case name or other identifying information in the claim. - Do not make claims that only apply to the parties in this case; claims must be general legal principles. - Keep each claim focused on one central idea and make it easy to understand. - Each claim must be distinct from the others; do not repeat the same core idea. - Use direct, plain wording rather than legal formulations. Output Format: ## Return the claim in a JSON object with the following format: 
+
+``` json {{ "claim1": "...", "claim2": "...", ... }} 
+
+``` 
+
+## Facts: {facts} # Question: {question} # Conclusion: {conclusion} 17258 Listing 2: Prompt for the Factuality Check 
+
+You are a legal expert. Read a short claim about a supreme court case plus the case facts, question, and conclusion. Decide whether the claim is factually consistent with the evidence from the case or is factually inconsistent with the case evidence. Rules: 1. Base your judgment only on the Supreme Court evidence. 2. If the evidence does not support the claim, do not label as consistent. 3. Do not rely on outside knowledge or assumptions. 4. Do not invent information that is not in the evidence. Claim: {claim} Case Evidence: Facts: {facts} Question: {question} Conclusion: {conclusion} ## Output Format: Return a JSON object in the following format: 
+
+``` json {{ "explanation": "...", "contradiction": "<consistent/inconsistent>", ... }} 
+
+``` 
+
+Listing 3: Prompt for the Contradiction Check within the same case 
+
+You are a legal expert. Read two short claims about a case plus the case facts, question, and conclusion. Decide whether the two claims are contradicting (negation or opposite entailment), or consistent (when they are unrelated or entail). You must output an explanation for your decision in the "explanation" field. Then, also provide a decision in the "contradiction" field: "contradiction" if the claims are contradicting, and " consistent" if they are not. Claim 1: {claim1} Claim 2: {claim2} Case Evidence: Facts: {facts} Question: {question} Conclusion: {conclusion} ## Output Format: Return a JSON object in the following format: 
+
+``` json {{ "explanation": "...", "contradiction": "<contradiction/consistent>", ... }} 
+
+``` 17259 Listing 4: Prompt for the Overlap Check within the same case 
+
+You are a legal expert. Read two short claims about a case plus the case facts, question, and conclusion. Decide whether the two claims are saying the same thing (being redundant) or are meaningfully different regarding their meaning. You must output an explanation for your decision in the "explanation" field. Then, also provide a decision in the "overlap" field: "redundant" if the claims are redundant, and "different" if they are not. Claim 1: {claim1} Claim 2: {claim2} Case Evidence: Facts: {facts} Question: {question} Conclusion: {conclusion} ## Output Format: Return a JSON object in the following format: 
+
+``` json {{ "explanation": "...", "overlap": "<redundant/different>", ... }} 
+
+Listing 5: Prompt for Contradiction resolutions within the same case 
+
+You are a legal expert. You are given two claims about the same Supreme Court case that have been identified as contradictory. Read the two short claims about the case and the case facts, question, and conclusion. Your task is to determine which claim is factually correct based on the evidence, or if neither is correct. In the "decision" field, only return one of the decision categories. Claim 1: {claim1} Claim 2: {claim2} Reason for contradiction: {explanation} Case Evidence: Facts: {facts} Question: {question} Conclusion: {conclusion} Analyze the evidence and decide: 1. Is Claim 1 correct and Claim 2 incorrect? 2. Is Claim 2 correct and Claim 1 incorrect? 3. Are both claims incorrect? 4. Are both claims partially correct but phrased poorly? (If so, provide a merged/corrected claim). ## Output Format: Return a JSON object in the following format: 
+
+``` json {{ "explanation": "...", "decision": "<claim1_correct | claim2_correct | neither_correct | both_partial>", "corrected_claim": "..." (optional, if decision is ’both_partial’) }} 
+
+``` 17260 Listing 6: Prompt for Overlap resolutions within the same case 
+
+You are a legal expert. You are given two claims about the same Supreme Court case that are redundant (saying the same thing). Read the two short claims about the case and the case facts, question, and conclusion. Your task is to choose the one that is better written, more precise, or more comprehensive. You are also given the reason for redundancy, take that into account when making your decision. In the "keep" json field, return the strings "claim1" or "claim2", not the actual content of the claims. Claim 1: {claim1} Claim 2: {claim2} Reason for redundancy: {explanation} Case Evidence: Facts: {facts} Question: {question} Conclusion: {conclusion} ## Output Format: Return a JSON object in the following format: 
+
+``` json {{ "explanation": "...", "keep": "<claim1/claim2>" }} 
+
+``` 
+
+Listing 7: Prompt for the Contradiction Check within different cases 
+
+You are a legal expert. Read two short claims from different cases and the two cases’ associated facts, legal questions, and conclusions. Decide whether the two claims are contradicting (negation or opposite entailment), or consistent ( when they are unrelated or entail). You must output an explanation for your decision in the "explanation" field. Then, also provide a decision in the "contradiction" field: "contradiction" if the claims are contradicting, and " consistent" if they are not. ## Output Format: Return a JSON object in the following format: 
+
+``` json {{ "explanation": "...", "contradiction": "<contradiction/consistent>", ... }} 
+
+``` 
+
+Claim 1: {claim1} Claim 2: {claim2} Claim 1 Case Evidence: Facts: {facts1} Legal Question: {api_question1} Conclusion: {api_conclusion1} Claim 2 Case Evidence: Facts: {facts2} Legal Question: {api_question2} Conclusion: {api_conclusion2} 17261 Listing 8: Prompt for the Overlap Check within different cases 
+
+You are a legal expert. Read two short claims from different cases and the two cases’ associated facts, legal questions, and conclusions. Decide whether the two claims are saying the same thing (being redundant) or are meaningfully different regarding their meaning. You must output an explanation for your decision in the "explanation" field. Then, also provide a decision in the "overlap" field: "redundant" if the claims are redundant, and "different" if they are not. ## Output Format: Return a JSON object in the following format: 
+
+``` json {{ "explanation": "...", "overlap": "<redundant/different>", ... }} 
+
+``` 
+
+Claim 1: {claim1} Claim 2: {claim2} Claim 1 Case Evidence: Facts: {facts1} Legal Question: {api_question1} Conclusion: {api_conclusion1} Claim 2 Case Evidence: Facts: {facts2} Legal Question: {api_question2} Conclusion: {api_conclusion2} 17262 Listing 9: Prompt for the Contradiction Resolution within different cases 
+
+You are a legal expert. You are given two claims from different Supreme Court cases that have been identified as contradictory. Read the two short claims about the cases and the two cases’ facts, question, and conclusion. 1. Are they overruling one another? Indicate "case1_overruled" if Case 2’s evidence points to overruling Case 1’s evidence. Indicate "case2_overruled" if Case 1’s evidence points to overruling Case 2’s evidence. Take into account their ruling dates when making overruling decisions. 2. Are they consistent given context? (e.g. different jurisdictions, different specific facts). Indicate "consistent" in the decision field. Even if the claims are slightly contradicting, they are consistent as long as they propagate different legal principles. This will be quite common, as true overruling contradictions are rare in Supreme Court cases. Claim 1: {claim1} Claim 2: {claim2} Case 1 Evidence: Ruling Date: {date1} Facts: {facts1} Question: {api_question1} Conclusion: {api_conclusion1} Case 2 Evidence: Ruling Date: {date2} Facts: {facts2} Question: {api_question2} Conclusion: {api_conclusion2} Output JSON: {{ "explanation": "...", "decision": "case1_overruled" | "case2_overruled" | "consistent", }} 
+
+``` 
+
+Listing 10: Prompt for the Overlap Resolution within different cases 
+
+You are a legal expert. You are given two claims from different cases that have been identified as redundant (overlapping). Your task is to decide how to resolve this overlap. You can: 1. Keep Claim 1 (if it is more accurate, comprehensive, or better phrased). The ground truth for Claim 1 will be both cases. 2. Keep Claim 2 (if it is more accurate, comprehensive, or better phrased). The ground truth for Claim 2 will be both cases. 3. Merge them (create a new claim that combines the information from both). Claim 1: {claim1} Claim 2: {claim2} Case 1 Evidence: Facts: {facts1} Question: {api_question1} Conclusion: {api_conclusion1} Case 2 Evidence: Facts: {facts2} Question: {api_question2} Conclusion: {api_conclusion2} Output JSON: {{ "reasoning": "...", "decision": "keep_1" | "keep_2" | "merge", "merged_claim": "..." (only if decision is merge, otherwise null) }} 17263 Listing 11: Prompt for the Negations Generation 
+
+You are a legal expert. Read the following claim about a legal case, along with the case’s facts, question, and conclusion. Your task is to generate a negation of this claim. The negation should be plausible but factually incorrect based on the original claim and the case evidence. Provide an explanation for why this negation contradicts the original claim in the "explanation" field. Then, provide the negated claim in the "negation" field. Claim: {claim} Case Evidence: Facts: {facts} Question: {question} Conclusion: {conclusion} ## Output Format: Return a JSON object in the following format: 
+
+``` json {{ "explanation": "...", "negation": "..." }} 
+
+``` 
+
+Listing 12: Prompt for the Negations Length Fixing 
+
+# Instructions: Rewrite the following legal claim to be a concise, general legal principle. The input claim is a "refuted" (false) legal claim, but it is currently might be too long, specific, or conditional. The case the claim originated from is provided as context. It will contradict the claim, do not change the meaning of the claim. Your task is to rewrite it so it is: 1. Independent of specific case details or parties (remove names, dates, specific locations). 2. Unconditional (remove "unless", "especially if", or specific factual caveats). 3. Concise and direct (simple, everyday language). 4. Focused on the core legal principle being asserted (even if that principle is false). You must not change the meaning of the claim. If some details are necessary to preserve the meaning, keep them, even if that makes the claim lengthy. If the claim is already concise and general, you may return it as is or with minor improvements. ## Input Claim: "{claim}" ## Output Format: Return a JSON object with a single key "rewritten_claim": 
+
+``` json {{ "rewritten_claim": "..." }} 17264 Listing 13: Prompt for the Naive Factuality check 
+
+You are a legal expert. Read a short claim about a supreme court case. Decide whether the claim is factually consistent with the details of the case. Rules: 1. Base your judgment on your internal knowledge of the Supreme Court case. 2. If you are unsure or do not know the case, do not label as consistent. Claim: {claim} ## Output Format: Return a JSON object in the following format: 
+
+``` json {{ "explanation": "...", "contradiction": "<consistent/inconsistent>", ... }} 
+
+``` 
+
+Listing 14: Prompt for Baseline Predictions 
+
+You are a legal expert. Your task is to analyze a legal claim and determine its veracity based on US Supreme Court cases. You must determine if the claim is "Supported", "Refuted", or "Overruled" by the case law. You must also identify the specific Supreme Court cases that serve as evidence for your decision. List them in order of importance (most important first). You will be penalized for irrelevant and incorrect citations, so prioritize accuracy and conciseness of citations. Constraints: 1. You must ONLY cite cases from the provided list of valid Supreme Court cases. Do not invent cases or cite cases not in the list. 2. Do not guess. If you are unsure, provide your best estimate but prioritize accuracy. 3. Output must be a valid JSON object. Valid Supreme Court Cases: {case_list} Claim: {claim} Respond with a JSON object in the following format: {{ "explanation": "Brief explanation of your reasoning.", "cases": ["Case Name 1", "Case Name 2", ...], "verdict": "Supported" or "Refuted" or "Overruled" }} 17265
